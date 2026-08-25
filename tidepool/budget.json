@@ -441,7 +441,20 @@
    "recordedAt": "2026-08-25T20:19:57Z",
    "description": "The replay buffer at size, attempt 1: 8,000 prompts self-distilled greedily from the instruct checkpoint, the hard prerequisite for arms C5a and C5b.",
    "note": "FAILED on 1 assertion, and the assertion was right. The generation itself was clean and is not the problem: 7,945 of 8,000 sampled prompts usable inside the 1,024-token cap, 7,945 completions, 0 empty, 1,850,696 completion tokens at 1,688.5 tok/s, file placed in shared storage. The n_tok count written into each row came back as exactly 2 for every row (15,890 total), because row_tokens called apply_chat_template(tokenize=True) and took len() of the result, which on this transformers version is a BatchEncoding whose len() is its KEY COUNT (input_ids, attention_mask) rather than its token count. That is precisely the silent defect this generator was rewritten at 17:09Z to prevent, arriving through a different door. The downstream C5b ratio check caught it (a 3.2M-token dose over a 0.02M-token buffer reads as 201.4 passes, over the 2.0 ceiling), so no arm ever trained on it. Fixed and re-uploaded: _ids() now unwraps BatchEncoding/dict/batched forms before counting, an exact invariant was added (training tokens can never fall below the completion tokens the rows were built from, which this run violated by two orders of magnitude and which names the cause directly instead of leaving it to be inferred from a replay-passes number), and an 8-case fixture test covers every return shape plus the len()==2 regression itself. Requeue when a slot frees; C5a and C5b are last in the arm order, so nothing is blocked yet. Spend recorded because the GPU time was really consumed."
+  },
+  {
+   "jobId": "a68b3e57-03a4-4808-8b29-ef04c252f8a5",
+   "substage": "s5.3",
+   "task": "s5-sft-sweep",
+   "label": "arm C7 (mix=raw), attempt 1",
+   "accelerators": "L40S:1",
+   "provider": "aws",
+   "status": "STOPPED",
+   "spend": 0.794,
+   "start": "2026-08-25T20:44:17Z",
+   "end": "2026-08-25T21:31:57Z",
+   "note": "Stopped by me at 484/9697 steps to free a GPU slot for the packed smoke (c77ab752). The GPU time was genuinely consumed so it is charged here. C7 is re-run inside the first real pack."
   }
  ],
- "total_spent": 11.339
+ "total_spent": 12.133
 }
