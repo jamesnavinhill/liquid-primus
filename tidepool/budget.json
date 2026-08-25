@@ -1,20 +1,44 @@
 {
-  "unit": "GPU-hours",
-  "planned": 145,
-  "plannedNote": "Derived from the s3.2 matrix, not stated by the operator: 2 smoke + 10 baselines + 38 supervised sweep + 10 preference rung + 2 merging + 30 RL arm (kill-line guarded) + 12 export/recovery + 12 final evaluation = 116, plus 25% contingency for re-runs, failed launches, and re-measuring one side of a paired comparison after a card substitution. Enforced allowance on 2026-08-25 was 200 GPU-h (12,000 GPU-min) with 2 GPUs at a time, so 55 GPU-h is left unspent as margin. Default card L40S 48GB; A100-40GB for bandwidth-bound rows; L4 for evaluation-only rows; T4 unused for training (no bf16). A three-seed sweep, a tier-2 transfer, and a full RL treatment would add ~225 GPU-h and need a quota raise.",
-  "rate": null,
-  "entries": [
-    {
-      "jobId": "e92de716-f8d5-402c-bef5-615ea1a8d2c3",
-      "experiment": "tidepool",
-      "substage": "s4.2",
-      "description": "s4.2 full-corpus data diagnostics: missingness, tool-schema and call distributions, refusal accounting, LFM2.5 tokenization, group-key sizes, within- and cross-corpus duplicates, 13-gram decontamination against 9 benchmark indices",
-      "resources": "CPU only (8 vCPU / 32 GB / 200 GB disk, gcp); no accelerator requested",
-      "durationHours": 0.209,
-      "spend": 0.0,
-      "status": "COMPLETE",
-      "note": "Wall clock 12m31s (09:46:53Z-09:59:24Z). Zero GPU-hours because the job requested no accelerator, so it draws nothing from the 200 GPU-h allowance.",
-      "recordedAt": "2026-08-25T10:05:00Z"
-    }
-  ]
+    "unit": "GPU-hours",
+    "planned": 145,
+    "plannedNote": "Derived from the s3.2 matrix, not stated by the operator: 2 smoke + 10 baselines + 38 supervised sweep + 10 preference rung + 2 merging + 30 RL arm (kill-line guarded) + 12 export/recovery + 12 final evaluation = 116, plus 25% contingency for re-runs, failed launches, and re-measuring one side of a paired comparison after a card substitution. Enforced allowance on 2026-08-25 was 200 GPU-h (12,000 GPU-min) with 2 GPUs at a time, so 55 GPU-h is left unspent as margin. Default card L40S 48GB; A100-40GB for bandwidth-bound rows; L4 for evaluation-only rows; T4 unused for training (no bf16). A three-seed sweep, a tier-2 transfer, and a full RL treatment would add ~225 GPU-h and need a quota raise.",
+    "rate": null,
+    "entries": [
+        {
+            "jobId": "e92de716-f8d5-402c-bef5-615ea1a8d2c3",
+            "experiment": "tidepool",
+            "substage": "s4.2",
+            "description": "s4.2 full-corpus data diagnostics: missingness, tool-schema and call distributions, refusal accounting, LFM2.5 tokenization, group-key sizes, within- and cross-corpus duplicates, 13-gram decontamination against 9 benchmark indices",
+            "resources": "CPU only (8 vCPU / 32 GB / 200 GB disk, gcp); no accelerator requested",
+            "durationHours": 0.209,
+            "spend": 0.0,
+            "status": "COMPLETE",
+            "note": "Wall clock 12m31s (09:46:53Z-09:59:24Z). Zero GPU-hours because the job requested no accelerator, so it draws nothing from the 200 GPU-h allowance.",
+            "recordedAt": "2026-08-25T10:05:00Z"
+        },
+        {
+            "jobId": "7d70b957-c723-4a07-8b73-e06b110773c5",
+            "experiment": "tidepool",
+            "substage": "s4.3",
+            "description": "s4.3 group-aware splits, attempt 1. Read all 11 corpora and built the splits, then failed its own s4.2 reproduction assertions on 5 of 110 checks. All five causes were definitional drift between the two recomputes rather than disagreements about the data. Outputs are not cited anywhere; the job is superseded by cc0fad09.",
+            "resources": "CPU only (8 vCPU / 32 GB / 200 GB disk, gcp); no accelerator requested",
+            "durationHours": 0.25,
+            "spend": 0.0,
+            "status": "FAILED",
+            "note": "Wall clock about 15 minutes from 10:21:27Z; the platform recorded a start time but no end time, so the duration is the observed bracket rather than a reported figure. Zero GPU-hours because the job requested no accelerator, so the discarded attempt draws nothing from the 200 GPU-h allowance.",
+            "recordedAt": "2026-08-25T10:45:00Z"
+        },
+        {
+            "jobId": "cc0fad09-0721-4a9e-b6e5-a05de7557c8d",
+            "experiment": "tidepool",
+            "substage": "s4.3",
+            "description": "s4.3 group-aware splits, attempt 2 (COMPLETE). Re-derived every s4.2 count and passed 110 of 110 reproduction assertions, settled the four s4.2 open questions (antidoom adapter, CodeFeedback re-keying, triple-level duplication, glaive parse failures), and enforced held-out prompt purity on top of group disjointness. Produced splits.jsonl.gz, the per-corpus flag id lists, the leakage audit and two figures.",
+            "resources": "CPU only (8 vCPU / 32 GB / 200 GB disk, gcp); no accelerator requested",
+            "durationHours": 0.29,
+            "spend": 0.0,
+            "status": "COMPLETE",
+            "note": "Wall clock about 17 minutes from 10:38:07Z; the platform recorded a start time but no end time, so the duration is the observed bracket rather than a reported figure. Zero GPU-hours because the job requested no accelerator, so it draws nothing from the 200 GPU-h allowance. Running total charged against the allowance across s4: 0.0 of 200 GPU-h.",
+            "recordedAt": "2026-08-25T10:58:00Z"
+        }
+    ]
 }

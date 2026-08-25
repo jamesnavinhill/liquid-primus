@@ -1,0 +1,142 @@
+{
+ "ifstruct": {
+  "hf_id": "LiquidAI/ifstruct-v1.0",
+  "config": "default",
+  "split": "test",
+  "rows": 2000,
+  "grams": 599717,
+  "unique_grams": 475096,
+  "prefer_fields": [
+   "prompt"
+  ],
+  "new_in_s4_3": false,
+  "seconds": 3.0
+ },
+ "ifeval": {
+  "hf_id": "google/IFEval",
+  "config": "default",
+  "split": "train",
+  "rows": 541,
+  "grams": 13627,
+  "unique_grams": 13299,
+  "prefer_fields": [
+   "prompt"
+  ],
+  "new_in_s4_3": false,
+  "seconds": 1.1
+ },
+ "ifbench": {
+  "hf_id": "allenai/IFBench_test",
+  "config": "default",
+  "split": "train",
+  "rows": 300,
+  "grams": 13169,
+  "unique_grams": 11914,
+  "prefer_fields": [
+   "prompt",
+   "instruction"
+  ],
+  "new_in_s4_3": false,
+  "seconds": 1.2
+ },
+ "ifbench_mt_if": {
+  "hf_id": "allenai/IFBench_multi-turn",
+  "config": "ifbench_constraints",
+  "split": "test",
+  "rows": 1387,
+  "grams": 407076,
+  "unique_grams": 141117,
+  "prefer_fields": [
+   "prompt",
+   "instruction"
+  ],
+  "new_in_s4_3": true,
+  "seconds": 2.3
+ },
+ "ifbench_mt_ie": {
+  "hf_id": "allenai/IFBench_multi-turn",
+  "config": "ifeval_constraints",
+  "split": "test",
+  "rows": 1774,
+  "grams": 536324,
+  "unique_grams": 150469,
+  "prefer_fields": [
+   "prompt",
+   "instruction"
+  ],
+  "new_in_s4_3": true,
+  "seconds": 2.4
+ },
+ "multi_if": {
+  "hf_id": "facebook/Multi-IF",
+  "config": "default",
+  "split": "train",
+  "rows": 4501,
+  "grams": 810324,
+  "unique_grams": 462995,
+  "prefer_fields": "all-long-strings",
+  "new_in_s4_3": false,
+  "seconds": 2.9
+ },
+ "humaneval": {
+  "hf_id": "openai/openai_humaneval",
+  "config": "openai_humaneval",
+  "split": "test",
+  "rows": 164,
+  "grams": 9160,
+  "unique_grams": 9116,
+  "prefer_fields": [
+   "prompt"
+  ],
+  "new_in_s4_3": false,
+  "seconds": 1.1
+ },
+ "mbpp_full": {
+  "hf_id": "google-research-datasets/mbpp",
+  "config": "full",
+  "split": "test",
+  "rows": 500,
+  "grams": 1496,
+  "unique_grams": 1486,
+  "prefer_fields": [
+   "text",
+   "prompt"
+  ],
+  "new_in_s4_3": false,
+  "seconds": 2.4
+ },
+ "mbpp_san": {
+  "hf_id": "google-research-datasets/mbpp",
+  "config": "sanitized",
+  "split": "test",
+  "rows": 257,
+  "grams": 1223,
+  "unique_grams": 1219,
+  "prefer_fields": [
+   "prompt",
+   "text"
+  ],
+  "new_in_s4_3": false,
+  "seconds": 2.1
+ },
+ "mmlu_pro": {
+  "hf_id": "TIGER-Lab/MMLU-Pro",
+  "config": "default",
+  "split": "test",
+  "rows": 12032,
+  "grams": 430621,
+  "unique_grams": 379696,
+  "prefer_fields": [
+   "question"
+  ],
+  "new_in_s4_3": false,
+  "seconds": 3.2
+ },
+ "bfcl_v3": {
+  "hf_id": "gorilla-llm/Berkeley-Function-Calling-Leaderboard",
+  "files": 25,
+  "rows": 5251,
+  "grams": 767633,
+  "unique_grams": 269206
+ }
+}

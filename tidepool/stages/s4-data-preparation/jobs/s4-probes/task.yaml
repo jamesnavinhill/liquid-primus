@@ -1,0 +1,16 @@
+name: s4-probes
+run: python main.py
+setup: |
+  pip install -q --upgrade numpy
+resources:
+  cpus: 8
+  memory: 48
+  disk_space: 100
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+parameters:
+  ngram_n: 13
+  # Set once s4.4 has uploaded its rendered training split. Without it the held-out
+  # status is asserted rather than measured, and the job says so loudly.
+  train_object: ""
+minutes_requested: 120

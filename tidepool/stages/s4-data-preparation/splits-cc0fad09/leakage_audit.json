@@ -1,0 +1,27 @@
+{
+ "before_enforcement": {
+  "prompts_appearing_in_more_than_one_split": 39161,
+  "triples_appearing_in_more_than_one_split": 24891,
+  "prompt_leak_rate": 0.049943,
+  "rows_by_split": {
+   "train": 942029,
+   "test": 52500,
+   "val": 52426
+  }
+ },
+ "enforcement": {
+  "dropped_straddling_heldout_rows": 42702,
+  "test_rows_demoted_to_val": 566
+ },
+ "after_enforcement": {
+  "rows_by_split": {
+   "train": 942029,
+   "test": 30516,
+   "val": 31708,
+   "drop": 42702
+  },
+  "prompts_shared_between_train_and_heldout": 0,
+  "prompts_shared_between_val_and_test": 0
+ },
+ "note": "A group-disjoint split can still straddle on prompts when the same prompt carries two different group keys, which is legitimate inside train and not legitimate across the held-out line. Counted here rather than assumed zero, then enforced: a straddling prompt keeps its train rows and its held-out rows are set aside as `drop`, and one straddling only val and test is demoted to val. The two zeros above are what the enforcement guarantees by construction and are re-checked below."
+}

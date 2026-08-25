@@ -1,23 +1,33 @@
 # Stage 4: Data preparation
 
-_Status: in progress (s4.1 and s4.2 complete on measured numbers; the s4.3 splits job is running)._
+_Status: in progress (s4.1, s4.2 and s4.3 complete on measured numbers; s4.4 preprocessing is
+authored and awaiting its job)._
 
 ## Headline
 
-The full-corpus scan came back clean over 1,047,820 rows in 11 corpora, and reading it
-changed four things that had been written from samples. The two text-to-SQL sets turn out to
-be nearly the same data: 75,985 of the smaller set's 78,577 questions also appear in the
-larger one, so 97% of it is a subset, and a per-corpus split would have put the same question
-on both sides of the divide through two different files. Benchmark contamination is low at
-799 rows in a million and concentrated in one place: 560 rows of the code corpus overlap
-HumanEval prompts, and they come out by id before anything trains. Two defects I had sized
-from samples measured at roughly half the estimate, and both stay in the pipeline at the
-smaller size. The mislabelled refusals got sharper: 1,942 of 1,968 rows in one refusal family
-answer a question the same corpus answers with a real call elsewhere, making that family
-98.7% self-contradictory, so it is dropped. Token counts fix one training setting the plan had
-left open, a sequence length of at least 4,096, because a tenth of the multi-turn rows
-truncate at 2,048 and they truncate exactly where the tool call sits. The defensible trainable
-mix stands at 68,405 rows against the 60,000 the gated set would have supplied.
+The splits are cut and the held-out sets are clean, and getting there caught a leak that a
+group-disjoint split cannot prevent on its own. Groups were kept whole and never divided, which
+is the standard guarantee, and the assignment still put **39,161 prompts on both sides of the
+train/held-out line**, a 4.99% leak rate, because one prompt can carry two different group keys.
+Those rows are now set aside rather than counted and shipped: 42,702 rows, 4.08% of the mix,
+almost all of it out of the held-out sets. The written manifest verifies zero prompts shared
+between train and held-out and zero between val and test. The mix splits 942,029 train /
+31,708 val / 30,516 test over 1,046,955 rows.
+
+Reading the corpora correctly this time also closed the four questions the earlier scan left
+open. Benchmark contamination is 25× larger than first reported, 20,166 rows rather than 799,
+and 96% of it sits in the general-quality corpus whose reader had previously found no prompt
+field at all. Duplication, measured on the question-toolset-answer triple rather than on the
+question alone, would remove 149,822 rows, 14.3% of the mix. The code corpus re-keys from 4
+unusable groups into 52,286, with the largest falling from 40.2% of the corpus to 3.7%. And
+every count the earlier scan recorded was re-derived and checked, 110 of 110 passing, after one
+failed attempt whose five failures were all definition drift between the two passes rather than
+disagreements about the data.
+
+One thing the split makes plain and the plan should absorb: the held-out sets are 59% general
+prompts and only 2,820 test rows of tool calling, which is the project's first priority. In-mix
+held-out numbers have to be reported per capability rather than pooled, and the tool-calling
+verdict has to rest on the external benchmarks and on the purpose-built probe sets.
 
 ## Operator input (no-checkpoint, 2026-08-25)
 
@@ -67,6 +77,15 @@ anything measured before it.
   antidoom adapter reads a `conversations` row where the old one returned an empty string,
   the code key is stable when an unrelated import is added, the split rule is deterministic
   and group-disjoint, and a deliberately oversized group is routed wholesale to train.
+- 2026-08-25 · mirror · Project state through `s4.2` pushed to
+  `github.com/jamesnavinhill/liquid-primus` under `tidepool/`, per the standing operator note
+  to mirror code and docs there as they land. Commit `61d65e0`: the overview, the checklist,
+  the initial prompt, the compute ledger, the stage reports for `s0` through `s4`, the research
+  plan, the reader brief, the 16 diagnostics artifacts verbatim, and the code of both queued
+  jobs exactly as submitted. Two things are deliberately left out and said so in the mirror's
+  own readme: the roughly 230 converted paper full texts and the per-paper reading notes, since
+  republishing third-party full texts is not a call this stage should make on its own. Weights
+  and quantized builds have the Hugging Face half of that note and do not exist yet.
 
 ## s4.1 Access, licenses, schemas
 
@@ -291,12 +310,28 @@ row counts.
 **The mislabelled over-refusals in `Synth-APIGen-v0.1` are real, and sharper than the
 sample suggested.** 6,000 rows refuse. They split into three families by exact string:
 2,068 `no_tools` (honest: the toolset is empty), 1,968 `missing_params`, and 1,964 `other`.
-Of the `missing_params` family, **1,942 of 1,968 — 98.7% — fail the contradiction test**: the
-same query appears elsewhere in the corpus answered with a call. A family that is
-98.7% self-contradictory is not a labelling edge case, and training on it teaches exactly the
-over-refusal the project has a pre-registered false-flag ceiling of 0.15 on. Those 1,942 rows
-are dropped. The `no_tools` family is kept and is valuable: it is honest abstention, which is
-the behaviour `H3` is trying to buy.
+The `missing_params` family is exactly the set of refusals that name a tool their own toolset
+declares — `refusal_with_target_declared` is 1,968, the same number — so every one of them
+declines to call a function it was offered. Of those, **1,942 name a function requiring two
+or fewer arguments**, which is a refusal citing missing parameters against a call that needs
+at most two of them.
+
+Two things that reading kept blurred together, and they are separate measurements. The
+`required <= 2` gate is a plausibility test on the individual row. The contradiction test is
+a corpus-level one, and it says something different: **5,999 of APIGen's 43,103 distinct
+questions — 13.9% — appear somewhere with a refusal and somewhere with a real call.** An
+earlier draft of this section reported the 1,942-of-1,968 ratio as if it were the
+contradiction result. It is not; the two tests were never intersected.
+
+`s4.3` flags both conditions independently on every row, so the intersection is available for
+the first time, and it is the number that should carry the drop: a row that both refuses
+against an easily-callable tool *and* has its own question answered with a call elsewhere is
+mislabelled on two independent readings. `s4.4` drops on the flag rather than on the ratio,
+and the intersection is reported next to each condition alone. Training on these teaches
+exactly the over-refusal the project has a pre-registered false-flag ceiling of 0.15 on.
+
+The `no_tools` family is kept and is valuable: it is honest abstention, which is the
+behaviour `H3` is trying to buy.
 
 The flagged row ids themselves did get written. The job saved twelve id lists (one per
 corpus, plus a combined index) holding every contaminated row, every row whose call names an
@@ -376,7 +411,7 @@ with a 394-token schema block.
 | ---- | ---: |
 | Tool and structured-output rows, raw | 72,280 |
 | Drop the duplicated Hermes config | −1,893 |
-| Drop the 1,942 self-contradictory over-refusals | −1,942 |
+| Drop the 1,942 suspect over-refusals | −1,942 |
 | Drop the 40 contaminated tool rows | −40 |
 | **Defensible trainable total** | **68,405** |
 
@@ -406,11 +441,20 @@ stage will not narrow that from a sample.
 - The s4.2 flagged id lists are recorded at the job's eval-results prefix. They are visible in
   `lab --format json job info e92de716 -e tidepool` under `job_data.eval_results` (twelve
   files) and are not served by `lab job download`, which reads the artifacts prefix only.
+- In a browser: the compute backend's own console at <https://app.lab.cloud>, workspace
+  `69347550-a587-440b-869f-61575113f1d0`, experiment `tidepool`. Every job this project
+  queues appears there under its short id with live status, its logs, and its charts, so the
+  numbers quoted in this report can be read off the source rather than taken on trust. The
+  two job ids to look for so far are `e92de716` (s4.2 diagnostics) and `7d70b957` (s4.3
+  splits).
 
 ## s4.3 Splits
 
-_Job `7d70b957` running. Everything below is design and rationale; no measured split numbers
-are recorded until the job completes and its assertions pass._
+_Measured. Job `cc0fad09` (COMPLETE, CPU only, ~17 min, 0 GPU-hours) passed **110 of 110**
+`s4.2` reproduction assertions and both held-out purity checks. Attempt 1, job `7d70b957`,
+failed five of those assertions on definitional drift and is superseded; nothing from it is
+cited. Artifacts are in `splits-cc0fad09/`, and the manifest is in shared storage at
+`tidepool/s4.3/splits.jsonl.gz` (20.3 MB, one line per row)._
 
 The split is group-disjoint, deterministic and size-aware. Groups are ordered by a seeded
 hash of the group key, then walked to fill test to its row target, then val, then train, so
@@ -472,6 +516,112 @@ nothing downstream can cite splits built on counts that did not reproduce. Group
 prompt counts for the two re-keyed corpora are marked superseded rather than checked, and the
 glaive parse-failure count is reported rather than asserted, since the recovery pass is
 expected to move it.
+### Measured — the split, and what it cost to keep held-out clean
+
+1,046,955 rows across 8 namespaces:
+
+| | train | val | test | set aside |
+| --- | ---: | ---: | ---: | ---: |
+| rows | 942,029 | 31,708 | 30,516 | 42,702 |
+| share | 89.98% | 3.03% | 2.91% | 4.08% |
+
+The group-disjoint assignment alone landed on 90/5/5, at 52,426 val and 52,500 test. Then the
+purity check ran, and it is the number this substage exists to have produced: **39,161 prompts
+appeared in more than one split**, a 4.99% prompt leak rate, alongside 24,891 straddling
+triples. A group-disjoint split can do that legitimately, because the same prompt can carry two
+different group keys and land on both sides. Inside train it is harmless. Across the held-out
+line it is the leak the stage was built to prevent, and counting it without acting on it would
+have been recording a known contamination and shipping it anyway.
+
+So it is enforced: a straddling prompt keeps its train rows and its held-out rows are set aside,
+and 566 test rows whose prompts straddled only val and test were demoted to val so the two stay
+mutually disjoint. That costs 42,702 rows, 4.08% of the mix, and it comes almost entirely out of
+the held-out sets rather than out of train. The re-check on the written manifest reports **0
+prompts shared between train and held-out and 0 shared between val and test**, which is what the
+enforcement guarantees by construction and is verified rather than assumed.
+
+| corpus | rows | train | val | test | set aside |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| toolace | 11,300 | 10,170 | 561 | 557 | 12 |
+| apigen | 49,402 | 44,460 | 1,979 | 2,028 | 935 |
+| hermes_fc | 1,893 | 1,703 | 95 | 95 | 0 |
+| hermes_fc_st | 1,893 | 1,703 | 95 | 95 | 0 |
+| hermes_glaive | 4,344 | 3,908 | 47 | 45 | 344 |
+| hermes_json_ag | 1,342 | 1,199 | 60 | 83 | 0 |
+| hermes_json_st | 1,241 | 1,123 | 70 | 48 | 0 |
+| sql_ctx | 78,577 | 69,069 | 299 | 175 | 9,034 |
+| sql_clinton | 262,208 | 237,563 | 3,236 | 2,649 | 18,760 |
+| codefeedback | 156,526 | 140,726 | 6,607 | 6,656 | 2,537 |
+| antidoom | 478,229 | 430,405 | 18,659 | 18,085 | 11,080 |
+
+`sql_ctx` keeps 78,577 training rows and contributes 474 held-out rows, because 75,985 of its
+questions also appear in Clinton and the purity rule sends every straddling pair's held-out side
+away. The joint `sql` namespace still yields 3,535 val and 2,824 test rows, so the capability is
+evaluated; it is evaluated on Clinton's phrasing.
+
+### Measured — held-out is dominated by the general-quality corpus
+
+Splitting the held-out sets by what they test, which the split rule never did because it works
+on groups rather than roles:
+
+| role | val | test |
+| --- | ---: | ---: |
+| tool calling | 2,777 | 2,820 |
+| structured output | 130 | 131 |
+| SQL | 3,535 | 2,824 |
+| code | 6,607 | 6,656 |
+| general prompts | 18,659 | 18,085 |
+
+The project's first priority has the second-smallest held-out slice, and structured output has
+131 test rows. Two consequences, both for `s6` rather than for this stage. In-mix held-out
+numbers must be reported per role and never pooled, since a pooled figure would be 59% a
+corpus whose job is to detect regression rather than to measure tool calling. And the real
+tool-calling verdict has to come from the external benchmarks, which is what BFCL, IFStruct and
+the IFBench family are indexed for. `s4.4`'s probe sets are built for the same reason: the
+in-mix held-out tool slice is too small and too easy to carry the claim on its own.
+
+### Measured — the four `s4.2` open questions, closed
+
+**`antidoom` contamination is real and it is the largest in the mix.** Read correctly, 20,166 of
+478,229 prompts share a 13-gram with a benchmark, 4.22% of the corpus and 96% of all
+contamination found anywhere. `s4.2` reported 0, entirely because its reader found no prompt
+field. The corpus draws on 20 upstream sources, MIT for 299,211 rows and Apache-2.0 for 179,018,
+and every row carries a `heldout_policy` string naming what it must not be evaluated against:
+50,000 MMLU rows say to use `auxiliary_train` only, 20,000 IFStruct rows say to reserve the
+`test__*` taxonomies, and the GSM8K and MATH slices each reserve their test splits. Those
+policies agree with the decontamination index rather than contradicting it, which is the useful
+finding: the contamination is upstream drift, not a policy being ignored.
+
+**`CodeFeedback` re-keys cleanly.** 52,286 groups where `resource` gave 4, and the largest group
+is `bare:python` at 3.72% of the corpus where the old largest was 40.2%. 142,097 rows key on an
+actual API symbol, 12,036 fall back to the bare language, and 2,393 to a symbol the answer
+defines. The corpus touches 3,601 distinct modules and 194,473 distinct called symbols, headed
+by numpy, re, math, random and java. A key on what a row does with which technology, which is
+the axis the operator asked the fleet to specialize along.
+
+**Duplication, on the triple rather than the prompt.** 1,046,955 rows carry 897,133 distinct
+`(prompt, toolset, answer)` triples: 277,906 rows sit in 128,084 duplicate groups, and exact
+triple dedup would remove **149,822 rows**, 14.3% of the mix. Prompt-level duplication is much
+larger at 262,847 rows over 784,108 distinct prompts, and the gap between the two is exactly the
+variation the mix is supposed to carry, the same question asked against a different toolset or
+answered in a different language. `s4.2` could only bound this between 58,000 and 68,405 rows
+and said so. Cross-corpus prompt sharing is concentrated in two pairs, `sql_clinton | sql_ctx`
+at 75,985 and `antidoom | codefeedback` at 28,210, with the Hermes config pair at 1,161 and
+exactly two other pairs in the whole mix.
+
+**The 865 glaive parse failures reproduce exactly** and are categorized by row shape in
+`extras.json`; whether they are recovered or dropped is `s4.4`'s call and is scoped there.
+`sql_clinton` contributes 2 further parse failures, which is the whole of the rest of the mix.
+
+### Measured — the reproduction check
+
+110 checks, 0 hard failures. Every `s4.2` count that could be re-derived was: row counts,
+contamination, mismatch rows, refusal rows, suspect over-refusals, same-query contradictions and
+non-identifier call names, per corpus. Getting there took one failed attempt and five definition
+alignments, written up below. Three quantities are now reported under two readings, the `s4.2`
+one that the assertion checks and a broader one recorded as a new measurement, so neither
+definition is silently lost.
+
 ## Next steps
 
 - `s4.3` group-aware splits, materialized by one job that also clears the four items `s4.2`
@@ -480,6 +630,192 @@ expected to move it.
   dedup rule on a measured basis, and the 865 Hermes glaive parse failures.
 - `s4.4` preprocessing: canonicalize the five ToolACE serializations and the `dict`/`object`
   type divergence, normalize the 8,626 non-identifier call names, drop the 1,942
-  self-contradictory refusals and the 799 contaminated rows by id, and drop the 121 rows whose
+  suspect over-refusals and the 799 contaminated rows by id, and drop the 121 rows whose
   calls name an absent tool. The whitespace repair pass is removed, having measured at zero.
 - `s4.5` data card, then autonomous sign-off.
+
+### Work log — 2026-08-25, the recompute caught a definition drift, not a data problem
+
+Job `7d70b957` re-derives all six of the `s4.2` counts it asserts against, and while it was
+still running the per-corpus log showed four of them landing on different numbers. Reading
+both jobs side by side, every one of the four is a definition that moved between the two
+runs. None is a disagreement about the data.
+
+| Count | `s4.2` | first `s4.3` pass | why they differ |
+| ----- | -----: | ----------------: | --------------- |
+| ToolACE calls naming an absent tool | 113 rows | 87 rows | `s4.2` took the declared set as the union of the adapter's name list and the parsed schema objects. `s4.3` read the schema objects alone, so the 369 ToolACE rows whose schema is YAML, XML, markdown or LaTeX have no parsed objects, read as having declared nothing, and were skipped. |
+| APIGen suspect over-refusals | 1,942 | 1,968 | `s4.2` only called a refusal suspect when the tool it named required two or fewer arguments, on the reasoning that a refusal is only suspicious when the call was plausibly makeable. `s4.3` dropped the gate. |
+| ToolACE same-query contradictions | 0 | 159 | `s4.2` ran the test on APIGen alone. Its zero everywhere else is an absence of measurement, not a measured zero. |
+| APIGen same-query contradictions | 5,999 | 12,046 | `s4.2` counted contradicting *queries*; `s4.3` counted the *rows* under them, about two per query. |
+
+Row counts, refusal counts, contamination counts and the non-identifier call-name count all
+reproduced exactly, which is what makes the four stand out as definitional.
+
+Each is now realigned to the `s4.2` definition, so the assertion tests reproduction rather
+than testing whether two slightly different questions give the same answer. Where the newer
+reading is the more useful measurement, both are recorded: `tool_name_mismatch_rows` beside
+`tool_name_mismatch_rows_named_only`, `suspect_over_refusals` beside
+`target_present_on_refusal`, `label_contradictions_same_query` beside
+`label_contradiction_rows`. The contradiction assertion is now scoped to APIGen and marked
+`NEW` for every other corpus, since there is no earlier number there to reproduce.
+
+Two smaller fixes went in with them. `FLAG_CONTRA` was defined but never applied to any row:
+the contradiction verdict is only knowable once a whole corpus has been read, and the
+per-row records were built before that, so the bit is now stamped on in the post-pass for
+both the ordinary and the re-keyed corpora. And the drop set for `s4.4` is fixed as
+`FLAG_SUSPECT`, the gated 1,942, matching the trainable-volume table above rather than the
+broader 5,999-query contradiction set.
+
+The first pass is left unpublished. Its split shapes were healthy — a clean 90/5/5 in every
+namespace, with the two known overlapping corpus pairs forced whole to train — but a job
+whose assertions fail cannot be the source of a number this project cites, so the run is
+discarded and the corrected job requeued. Both passes are CPU-only and charge nothing
+against the GPU allowance.
+
+### Work log — 2026-08-25, held-out purity is now enforced, not just counted
+
+The discarded pass also settled a question the design section had left open, and the answer
+was worth acting on before requeueing. A group-disjoint split is not a prompt-disjoint
+split. The same question recurs in the mix against a different toolset, which is a different
+group key and a legitimately different training example, so nothing in the group rule stops
+it landing on both sides of the line. The first pass counted how often that happened and
+reported it. Counting is the right thing to do inside `train`, where the recurrence is the
+useful variation the corpus was built to carry. It is the wrong thing to do across the
+held-out line, where a model that memorized the question during training would score on it
+at eval without ever having read the schema.
+
+So the split now runs in two passes. The group-disjoint assignment is made first and kept
+verbatim on every row as `s0`. Then any prompt found on both sides of the line keeps its
+`train` rows and has its `val` and `test` rows set aside under a `drop` label; a prompt
+straddling only `val` and `test` is demoted wholly to `val`. The straddling rows are not
+moved into `train`, which would import held-out-shaped examples into the training mix; they
+are simply not used. The cost falls entirely on the held-out sets, which is the right place
+for it, since eval integrity is worth more here than eval size.
+
+The guarantee is then re-derived from the written assignment rather than asserted from the
+code that produced it, and two counts — prompts shared between `train` and either held-out
+set, and prompts shared between `val` and `test` — must both come back zero or the job
+fails alongside the reproduction assertions. Keeping `s0` next to the enforced label means
+`s4.4` can still see what the group rule alone decided, and the before-and-after row counts
+are both reported, so the price of the enforcement is visible rather than absorbed.
+
+One measurement to expect from the corrected run that `s4.2` could not make: contamination
+in `antidoom`. `s4.2` recorded zero there, but only because its adapter returned no prompt
+text for that corpus, so no n-grams were harvested and nothing could match. The new adapter
+reads the conversation properly, which means `antidoom` is checked against the benchmark
+index for the first time. Whatever it returns is a new number, not a change to an old one.
+
+Attempt 2 is job `cc0fad09-0721-4a9e-b6e5-a05de7557c8d`, same CPU-only shape, nothing
+charged against the GPU allowance.
+
+## s4.4 Preprocessing — design
+
+_Written while `s4.3` runs. The decisions below are settled; the counts they operate on come
+from `s4.3` and are filled in once that job passes._
+
+### What gets canonicalized, and what deliberately does not
+
+`s4.2` found five different serializations of the same tool contract inside ToolACE alone:
+JSON for 10,552 rows, then a YAML-ish block, markdown, a LaTeX `tabular`, and an XML-ish
+form for another 369, with 379 unclassified. The obvious move is to rewrite them all into
+one shape. The pipeline does not do that, because reading a tool contract in whatever shape
+it arrives is a capability this project wants rather than noise it wants gone. **The prompt
+keeps its native serialization.**
+
+What is canonicalized is everything downstream of reading it. All five forms are parsed into
+one internal schema, that schema is what the absent-tool and name-agreement checks run
+against, and the training *target* is rendered in a single form regardless of how the
+contract arrived. The model therefore sees five input shapes and learns one output shape,
+which is the asymmetry the gateway actually needs.
+
+The `dict`/`object` divergence is handled in the same internal schema: `dict` becomes
+`object`, `list` and `tuple` become `array`, `str` becomes `string`, `int` becomes
+`integer`, `float` and `double` become `number`, `bool` becomes `boolean`. The mapping is
+recorded and the type vocabulary is re-counted afterwards, so a type the mapping missed
+shows up as a survivor rather than passing silently.
+
+### The canonical call target is JSON, and why
+
+The target is a JSON object naming the function and its arguments, inside a `tool_call`
+delimiter. Two reasons, in order.
+
+The operator's standing instruction is to specialize to the underlying technologies — JSON
+schemas, MCP, IPC — rather than to any one vendor's SDK. A JSON call object is what MCP
+carries on the wire and what almost every inference stack parses, so training the target in
+that shape specializes to the protocol. A pythonic bracket form, which is how 10,013 of
+ToolACE's assistant turns are written, is a benchmark's scoring convention rather than a
+protocol.
+
+Second, it is the shape the eval can adapt *to* rather than *from*. BFCL scores several
+categories by parsing a pythonic abstract syntax tree; converting a well-formed JSON call
+into that form is mechanical and lossless, and the `s6` harness does it. Converting a
+pythonic string back into typed JSON arguments is the lossy direction, and doing it at
+training time would bake every parse ambiguity into the labels.
+
+The cost is that ToolACE's pythonic argument strings must be parsed into typed arguments
+once, at preprocessing, rather than never. `s4.2`'s adapter only counted arguments; the
+pipeline needs their names and values. Any row whose argument string does not parse is
+dropped rather than guessed at, and the drop count is reported per corpus.
+
+### Names
+
+**8,626 of ToolACE's 18,371 calls name functions no parser will accept** — `Market Trends
+API`, `Get Cars Information`. Normalization lowercases, replaces every run of characters
+outside `[a-z0-9_]` with a single underscore, strips the edges, and prefixes `fn_` to
+anything starting with a digit; collisions inside one toolset get a numeric suffix. The
+declaration and the call are rewritten with the *same* map in the same pass, so a call that
+matched its declaration before still matches after. The full map ships in the data card.
+
+### The drop set, by flag rather than by re-derivation
+
+`s4.3` writes one flag byte per row, so the pipeline drops by reading bits rather than by
+recomputing tests a third time.
+
+| Flag | Meaning | Action |
+| ---- | ------- | ------ |
+| contaminated | shares a 13-gram with a benchmark prompt | drop, every split |
+| tool-name mismatch | calls a tool its own toolset never declared | drop |
+| suspect over-refusal | refuses while naming a tool it could plausibly have called | drop **only with** contradiction |
+| same-query contradiction | the same question answered two ways across the corpus | keep alone, drop **with** suspect |
+| adapter parse failure | the reader got nothing usable out of the row | recover, else drop |
+| held-out purity | prompt straddled the train/held-out line | already set aside by `s4.3` |
+
+Two of those rows read together rather than separately, which is a change from the first
+draft of this section. Either flag alone is weak evidence. A refusal that names a callable
+tool can still be the right answer for reasons the declared schema does not show, and a
+question carrying both labels can be two legitimately different requests that happen to
+share a prompt string. A row carrying both is a corpus contradicting itself about a call it
+could have made, which is the exact failure this project exists to fix and is the one thing
+that must not be trained on. So the drop rule is the conjunction, and the count for each
+condition alone is reported beside it.
+
+**Measured, from the `s4.3` manifest.** The flag bits are set on 20,965 contaminated rows,
+12,205 contradiction rows, 1,942 suspect over-refusals, 121 tool-name mismatches and 2 adapter
+parse failures. The intersection the rule turns on is **1,942**, which is every suspect row:
+each of them also carries the contradiction flag, so the conjunction and the suspect flag alone
+select exactly the same rows on this data. The conjunction is still the rule that ships, because
+it is the one that states what makes those rows wrong, and a later corpus where the two
+conditions come apart will be dropped correctly rather than by a coincidence that held once.
+Contradiction alone covers 10,263 further rows and those are kept.
+
+Contradiction alone is kept deliberately. Once the unjustified refusals are gone, a question
+answered differently against a different toolset is the variation the corpus exists to
+carry, and collapsing it would delete APIGen's most useful signal.
+
+### Deduplication
+
+`s4.2` could only count duplicate *prompts* and said so. `s4.3` counts duplicate
+`(prompt, toolset, answer)` triples, which is the quantity a dedup rule should act on: the
+same question against a different toolset with a different answer is two examples, not one.
+The rule is to keep one row per triple, chosen by lowest row id so the choice is
+reproducible, and the removed count is reported against the `s4.2` prompt-level bracket of
+58,000 to 68,405 so it is visible whether the truth landed inside it.
+
+### The `glaive` recovery
+
+865 of 5,209 rows in the Hermes `glaive_func_calling` config return nothing from the reader.
+`s4.3` reports the shape of those rows — which turn roles are present, whether a schema
+appears in the system turn, whether a `tool_call` wrapper appears anywhere. The pipeline
+writes one recovery path against whatever that report shows and drops what it cannot
+recover, with both counts reported. Nothing is counted as trainable on the strength of a
+reader that returned nothing.

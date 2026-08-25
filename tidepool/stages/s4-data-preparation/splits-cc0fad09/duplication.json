@@ -1,0 +1,96 @@
+{
+ "definition": "triple = (normalized prompt, toolset signature, normalized answer surface)",
+ "rows": 1046955,
+ "distinct_triples": 897133,
+ "duplicate_triple_groups": 128084,
+ "duplicate_triple_rows": 277906,
+ "rows_removed_by_exact_triple_dedup": 149822,
+ "distinct_prompts": 784108,
+ "duplicate_prompt_rows": 262847,
+ "cross_corpus_prompt_pairs": {
+  "sql_clinton | sql_ctx": 75985,
+  "antidoom | codefeedback": 28210,
+  "hermes_fc | hermes_fc_st": 1161,
+  "antidoom | apigen": 1,
+  "antidoom | sql_ctx": 1
+ },
+ "per_corpus": {
+  "toolace": {
+   "rows": 11300,
+   "distinct_triples": 11284,
+   "duplicate_triple_rows": 32,
+   "removed_by_exact_triple_dedup": 16,
+   "distinct_prompts": 11165
+  },
+  "apigen": {
+   "rows": 49402,
+   "distinct_triples": 49399,
+   "duplicate_triple_rows": 6,
+   "removed_by_exact_triple_dedup": 3,
+   "distinct_prompts": 43103
+  },
+  "hermes_fc": {
+   "rows": 1893,
+   "distinct_triples": 1893,
+   "duplicate_triple_rows": 0,
+   "removed_by_exact_triple_dedup": 0,
+   "distinct_prompts": 1161
+  },
+  "hermes_fc_st": {
+   "rows": 1893,
+   "distinct_triples": 1893,
+   "duplicate_triple_rows": 0,
+   "removed_by_exact_triple_dedup": 0,
+   "distinct_prompts": 1161
+  },
+  "hermes_glaive": {
+   "rows": 4344,
+   "distinct_triples": 3952,
+   "duplicate_triple_rows": 621,
+   "removed_by_exact_triple_dedup": 392,
+   "distinct_prompts": 1192
+  },
+  "hermes_json_ag": {
+   "rows": 1342,
+   "distinct_triples": 1300,
+   "duplicate_triple_rows": 84,
+   "removed_by_exact_triple_dedup": 42,
+   "distinct_prompts": 1300
+  },
+  "hermes_json_st": {
+   "rows": 1241,
+   "distinct_triples": 1241,
+   "duplicate_triple_rows": 0,
+   "removed_by_exact_triple_dedup": 0,
+   "distinct_prompts": 1241
+  },
+  "sql_ctx": {
+   "rows": 78577,
+   "distinct_triples": 78574,
+   "duplicate_triple_rows": 6,
+   "removed_by_exact_triple_dedup": 3,
+   "distinct_prompts": 78251
+  },
+  "sql_clinton": {
+   "rows": 262208,
+   "distinct_triples": 257712,
+   "duplicate_triple_rows": 8885,
+   "removed_by_exact_triple_dedup": 4496,
+   "distinct_prompts": 183041
+  },
+  "antidoom": {
+   "rows": 478229,
+   "distinct_triples": 424125,
+   "duplicate_triple_rows": 91680,
+   "removed_by_exact_triple_dedup": 54104,
+   "distinct_prompts": 424125
+  },
+  "codefeedback": {
+   "rows": 156526,
+   "distinct_triples": 143825,
+   "duplicate_triple_rows": 24421,
+   "removed_by_exact_triple_dedup": 12701,
+   "distinct_prompts": 143726
+  }
+ }
+}

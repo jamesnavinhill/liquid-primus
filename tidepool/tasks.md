@@ -34,8 +34,8 @@ Active stage: s4
 ## s4 - Data preparation
 - [x] s4.1 Acquire / validate dataset access
 - [x] s4.2 EDA: distributions, missingness, leakage risks
-- [~] s4.3 Build splits (group-aware / time-based)
-- [ ] s4.4 Preprocessing pipeline
+- [x] s4.3 Build splits (group-aware / time-based)
+- [~] s4.4 Preprocessing pipeline
 - [ ] s4.5 Data card + sign-off  (checkpoint)
 
 ## s5 - Experimentation

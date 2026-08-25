@@ -1,0 +1,102 @@
+{
+ "antidoom": {
+  "upstream_sources": {
+   "pubmed_qa/pqa_artificial": 50000,
+   "cais/mmlu/all": 50000,
+   "meta-math/MetaMathQA/None": 50000,
+   "Post-training-Data-Flywheel/AutoIF-instruct-61k/None": 49995,
+   "theblackcat102/evol-codealpaca-v1/None": 49981,
+   "mlabonne/ultrachat_200k_sft/None": 49958,
+   "openbmb/UltraInteract_sft/None": 49540,
+   "mlabonne/lmsys-arena-human-preference-55k-sharegpt/None": 49206,
+   "allenai/math_qa/default": 29836,
+   "LiquidAI/ifstruct_generated/None": 20000,
+   "tau/commonsense_qa/default": 9741,
+   "openai/gsm8k/main": 7473,
+   "codeparrot/apps/None": 5000,
+   "DigitalLearningGmbH/MATH-lighteval/algebra": 1744,
+   "DigitalLearningGmbH/MATH-lighteval/intermediate_algebra": 1295,
+   "DigitalLearningGmbH/MATH-lighteval/prealgebra": 1205,
+   "DigitalLearningGmbH/MATH-lighteval/number_theory": 869,
+   "DigitalLearningGmbH/MATH-lighteval/geometry": 869,
+   "DigitalLearningGmbH/MATH-lighteval/counting_and_probability": 771,
+   "DigitalLearningGmbH/MATH-lighteval/precalculus": 746
+  },
+  "n_upstream_sources": 20,
+  "heldout_policies": {
+   "General instruction-tuning mix, not treated as held-out eval. Exclude component sources with known upstream held-out prompt overlap. Preserve component source and license metadata ": 298680,
+   "Prefer artificial train for volume; avoid public labeled eval rows if reporting PubMedQA.": 50000,
+   "Use auxiliary_train only; keep MMLU/MMLU-Pro validation and test for eval.": 50000,
+   "Use train split only; keep validation/test for eval.": 39577,
+   "Generated from IFStruct train taxonomies only; reserve test__* taxonomies for eval.": 20000,
+   "Use train split only; keep test-derived MATH/MATH-500 slices for eval.": 7499,
+   "Use train split only; keep GSM8K test for eval.": 7473,
+   "Use train split only; keep test split for eval if used.": 5000
+  },
+  "licenses": {
+   "mit": 299211,
+   "apache-2.0": 179018
+  }
+ },
+ "codefeedback": {
+  "key_tiers": {
+   "api": 142097,
+   "bare": 12036,
+   "defined": 2393
+  },
+  "n_groups": 52286,
+  "largest_group_share": 0.03719,
+  "largest_groups": {
+   "bare:python": 5821,
+   "bare:sql": 2162,
+   "bare:shell": 1350,
+   "api:python|print": 1282,
+   "api:python|range": 1211,
+   "api:sql|count": 725,
+   "api:sql|avg": 701,
+   "bare:html": 627,
+   "api:python|is_prime": 478,
+   "api:sql|curdate": 446,
+   "api:python|factorial": 420,
+   "bare:css": 379,
+   "api:python|fibonacci": 358,
+   "api:python|bubble_sort": 329,
+   "api:python|len": 303
+  },
+  "s42_key": "resource (4 groups, largest 40.2%)",
+  "distinct_modules": 3601,
+  "distinct_called_symbols": 194473,
+  "top_modules": {
+   "numpy": 4588,
+   "re": 4519,
+   "math": 3962,
+   "random": 3615,
+   "java": 3432,
+   "iostream": 2955,
+   "pandas": 2817,
+   "typing": 2807,
+   "sklearn": 2637,
+   "string": 2455,
+   "collections": 2149,
+   "matplotlib": 1743,
+   "json": 1536,
+   "os": 1461,
+   "datetime": 1424,
+   "requests": 1375,
+   "system": 1284,
+   "time": 1252,
+   "vector": 1197,
+   "namespace": 1117,
+   "stdio": 988,
+   "tensorflow": 953,
+   "torch": 827,
+   "bs4": 748,
+   "itertools": 696,
+   "react": 650,
+   "sys": 606,
+   "seaborn": 583,
+   "nltk": 521,
+   "scipy": 520
+  }
+ }
+}

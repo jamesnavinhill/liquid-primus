@@ -1,0 +1,800 @@
+{
+ "hard_fields": [
+  "rows",
+  "tool_name_mismatch_rows",
+  "refusal_rows",
+  "suspect_over_refusals",
+  "label_contradictions_same_query",
+  "calls_with_non_identifier_names"
+ ],
+ "failures": [],
+ "checks": [
+  {
+   "corpus": "toolace",
+   "field": "rows",
+   "s42": 11300,
+   "s43": 11300,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "contaminated_rows",
+   "s42": 4,
+   "s43": 4,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "tool_name_mismatch_rows",
+   "s42": 113,
+   "s43": 113,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "refusal_rows",
+   "s42": 1928,
+   "s43": 1928,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 79,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "toolace",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "calls_with_non_identifier_names",
+   "s42": 8626,
+   "s43": 8626,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "n_groups",
+   "s42": 10394,
+   "s43": 10394,
+   "status": "OK"
+  },
+  {
+   "corpus": "toolace",
+   "field": "distinct_prompts",
+   "s42": 11165,
+   "s43": 11165,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "rows",
+   "s42": 49402,
+   "s43": 49402,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "contaminated_rows",
+   "s42": 36,
+   "s43": 36,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "tool_name_mismatch_rows",
+   "s42": 5,
+   "s43": 5,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "refusal_rows",
+   "s42": 6000,
+   "s43": 6000,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "suspect_over_refusals",
+   "s42": 1942,
+   "s43": 1942,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "label_contradictions_same_query",
+   "s42": 5999,
+   "s43": 5999,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "n_groups",
+   "s42": 45617,
+   "s43": 45617,
+   "status": "OK"
+  },
+  {
+   "corpus": "apigen",
+   "field": "distinct_prompts",
+   "s42": 43103,
+   "s43": 43103,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "rows",
+   "s42": 1893,
+   "s43": 1893,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "n_groups",
+   "s42": 1108,
+   "s43": 1108,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc",
+   "field": "distinct_prompts",
+   "s42": 1161,
+   "s43": 1161,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "rows",
+   "s42": 1893,
+   "s43": 1893,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "n_groups",
+   "s42": 1108,
+   "s43": 1108,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_fc_st",
+   "field": "distinct_prompts",
+   "s42": 1161,
+   "s43": 1161,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "rows",
+   "s42": 5209,
+   "s43": 5209,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "tool_name_mismatch_rows",
+   "s42": 3,
+   "s43": 3,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "adapter_parse_failures",
+   "s42": 865,
+   "s43": 865,
+   "status": "REPORTED",
+   "reason": "recovery pass may change this"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "n_groups",
+   "s42": 3406,
+   "s43": 3406,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_glaive",
+   "field": "distinct_prompts",
+   "s42": 1192,
+   "s43": 1192,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "rows",
+   "s42": 1342,
+   "s43": 1342,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "n_groups",
+   "s42": 834,
+   "s43": 834,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_ag",
+   "field": "distinct_prompts",
+   "s42": 1300,
+   "s43": 1300,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "rows",
+   "s42": 1241,
+   "s43": 1241,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "n_groups",
+   "s42": 1238,
+   "s43": 1238,
+   "status": "OK"
+  },
+  {
+   "corpus": "hermes_json_st",
+   "field": "distinct_prompts",
+   "s42": 1241,
+   "s43": 1241,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "rows",
+   "s42": 78577,
+   "s43": 78577,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "n_groups",
+   "s42": 72942,
+   "s43": 72942,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_ctx",
+   "field": "distinct_prompts",
+   "s42": 78251,
+   "s43": 78251,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "rows",
+   "s42": 262208,
+   "s43": 262208,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 2,
+   "status": "DRIFT"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "n_groups",
+   "s42": 154976,
+   "s43": 154976,
+   "status": "OK"
+  },
+  {
+   "corpus": "sql_clinton",
+   "field": "distinct_prompts",
+   "s42": 183041,
+   "s43": 183040,
+   "status": "DRIFT"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "rows",
+   "s42": 156526,
+   "s43": 156526,
+   "status": "OK"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "contaminated_rows",
+   "s42": 759,
+   "s43": 759,
+   "status": "SUPERSEDED",
+   "reason": "group key or prompt surface changed by design in s4.3"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "n_groups",
+   "s42": 4,
+   "s43": null,
+   "status": "SUPERSEDED",
+   "reason": "group key or prompt surface changed by design in s4.3"
+  },
+  {
+   "corpus": "codefeedback",
+   "field": "distinct_prompts",
+   "s42": 143726,
+   "s43": 143726,
+   "status": "SUPERSEDED",
+   "reason": "group key or prompt surface changed by design in s4.3"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "rows",
+   "s42": 478229,
+   "s43": 478229,
+   "status": "OK"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "contaminated_rows",
+   "s42": 0,
+   "s43": 20166,
+   "status": "SUPERSEDED",
+   "reason": "group key or prompt surface changed by design in s4.3"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "tool_name_mismatch_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "refusal_rows",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "suspect_over_refusals",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "label_contradictions_same_query",
+   "s42": 0,
+   "s43": 0,
+   "status": "NEW",
+   "reason": "s4.2 ran this test on apigen only"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "adapter_parse_failures",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "calls_with_non_identifier_names",
+   "s42": 0,
+   "s43": 0,
+   "status": "OK"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "n_groups",
+   "s42": 1,
+   "s43": null,
+   "status": "SUPERSEDED",
+   "reason": "group key or prompt surface changed by design in s4.3"
+  },
+  {
+   "corpus": "antidoom",
+   "field": "distinct_prompts",
+   "s42": 1,
+   "s43": 424125,
+   "status": "SUPERSEDED",
+   "reason": "group key or prompt surface changed by design in s4.3"
+  }
+ ]
+}
