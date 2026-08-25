@@ -957,6 +957,12 @@ enlarging by hand, on the same scenario set, before any arm trained on the new s
 scored. Taken autonomously and recorded here; the full measurement is in
 `runs/s5.2-baselines.md`.
 
+- 2026-08-25 · mirror · The 4-bit row pinning and the guardrail measurement pushed to
+  `github.com/jamesnavinhill/liquid-primus` under `tidepool/`, commits `69a8b8b` and `56a9900`:
+  the exact file and prompt-rendering repo for each 4-bit row with the B5 caveat, the corpus
+  measurement behind the guardrail decision, the design note for where that supervision comes
+  from without a teacher model, and the amended task list.
+
 ## Immediate next actions
 
 1. Read `905755d3` in this order: whether `job artifacts` **lists** the tarball, which now
