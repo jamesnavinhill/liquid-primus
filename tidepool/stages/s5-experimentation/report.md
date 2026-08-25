@@ -1,15 +1,15 @@
 # Stage 5: Experimentation
 
-_Status: `s5.1` complete, `s5.2` in progress with three of its seven rows complete, a fourth part way and a fifth running. The
+_Status: `s5.1` complete, `s5.2` in progress with four of its seven rows complete, a fifth
+running and a sixth queued. The
 throughput the whole budget rests on is measured, the sweep is resized to fit it, and the
 evaluation harness every later number comes from is built, verified against ground truth and
 smoked end to end. **The reference baseline is complete at full item counts on all four
 components**, and it reads below the competitor on tool calling and at the floor on the guardrail
 axis. **The competitor's tool-calling component is now measured at full item counts**, and it sits 9.4
-points above the reference. **Two 4-bit rows are complete**, through a `llama.cpp` path this stage built and verified; both
-hold every axis except the one our training data is written in, and the gap between them prices
-what quantization-aware training is worth. The runtime control that makes either interpretable is
-running.
+points above the reference. **Three 4-bit-or-control rows are complete**, through a `llama.cpp` path this stage built and verified; the runtime-vs-quantization
+control has landed and splits into two different findings depending on the axis (see below).
+`B5` (a competitor's own 4-bit fine-tune) is now running in the freed slot and is what ticks `s5.2`.
 **The guardrail training set is built and clean**: three attempts, nine gates, 7,988 rows and
 4.35M tokens in shared storage with a 138-item clean control arm. One sweep arm was retired as
 unrunnable and replaced._
@@ -44,6 +44,17 @@ serving runtime, so the reading cannot be accepted yet. The control that separat
 weights unquantized through the same binary, is **now running**, and every 4-bit claim downstream
 waits on it. On the safety axis the community build reads exactly where the reference does: 0.0074
 flagged, zero false alarms, three of four rows on the same floor.
+
+**The control has landed, and it splits into two different answers.** The same weights served
+unquantized through the same `llama.cpp` binary as the 4-bit rows score 0.6252 on native tool
+calling and 0.4669 on the text convention. On the text convention this settles it: the control
+sits above both 4-bit builds, so most of what looked like a quantization tax there is really the
+serving runtime, not the bit width. On native tool calling the answer flips — the vendor's
+quantization-aware build (0.6392) scores *higher* than this unquantized control (0.6252), so
+quantization-aware training is not just recovering what the runtime costs on that axis, it is
+outperforming the full-precision weights served the same way. The community post-training quant
+still trails the control on both axes. `B5`, a competitor's own 4-bit fine-tune with its own
+template, is now running in the freed slot; it is what completes `s5.2`.
 
 The 4-bit path itself works, on the fifth attempt: `llama.cpp` b10622 compiled for the target
 architecture in 1,039 seconds, the binaries are in shared storage, and the first full pass through
@@ -1584,3 +1595,16 @@ components remain after this one. The estimate is terminal around 21:00–22:00Z
 let it finish rather than restart it on a faster card was made at 17:10Z and stands: it has already
 produced the tool-calling composite that is the operative external threshold for the project, and a
 restart trades certain spent hours for an uncertain speedup.
+
+- 2026-08-25 · mirror · Pushed commit `b8ff553` to `github.com/jamesnavinhill/liquid-primus`:
+  B3's complete row and its readings, the decision to apply the clean-control harness edit early,
+  the updated ledger and the task list. No code changed this wake, so the push is record only.
+- 2026-08-25 · s5.2 · `B1r` (`c3886996`) landed at 18:21:07Z, 59m44s, 0.996 GPU-h. It splits into
+  two findings by axis: on the `s4` text convention it sits above both 4-bit rows, so most of
+  their shortfall against the reference is the `llama.cpp` runtime rather than quantization; on
+  native tool calling it sits *below* `B2`, so quantization-aware training does not just recover
+  the runtime's cost there, it exceeds the unquantized control. Safety axis unchanged: same flag
+  rate and zero false alarms as the reference, on both the frozen 30-item arm and the new
+  138-item corpus arm. `B4` (Granite) is past structured output (validity 0.3205) and into
+  instruction-following, still advancing normally. `B5` (`64fa9373`, Nova Q4_K_M) queued into the
+  freed slot: aws L4:1, all five limit overrides at zero, carries the clean-control arm.
