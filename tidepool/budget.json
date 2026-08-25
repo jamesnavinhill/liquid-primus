@@ -99,6 +99,17 @@
    "status": "FAILED",
    "spendNote": "Measured from job start (12:03:38Z) to the observed terminal status, so it includes provisioning; the task itself ran 77.2 s.",
    "recordedAt": "2026-08-25T12:12:22Z"
+  },
+  {
+   "id": "s5.1-sft-attempt2",
+   "substage": "s5.1",
+   "jobId": "c8699eaf-ff8c-4045-b81a-f344facd23d5",
+   "task": "s5-sft",
+   "accelerators": "L4:1",
+   "status": "COMPLETE",
+   "durationHours": 0.121,
+   "spend": 0.121,
+   "note": "Supervised smoke, attempt 2. Score dict landed; 5 artifacts verified. 30 steps, val loss 1.3223 -> 0.4771, 1398.3 tok/s, template native."
   }
  ]
 }

@@ -1,7 +1,7 @@
 # Stage 5: Experimentation
 
-_Status: in progress. `s5.1` has its measurements; both smoke jobs are being re-run to
-prove one fix. Nothing has been trained for real yet._
+_Status: in progress. The supervised smoke has passed twice and its fix is proven; the
+replay smoke and an L40S calibration run are on GPU. Nothing has been trained for real yet._
 
 ## Headline
 
@@ -12,9 +12,11 @@ over 30 steps at 1,435 tokens per second, which puts the full 90.6M-token refere
 16.1 GPU-hours** rather than at a guess. The replay path produced 64 of 64 completions with
 none empty at 204 tok/s, or 33.3 hours per 100k. Both jobs then crashed on their final status
 call, a one-line misuse of the experiment harness that lost no measurement and no artifact;
-both are being re-run with it fixed, at about 0.1 GPU-hour each, because the ranked dashboard
-the sweep depends on reads exactly the field that crash left empty. Spend so far is 0.23 of
-145 GPU-hours.
+the fix has since been proven: the re-run recorded COMPLETE with a full score dict and all
+five artifacts, at 1,398 tok/s and a 16.5-hour projected epoch, within 2% of the first
+attempt. The replay smoke is re-running behind it, and a calibration run is now on an L40S to
+replace the plan's assumed 6,000 tok/s with a measured number on the card the sweep will
+actually use. Spend so far is 0.35 of 145 GPU-hours.
 
 ## Work log
 
@@ -38,6 +40,24 @@ the sweep depends on reads exactly the field that crash left empty. Spend so far
 - 2026-08-25 · s5.1 · Charged both failed attempts to the ledger at 0.232 GPU-hours together.
   They spent real compute and produced real measurements, so recording them as free would
   understate the stage.
+- 2026-08-25 · mirror · Project state through the `s5.1` measurements pushed to
+  `github.com/jamesnavinhill/liquid-primus` under `tidepool/`, per the standing operator note
+  to mirror code and docs there as they land. Commit `255e15c`: the corrected code of both
+  tasks exactly as re-submitted, this report, the `s5.1` run record with its full attempt log,
+  the compute ledger, and the metrics both smoke jobs saved copied in verbatim so the loss and
+  throughput figures can be checked against their source. Weights have the Hugging Face half
+  of that note; the smoke adapter is a 30-step artifact off 512 rows, so it is not a build
+  worth publishing and none has been pushed there yet.
+
+- 2026-08-25 · s5.1 · The supervised smoke re-ran clean: COMPLETE, a full score dict on the
+  job record, all five artifacts present, and figures within 2% of attempt 1. The harness fix
+  is proven, so every later run in this stage will land its numbers where the ranked dashboard
+  reads them.
+- 2026-08-25 · s5.1 · Queued a calibration run of the same supervised code on an L40S,
+  `be8dcfde`, at 60 steps over 1,024 rows. The plan's whole 145 GPU-hour budget rests on an
+  assumed 6,000 tokens per second on that card, and the L4 measurement suggests the assumption
+  is optimistic. One short job replaces the assumption with a measurement, which is cheaper
+  than discovering it eight arms into the sweep.
 
 ## s5.1 What the smoke runs are for
 
@@ -112,6 +132,82 @@ the note for exactly the reason that matters here: it is the only allowed card w
 Nothing in this stage needs more than 24 GB yet; a 1.2B model in bf16 with LoRA and gradient
 checkpointing at a 2,048-token window fits with room to spare.
 
+## s5.1 What the smoke established
+
+Attempt 1 of both jobs completed all of its work. Every criterion the substage was written
+to test came back clean, and the numbers below are read from the saved artifacts rather than
+from a log line:
+
+| Check | Result |
+| --- | --- |
+| bf16 base checkpoint on an L4 | `LiquidAI/LFM2.5-1.2B-Instruct` loaded |
+| Chat template accepts four-role conversations with `tool` turns | `native`, no fallback; 2 of 64 probe rows carried a tool turn and it took them |
+| Loss mask covers assistant tokens only | 83 supervised of 896 probe tokens (9.3%), so neither degenerate case |
+| Sampler calibrated over the real split | 178,346 rows selected from the full 494,341-row split |
+| Structured-output repetition cap honoured | 6,858 rows taken from 2,286 available, exactly 3.00 passes |
+| LoRA attaches | 11,108,352 trainable of 1,181,448,960 parameters (0.940%) |
+| Validation loss falls over 30 steps | 1.3223 to 0.4940, delta -0.8284 |
+| `priority_share == 0.5` | 0.5, exactly the plan's floor |
+| `assertion_failures == 0` | 0, on both jobs |
+| Adapter returns as an artifact | `adapter.zip` listed, with four metric files beside it |
+| Replay path | 64 of 64 prompts usable, 64 completions, 0 empty, 204.1 tok/s, `replay.jsonl` saved |
+
+The template result is the one worth flagging. The run was written to fall back to an explicit
+template if the model's own rejected a tool turn, and to record that it had done so, because a
+number produced under a different template is not comparable to one produced under this one.
+The fallback was never needed, which keeps every later run in this stage on the model's native
+format.
+
+The two numbers that size the rest of the stage are both measurements now. Supervised
+throughput settled at 1,435.3 tok/s across the run, which puts the full 90.6M-token epoch at
+**16.08 GPU-hours**. Replay generation ran at 204.1 completion tok/s, or **33.34 hours per
+100k completions**. The 145 GPU-hour plan was built on estimates and has two of its rows
+anchored; what that does to the rest of the plan is taken up under "Compute" below.
+
+## s5.1 The one thing that broke, and the proof it is fixed
+
+Both jobs crashed after finishing, on the same statement. The harness's completion call takes
+a message and a score dict and has no status argument, and both scripts passed one, so the
+call raised `TypeError` once all the work was done.
+
+Nothing was lost. Every artifact is written before that call, so the adapter, the metrics and
+the replay file were all saved and were read back to recover the table above. What the crash
+did take is the job record: both jobs read `FAILED` with an empty score field, so neither
+shows up in the ranked dashboard that `s5.3` and `s5.4` are decided from.
+
+Waiving it and moving on was the tempting option, since the science had passed. The reason not
+to is the shape of what comes next: a 16-hour reference run, then baselines and an 8-row sweep
+ranked by that same score field. A patch that has never executed is not yet a fix, and the
+cheapest possible place to prove one is a pair of smokes at 0.1 GPU-hour each. So attempt 2 is
+the identical experiment with the completion call corrected in both scripts, queued as
+`c8699eaf` and `66aca6c7`.
+
+The supervised half of attempt 2 has since finished and the fix holds. The job reads COMPLETE,
+its score dict is on the record where the dashboard reads it, and all five artifacts are
+present. Its figures also stand as a reproducibility check on attempt 1, since the two runs
+share a seed and differ only in that one line: val loss 1.3223 to 0.4771 against 0.4940, and
+1,398.3 tok/s against 1,435.3, so a 16.51-hour projected epoch against 16.08. The 2% spread
+across a 30-step run on shuffled data is the noise floor of a smoke, not a discrepancy to
+chase. The replay half is still on GPU. The full attempt log, the failure signature and the
+relaunch accounting are in `runs/s5.1-smoke.md`.
+
+## Operator input (s5.1)
+
+The run was asked to hand back for a reply and the answer came back automatically: no operator
+is reading, proceed on my own recommendation and record what I chose. There was no open
+question at that point. The mix calibration described above was already derived from the rules
+in the plan rather than chosen, both smoke jobs were already on GPU, and the structured-output
+shortfall was a fact to report rather than a decision to take.
+
+So the recommendation I proceeded on is the one written here: let both smoke runs finish, hold
+the 5% structured-output share for the baselines so the gap is measured rather than patched,
+and generate more structured-output data from the schemas the tool corpus already carries only
+if validity fails to move once the baselines are in. Two decisions were taken in this run that
+nobody reviewed. Re-running both smokes to prove the one-line harness fix, at about 0.2
+GPU-hours in total, on the reasoning above. And putting a short L40S calibration run ahead of
+the baselines, because the plan's assumed throughput is the single number the whole budget
+rests on and one short job replaces it with a measurement.
+
 ## Compute
 
 Everything before this stage ran on CPU. The two attempt-1 smokes are the first GPU charge on
@@ -125,9 +221,42 @@ The failed attempts are charged in full. They spent the compute and they produce
 measurements the rest of the stage is sized from, so recording them as free would make the
 ledger flatter than the project.
 
+### The first real test of the plan's compute assumption
+
 The projected reference-run cost is now measured rather than assumed: **16.08 GPU-hours** for
-one 90.6M-token epoch at the observed 1,435 tok/s on an L4. The plan's supervised sweep budget
-of 38 GPU-hours therefore covers roughly two full-epoch arms on this card, which is a real
-constraint for `s5.3` and is taken up there rather than here: either the sweep arms run
-sub-epoch, or they run on a faster card, and the choice is the operator's at the direction
-decision.
+one 90.6M-token epoch at the observed 1,435 tok/s on an L4.
+
+The plan's whole 145 GPU-hour budget rests on one number, stated at `s3.3` as a deliberately
+conservative figure: **6,000 training tokens per second for a 1.2B model on one L40S**, which
+is the default card for every supervised row. The smoke ran on an L4, so it does not measure
+that number directly. It does constrain it. An L40S is worth roughly two and a half to three
+and a half times an L4 on dense bf16 for work of this shape, so 1,435 tok/s on an L4 implies
+something in the region of 3,600 to 5,000 tok/s on an L40S. The plan assumed 6,000.
+
+Three reasons not to treat that as a verdict yet. The smoke ran 30 steps over 512 rows, which
+is short enough that startup is still being amortized; throughput was still climbing at the
+last step (1,571 tok/s against the 1,435 average), so the steady-state figure is higher than
+what was measured. Smoke sequences are also shorter than the epoch's mean. And a card ratio
+taken off spec sheets is exactly the kind of substitution this project's own protocol refuses
+between paired numbers.
+
+So the honest reading is that the plan's central estimate looks optimistic by something like
+20 to 40%, and that the cheapest way to replace an inference with a measurement is to run this
+same smoke once on an L40S. At roughly 0.1 GPU-hour that is the next thing to do, ahead of the
+baselines, because every row of the supervised sweep is priced off this one number and the
+sweep's own line is 38 GPU-hours. If the true L40S rate is near 4,000 tok/s, one full-epoch
+arm costs 6.3 GPU-hours and the 8-run sweep in the plan does not fit its line at full epochs.
+That is a real constraint on `s5.3` and it is better found now, at the cost of one short job,
+than discovered by a sweep that overruns. The 25% contingency (29 GPU-hours) exists for
+exactly this, and the decision about how to spend it belongs at the `s5.4` direction
+checkpoint with a measured number in hand.
+
+## Immediate next actions
+
+1. Confirm both attempt-2 smokes finish clean and land their score dicts, which is what makes
+   the ranked dashboard usable for `s5.3` and `s5.4`.
+2. Run the supervised smoke once on an L40S to measure the card the sweep will actually use,
+   replacing the plan's assumed 6,000 tok/s with an observed figure.
+3. Re-price the `C` supervised sweep against that measurement before queueing any baseline,
+   and if it does not fit its 38 GPU-hour line, bring the options to `s5.4` rather than
+   quietly shortening the arms.

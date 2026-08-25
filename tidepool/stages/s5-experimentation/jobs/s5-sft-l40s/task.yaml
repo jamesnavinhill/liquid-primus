@@ -1,0 +1,41 @@
+name: s5-sft-l40s
+run: python main.py
+setup: |
+  python -c "import torch" 2>/dev/null || pip install -q torch
+  pip install -q -U transformers peft accelerate wandb
+  python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+resources:
+  cpus: 8
+  memory: 48
+  disk_space: 200
+  # L40S 48GB is the card the plan's compute budget is written against, so the throughput
+  # figure the sweep is priced from has to be measured on it and not scaled from another card.
+  accelerators: "L40S:1"
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  WANDB_API_KEY: "{{secret._WANDB_API_KEY}}"
+parameters:
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  train_object: tidepool/s4.4/train.jsonl.gz
+  val_object: tidepool/s4.4/val.jsonl.gz
+  # s5.1 calibration: identical code to the L4 smoke, twice the steps and twice the rows, so
+  # the throughput average is taken after the rate has stopped climbing. The only number this
+  # run exists to produce is tokens/s on an L40S.
+  smoke: true
+  smoke_rows: 1024
+  max_steps: 60
+  run_tag: s5.1-cal-l40s
+  mix: role_balanced
+  max_seq_len: 2048
+  micro_batch_size: 2
+  grad_accum: 8
+  learning_rate: 1e-4
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  val_rows: 128
+  tool_epochs: 1.0
+  struct_max_epochs: 3.0
+  min_priority_share: 0.5
+  seed: 17
+minutes_requested: 60
