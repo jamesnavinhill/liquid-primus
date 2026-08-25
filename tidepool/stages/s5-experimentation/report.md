@@ -5,9 +5,10 @@ measured, the sweep is resized to fit it, and the evaluation harness every later
 from is built, verified against ground truth and smoked end to end. **The reference baseline is
 complete at full item counts on all four components**, and it reads below the competitor on tool
 calling and at the floor on the guardrail axis. The competitor row that carries the operative
-tool-calling threshold is running, the 4-bit serving path is compiling after being moved to a
-different compute source, and the harness has gained a score-only replay mode so a finished run
-can be re-scored without paying for generation twice._
+tool-calling threshold is running, the 4-bit serving path has compiled
+for the first time and is on its fifth attempt after a check of my own discarded the compile, and
+the harness has gained a score-only replay mode so a finished run can be re-scored without paying
+for generation twice._
 
 ## Headline
 
@@ -22,12 +23,15 @@ one it is measured against. On the safety axis it is **at the floor with a clean
 output reads 0.1355 over 2,000 items, a within-harness reference with no published figure that may
 be quoted beside it. Instruction following reads 0.8170 over all 541 prompts, 4.5 points under the
 card's 86.23, which the four-way IFEval mean plausibly reconciles and the harness never printed the
-numbers to confirm. The competitor's full pass is now running, and the 4-bit serving build is
-compiling on a different compute source after two launches on the previous one provisioned a
-machine and ran nothing, so there is no infrastructure fault to raise. The harness also gained a
-score-only replay mode: a finished run's saved text can be re-scored on CPU work alone, which is
-what recovers the per-item detail this run's artifacts lost. Spend is 3.017 of 145 GPU-hours, of
-which 0.28 bought nothing at all.
+numbers to confirm. The competitor's full pass is now running. The 4-bit serving build
+compiled successfully for the first time, in 1,038 seconds on a different compute source, and then
+stopped on one of my own guards: the check that the model is really on the GPU read the server's
+log a moment too early, and because the binaries were only packed after verification the whole
+compile was lost. Attempt 5 is running with the binaries saved the moment they exist, the device
+proved by backend enumeration, and a throughput floor doing the work the log check was failing at.
+The harness also gained a score-only replay mode: a finished run's saved text can be re-scored on
+CPU work alone, which is what recovers the per-item detail this run's artifacts lost. Spend is
+3.417 of 145 GPU-hours, of which 0.68 bought nothing at all.
 
 ## Work log
 
@@ -843,12 +847,49 @@ total. Project spend is **3.017 of 145 approved GPU-hours**.
   including `replay.py`, the `s5.2` run record with B1's full table and the replay design, the
   corrected ledger, and this report.
 
+## The 4-bit build compiled, and the check that judged it was wrong (s5.2)
+
+Attempt 4 configured cleanly, compiled llama.cpp for our card in 1,038 seconds, collected all four
+binaries at 70-82 MB, downloaded the vendor's quantization-aware 4-bit model and reached a healthy
+server. It then failed at 45% on a guard I wrote: the assertion that the server had initialized a
+CUDA device rather than falling back to the CPU, where every 4-bit number would be correct and
+every hour quoted from it wrong.
+
+The guard fired on evidence it should not have trusted. A CPU-only build of this project takes a
+few minutes and produces much smaller binaries, so the compile almost certainly did include CUDA.
+More tellingly, the startup text the guard searched was missing the model loader's own output as
+well as its CUDA lines, on a server that had just loaded a model and answered a health check. A log
+with no loader lines is a log read before the writer flushed it, so the guard proved nothing either
+way.
+
+The costlier defect is the ordering. Packing the tarball, saving it as an artifact and pushing it to
+shared storage were all the last step of the job, after verification, so a failed check discarded
+seventeen minutes of successful compiling. Every earlier attempt had died before the compile, which
+is why that ordering had never been exercised.
+
+Attempt 5 (`905755d3`, same source, same pinned tag and card) makes three changes. The binaries are
+packed and stored the moment they exist, with a `verified` flag that stays false until every check
+passes, so a stored tarball is not yet a licence to serve from it. The device is proved by asking
+the runtime to enumerate its backends, which returns on its own and cannot be read early, with the
+driver, the linked CUDA libraries and the CMake cache recorded beside the answer; the run fails hard
+only when the enumeration really answered and no CUDA device was in it, or when none of the three
+signals is positive. And a throughput floor of 150 generated tokens per second across eight slots is
+asserted after the batched measurement. The floor is the guard that actually protects the pricing: a
+1.2B 4-bit model on this card sits in the high hundreds and on a couple of CPU threads in the tens,
+and unlike the log check it also catches a build that reaches the device but is too slow for the
+hours it quotes to mean anything.
+
+The startup log is still captured, still saved as an artifact, and now saved *before* anything is
+asserted on it. It reports rather than decides.
+
 ## Immediate next actions
 
-1. Read `b7de2af2`'s log once it reports built: the offload lines after `server healthy` and the
-   CUDA-device assertion, the 8-slot generated tok/s, the priced hours for a full Q4 pass, and
-   whether `job artifacts` **lists** the tarball. If it is listed but the in-job storage upload
-   failed, place it as `tidepool/llama-b10622-sm89.tar.gz` before queueing any 4-bit row.
+1. Read `905755d3` in this order: whether `job artifacts` **lists** the tarball, which now
+   happens right after the compile and is the thing four attempts have failed to deliver; the
+   device enumeration block with its driver, linker and CMake evidence; the 8-slot generated tok/s
+   against the 150 floor; and the priced hours for a full Q4 pass. If the tarball is listed but the
+   in-job storage upload failed, place it as `tidepool/llama-b10622-sm89.tar.gz` before queueing
+   any 4-bit row, and do not serve from it unless the summary reports `verified: true`.
 2. When a GPU slot frees, queue the B1 replay with the command recorded in
    `runs/s5.2-baselines.md`. It settles four things B1 could not report: the structured-output mean
    partial score and by-format split, the instruction-level IFEval pair that would confirm or refute

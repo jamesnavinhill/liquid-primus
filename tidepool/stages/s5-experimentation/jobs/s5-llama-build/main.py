@@ -279,6 +279,112 @@ _, ver = sh("%s --version" % server, check=False, quiet=True)
 FACTS["server_version"] = (ver or "").strip().splitlines()[-1] if ver.strip() else "unknown"
 log("server reports: %s" % FACTS["server_version"])
 
+# ---------------------------------------------------------------- 4b. keep it FIRST
+
+# The compile is the expensive part of this job and the verification is the fragile part.
+# Attempt 4 proved why the order matters: it configured cleanly, compiled for 1,038 s, produced
+# all four binaries, and then raised on a runtime check, and because the tarball was only packed
+# at the end of the job the whole 17 minutes was discarded. The binaries are now packed, saved
+# and pushed to shared storage the moment they exist, so a failed verification costs the
+# verification. A tarball that reached storage without passing its checks is not usable yet, and
+# nothing may serve from it until a run reports `verified: true` in this summary.
+
+def keep_binaries():
+    tarball = os.path.join(OUT, "llama-%s-sm%s.tar.gz" % (tag, arch))
+    with tarfile.open(tarball, "w:gz") as tf:
+        tf.add(bindir, arcname=os.path.basename(bindir))
+    FACTS["tarball_mb"] = round(os.path.getsize(tarball) / 1e6, 1)
+    log("packed the serving path: %s (%.1f MB)" % (tarball, FACTS["tarball_mb"]))
+    lab.save_artifact(tarball)
+
+    # Every later 4-bit job reads this backend with `lab.storage_download(llama_object)`, so it
+    # has to end up in shared storage. If the SDK in this image can put it there directly, that
+    # saves shuttling a few hundred megabytes down to the orchestrator and straight back up. If
+    # it cannot, the tarball is still on the job record and gets placed from outside; the object
+    # name is fixed here either way so both routes agree on it.
+    storage_object = "tidepool/%s" % os.path.basename(tarball)
+    FACTS["storage_object_intended"] = storage_object
+    FACTS["storage_uploaded_by_job"] = False
+    _up = None
+    for _name in ("storage_upload", "upload_storage", "storage_put"):
+        _up = getattr(lab, _name, None)
+        if callable(_up):
+            break
+        _up = None
+    if _up is None:
+        log("this SDK exposes no storage upload; the tarball will be placed in shared storage "
+            "as %s from outside the job" % storage_object)
+    else:
+        for _args, _kwargs in (((tarball, storage_object), {}),
+                               ((tarball,), {"dest": os.path.dirname(storage_object)}),
+                               ((tarball,), {})):
+            try:
+                _up(*_args, **_kwargs)
+                FACTS["storage_uploaded_by_job"] = True
+                log("uploaded the serving path to shared storage as %s" % storage_object)
+                break
+            except Exception as exc:
+                log("storage upload call shape %r failed: %s" % (_kwargs or _args, exc))
+    return tarball
+
+
+FACTS["verified"] = False
+keep_binaries()
+lab.update_progress(50)
+
+# ---------------------------------------------------------------- 4c. prove the device
+
+# Attempt 4 read the running server's own log for a `ggml_cuda_init` line and raised when it
+# found none, on a build that had almost certainly produced a CUDA runtime: 1,038 s of compile
+# and ~80 MB binaries are not what a CPU-only build looks like, and the captured log was missing
+# the model-loader lines too, so the read had raced the server's logging rather than caught a
+# CPU fallback. The device is now proved by asking a binary to enumerate its backends, which
+# returns on its own and cannot be read early, and the driver, the linkage and the CMake cache
+# are recorded beside it so the next failure has something to be compared against.
+
+def probe(cmd, timeout=300):
+    p = subprocess.run(cmd, shell=True, env=env, capture_output=True, text=True,
+                       timeout=timeout)
+    return ((p.stdout or "") + (p.stderr or "")).strip()
+
+
+cli = os.path.join(bindir, "bin", "llama-cli")
+devices = probe("%s --list-devices" % cli)
+FACTS["list_devices"] = devices.splitlines()[:12]
+log("== devices this runtime can see ==\n%s" % devices)
+FACTS["nvidia_smi"] = [l for l in probe("nvidia-smi").splitlines()[:14]]
+FACTS["server_cuda_links"] = [l.strip() for l in probe("ldd %s" % server).splitlines()
+                              if "cuda" in l.lower() or "cublas" in l.lower()][:8]
+FACTS["cmake_cuda"] = [l.strip() for l in probe("grep -i cuda build/CMakeCache.txt").splitlines()
+                       if "=ON" in l or "COMPILER" in l or "ARCHITECTURES" in l][:10]
+for k in ("server_cuda_links", "cmake_cuda"):
+    for l in FACTS[k]:
+        log("  %s" % l)
+
+# Three independent signals, because any one of them can be silent for a reason that has nothing
+# to do with the device: a runtime that predates `--list-devices` prints a usage error, a
+# statically linked build shows no CUDA library, and a CMake cache can be missing on a rebuild.
+dev_says_cuda = "cuda" in devices.lower()
+# "available devices" is the header the runtime prints when it really enumerated them. A
+# runtime too old for the flag prints its usage text instead, which mentions devices
+# without listing any, and that must not read as a card-less machine.
+dev_answered = dev_says_cuda or "available devices" in devices.lower()
+links_say_cuda = bool(FACTS["server_cuda_links"])
+cmake_says_cuda = any("GGML_CUDA" in l and "=ON" in l for l in FACTS["cmake_cuda"])
+FACTS["cuda_evidence"] = {"list_devices": dev_says_cuda, "probe_answered": dev_answered,
+                          "linked": links_say_cuda, "cmake": cmake_says_cuda}
+if dev_answered and not dev_says_cuda:
+    raise RuntimeError("the runtime enumerated its backends and no CUDA device was among them, "
+                       "so it would serve every 4-bit number on the CPU and price it wrong.\n"
+                       "%s\n---- nvidia-smi ----\n%s"
+                       % (devices, "\n".join(FACTS["nvidia_smi"])))
+if not (dev_says_cuda or links_say_cuda or cmake_says_cuda):
+    raise RuntimeError("nothing shows this build reaching a GPU: the device probe returned %r, "
+                       "llama-server links no CUDA library, and the CMake cache has no "
+                       "GGML_CUDA=ON.\n---- nvidia-smi ----\n%s"
+                       % (devices[:400], "\n".join(FACTS["nvidia_smi"])))
+log("CUDA evidence: %s" % json.dumps(FACTS["cuda_evidence"]))
+
 # ---------------------------------------------------------------- 5. verify on a real GGUF
 
 import requests  # noqa: E402  (installed in setup)
@@ -335,23 +441,30 @@ if not ready:
     raise RuntimeError("the server did not become healthy within 300 s")
 log("server healthy")
 
-# A llama.cpp built without CUDA, or built with it and unable to reach the device, serves the
-# same model correctly on the CPU at a fraction of the speed. The job would finish, the numbers
-# would be real, and a full 4-bit pass would cost a day instead of an hour. So the offload is
-# asserted from the server's own startup log rather than assumed from the build flags.
+# The startup log is now evidence rather than the gate. Attempt 4 raised here on a log that was
+# missing its loader lines as well as its CUDA lines, which is the signature of reading the file
+# before the server had flushed it, so the lines are given a moment to arrive, saved whole as an
+# artifact before anything is asserted on them, and reported either way. What actually protects
+# the pricing is the throughput floor further down: a CPU fallback cannot reach it.
+time.sleep(5)
 srv_log.flush()
-startup = open(os.path.join(OUT, "llama_server.log")).read()
+log_path = os.path.join(OUT, "llama_server.log")
+startup = open(log_path).read()
+lab.save_artifact(log_path)
 offload = [l for l in startup.splitlines()
-           if "offload" in l.lower() or "CUDA devices" in l or "ggml_cuda_init" in l]
+           if "offload" in l.lower() or "CUDA" in l or "ggml_cuda_init" in l]
 FACTS["offload_lines"] = offload[:8]
 for l in offload[:8]:
     log("  %s" % l.strip())
-if "ggml_cuda_init" not in startup and "CUDA" not in startup:
-    proc.kill()
-    raise RuntimeError("the server started without initializing a CUDA device, so it is serving "
-                       "on the CPU. Every 4-bit number taken through it would be correct and "
-                       "priced wrong.\n%s" % "\n".join(startup.splitlines()[:40]))
-FACTS["cuda_at_runtime"] = True
+FACTS["server_log_lines"] = len(startup.splitlines())
+FACTS["cuda_in_server_log"] = bool(offload)
+if not offload:
+    NOTES.append("the server's captured startup log carried no CUDA line in %d lines; the device "
+                 "was proved by backend enumeration and by the throughput floor instead"
+                 % FACTS["server_log_lines"])
+    log("the startup log carried no CUDA line (%d lines captured); leaning on the device probe "
+        "and the throughput floor" % FACTS["server_log_lines"])
+FACTS["cuda_at_runtime"] = bool(offload) or dev_says_cuda
 lab.update_progress(60)
 
 # Tokenizing on the server, with add_special off, is what keeps a GGUF run's prompt identical to
@@ -423,6 +536,23 @@ log("%d concurrent requests over %d slots: %.0f generated tok/s (%.0f including 
     % (n_req, par, FACTS["batched"]["generate_tok_per_s"],
        FACTS["batched"]["end_to_end_tok_per_s"]))
 
+# The assertion that actually protects the pricing. A 1.2B Q4_0 model on an L4 generates in the
+# high hundreds of tokens a second over eight slots; the same model on two CPU threads manages
+# tens. So a floor here catches a CPU fallback whatever the logs say, and it catches the other
+# way this row could go wrong too: a GPU build that reaches the device but is so slow that the
+# hours quoted for a full Q4 pass would be nonsense.
+min_tok_s = float(cfg.get("min_tok_s", 150))
+FACTS["min_tok_s"] = min_tok_s
+if FACTS["batched"]["generate_tok_per_s"] < min_tok_s:
+    proc.kill()
+    raise RuntimeError("%d concurrent requests generated only %.1f tok/s, under the %.0f tok/s "
+                       "floor for this card. A 1.2B Q4_0 model this slow is not being served "
+                       "from the GPU, and every hour quoted from it would be wrong.\n"
+                       "devices: %s\ncuda evidence: %s"
+                       % (n_req, FACTS["batched"]["generate_tok_per_s"], min_tok_s,
+                          FACTS["list_devices"][:4], json.dumps(FACTS["cuda_evidence"])))
+log("clears the %.0f tok/s floor" % min_tok_s)
+
 # Determinism: the same prompt at temperature 0 must come back identical, or no Q4 delta this
 # project reports is a delta rather than sampling noise.
 again = complete(ptoks, 64)
@@ -462,44 +592,7 @@ FACTS["full_pass_estimate"] = {
 log("a full Q4 pass is estimated at %.2f h of task time on this card"
     % FACTS["full_pass_estimate"]["task_hours"])
 
-# ---------------------------------------------------------------- 7. keep it
-
-tarball = os.path.join(OUT, "llama-%s-sm%s.tar.gz" % (tag, arch))
-with tarfile.open(tarball, "w:gz") as tf:
-    tf.add(bindir, arcname=os.path.basename(bindir))
-FACTS["tarball_mb"] = round(os.path.getsize(tarball) / 1e6, 1)
-log("packed the serving path: %s (%.1f MB)" % (tarball, FACTS["tarball_mb"]))
-lab.save_artifact(tarball)
-
-# Every later 4-bit job reads this backend with `lab.storage_download(llama_object)`, so it has
-# to end up in shared storage. If the SDK in this image can put it there directly, that saves
-# shuttling a few hundred megabytes down to the orchestrator and straight back up. If it cannot,
-# the tarball is still on the job record and gets placed from outside; the object name is fixed
-# here either way so both routes agree on it.
-storage_object = "tidepool/%s" % os.path.basename(tarball)
-FACTS["storage_object_intended"] = storage_object
-FACTS["storage_uploaded_by_job"] = False
-_up = None
-for _name in ("storage_upload", "upload_storage", "storage_put"):
-    _up = getattr(lab, _name, None)
-    if callable(_up):
-        break
-    _up = None
-if _up is None:
-    log("this SDK exposes no storage upload; the tarball will be placed in shared storage "
-        "as %s from outside the job" % storage_object)
-else:
-    for _args, _kwargs in ((( tarball, storage_object), {}),
-                           ((tarball,), {"dest": os.path.dirname(storage_object)}),
-                           ((tarball,), {})):
-        try:
-            _up(*_args, **_kwargs)
-            FACTS["storage_uploaded_by_job"] = True
-            log("uploaded the serving path to shared storage as %s" % storage_object)
-            break
-        except Exception as exc:
-            log("storage upload call shape %r failed: %s" % (_kwargs or _args, exc))
-
+FACTS["verified"] = True
 FACTS["llama_tag"] = tag
 FACTS["cuda_arch"] = arch
 FACTS["notes"] = NOTES

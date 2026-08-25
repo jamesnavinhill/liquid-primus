@@ -229,11 +229,11 @@
    "substage": "s5.2",
    "description": "s5.2 4-bit serving path, attempt 4. Byte-identical to attempts 2 and 3 except the compute provider, gcp -> aws, following the steering note's source row for L4 (AWS, GCP, RunPod, worked left to right). Card unchanged at L4:1 sm_89. Launched into us-east-1a. Unblocks baseline rows B2, B3, B5 and the F16 runtime reference.",
    "resources": "L4:1 (8 vCPU / 32 GB / 200 GB disk, aws)",
-   "durationHours": null,
-   "spend": null,
-   "status": "LAUNCHING",
-   "note": "Queued 2026-08-25T14:42Z, still launching at the time of writing. Spend is unknown until it terminates and is recorded as null rather than estimated.",
-   "recordedAt": "2026-08-25T14:44:00Z"
+   "durationHours": 0.4,
+   "spend": 0.4,
+   "status": "FAILED",
+   "note": "Attempt 4 configured cleanly on aws and compiled in 1,038 s, collected all four binaries at 70-82 MB, downloaded the verification GGUF and reached a healthy server, then failed at 45% on its own CUDA gate, which read the server's startup log before the server had flushed it. The compiled binaries were lost because the tarball was only packed after verification. No end timestamp was published for this job, so the 0.40 h is reconstructed from the 1,038 s compile plus the setup, configure, download and server start around it, and is an estimate rather than a measured bracket.",
+   "recordedAt": "2026-08-25T15:20:00Z"
   },
   {
    "id": "s5.2-B1-fp-instruct",
@@ -264,6 +264,23 @@
    "recordedAt": "2026-08-25T15:05:00Z",
    "description": "s5.2 B4: ibm-granite/granite-4.0-1b at full precision over full item counts, the 1B-class incumbent rerun through this harness so the pre-registered tool-calling bar becomes a matched number. Same card, serving path, decoding, item sets and batch size as B1.",
    "note": "Queued 2026-08-25T14:56Z on gcp, unpinned, matching B1 and the Granite smoke, all three of which launched cleanly on that source. Spend is null until it terminates rather than estimated. The pricing expectation from its own smoke is about 5 GPU-h: it generates at 42-67 tok/s against B1's 279 at the same batch size, and the batch size is deliberately not raised for it, because a couple of GPU-hours is cheaper than a competitor row served differently from the reference it is compared against. The task ceiling is 7 h."
+  },
+  {
+   "id": "s5.2-llama-build-attempt5",
+   "jobId": "905755d3-f984-4f0a-9d2e-577c7e6a2cf4",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "task": "s5-llama-build",
+   "resources": "L4:1 (8 vCPU / 32 GB / 200 GB disk, aws)",
+   "accelerators": "L4:1",
+   "status": "RUNNING",
+   "durationHours": null,
+   "spend": null,
+   "estimateHours": 0.75,
+   "recordedAt": "2026-08-25T15:22:00Z",
+   "description": "s5.2 4-bit serving path, attempt 5, same aws L4 source as attempt 4. Three changes, all progress-bearing rather than a repeat: the binaries are packed, saved and pushed to shared storage immediately after the compile so a failed verification cannot discard 17 minutes of compiling; the CUDA check is backend enumeration plus driver, linker and CMake-cache evidence in place of a read of the running server's log; and a 150 generated-tok/s floor over 8 slots is asserted after the batched measurement, which is what actually protects the hours this job quotes for a full 4-bit pass. Unblocks B2, B3, B5 and the F16 runtime reference.",
+   "note": "Estimate 0.75 h: 0.40 h of setup and compile as measured on attempt 4, plus the verification, pricing and packing steps it never reached."
   }
- ]
+ ],
+ "total_spent": 3.417
 }

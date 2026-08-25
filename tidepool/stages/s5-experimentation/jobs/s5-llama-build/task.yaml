@@ -43,4 +43,10 @@ parameters:
   verify_prompt_tokens: 1024
   verify_new_tokens: 256
   verify_parallel: 8
+  # Generated tokens per second, over all slots, below which the run refuses the build.
+  # A 1.2B Q4_0 model on an L4 sits in the high hundreds; on a couple of CPU threads it
+  # sits in the tens, so the floor is what separates a GPU serving path from a correct
+  # but mispriced CPU one. 150 is deliberately far under the expected figure: it is a
+  # fallback detector, not a performance target.
+  min_tok_s: 150
 minutes_requested: 120
