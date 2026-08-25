@@ -838,6 +838,11 @@ came in 43% under its line. B4 is recorded as RUNNING with spend `null`, on the 
 launching build: a spend is charged when known and left null when not, never estimated into the
 total. Project spend is **3.017 of 145 approved GPU-hours**.
 
+- 2026-08-25 · mirror · The reference row's result and the harness's new replay mode pushed to
+  `github.com/jamesnavinhill/liquid-primus` under `tidepool/`, commit `8f1009b`: all of `s5-eval`
+  including `replay.py`, the `s5.2` run record with B1's full table and the replay design, the
+  corrected ledger, and this report.
+
 ## Immediate next actions
 
 1. Read `b7de2af2`'s log once it reports built: the offload lines after `server healthy` and the
