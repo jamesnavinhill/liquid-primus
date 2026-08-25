@@ -40,7 +40,7 @@ Active stage: s4
 
 ## s5 - Experimentation
 - [x] s5.1 Smoke tests / toy runs  — both paths clean; L40S throughput measured at 3,994 tok/s and the C sweep resized to fit
-- [~] s5.2 Baselines
+- [~] s5.2 Baselines  — harness built and verified against ground truth; two profiles defined and priced; first full baseline pending the narrowed smoke
 - [ ] s5.3 Broad sweep
 - [ ] s5.4 Direction decision with researcher  (checkpoint)
 - [ ] s5.5 Detailed runs

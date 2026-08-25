@@ -2,7 +2,8 @@
 
 _Status: `s5.1` complete, `s5.2` in progress. The throughput the whole budget rests on is
 measured, the sweep is resized to fit it, and the evaluation harness every later number comes
-from is built and verified against ground truth. Its end-to-end smoke is on the GPU now._
+from is built, verified against ground truth and smoked end to end. The reference baseline is
+running at full item counts and the competitor is being smoked beside it._
 
 ## Headline
 
@@ -20,8 +21,13 @@ across two runs. Attention then moved to `s5.2`, where the one evaluation harnes
 every model in this project was built and checked before it was allowed to spend GPU time: its
 tool-call grader scores a ground-truth oracle at exactly 1.0000 over 858 items and 0.000 on
 three deliberate degradations, and a determinism bug in the vendored instruction-following
-grader was caught locally by a score that is impossible by construction. Spend so far is 0.71
-of 145 GPU-hours.
+grader was caught locally by a score that is impossible by construction. Two end-to-end smokes
+then found four more faults for the price of 0.31 GPU-hours: a crash on a set-valued argument,
+two artifact bugs that were losing the scored detail and the run summary, and a tool-call parser
+that could read our own checkpoint's format and none of the formats a competitor emits. The last
+one mattered most, because the project's absolute bar is a competitor's published score and a
+parser that cannot read its output would have handed us a threshold we invented. The full
+baseline row is now on the GPU. Spend so far is 1.02 of 145 GPU-hours.
 
 ## Work log
 
@@ -117,12 +123,43 @@ of 145 GPU-hours.
   grading different instructions and loose scored below strict, which cannot happen. Seeded per
   item and instruction from a stable checksum, loose now sits at or above strict and repeat runs
   are identical.
+- 2026-08-25 · mirror · Harness code and this stage's record pushed to
+  `github.com/jamesnavinhill/liquid-primus` under `tidepool/`, commit `5d1cc34`: all 15 files of
+  the evaluation task, the `s5.2` design and verification record, the re-priced compute ledger
+  and plan. A `VENDORED.md` sits beside the code naming which graders are the benchmarks' own
+  files, where each came from and under what licence, so a reader can tell our code from
+  theirs at a glance.
 - 2026-08-25 · s5.2 · Harness smoke queued as `5fe7a828` on an L4, at 40 items per component
   over the stock instruct checkpoint. It proves the path rather than measuring the model: the
   chat template accepting tool turns, both surface forms rendering and parsing, every grader
   returning, and the artifacts landing. The card, the serving backend and the decoding settings
   are frozen here and recorded in every summary, because changing them later invalidates every
   full-precision number in the project.
+- 2026-08-25 · s5.2 · The smoke got most of the way and then raised: it proved the template and
+  both tool-call surface forms, scored the first pass, and died writing the second pass's
+  per-item file because one completion in 378 answered with a Python set where a number belongs.
+  Both raw completion files were already on the job record, which is the reason they are written
+  before scoring touches them, so the fix was checked against all 378 real completions at no
+  compute cost. Charged 0.17 GPU-hours; the parser now normalizes exotic literals and the
+  artifact writer can no longer be the thing that loses a paid-for generation pass.
+- 2026-08-25 · s5.2 · Made every capped pass sample by stride rather than take the first N
+  items, and measured what the change is worth instead of assuming it. On the tool-calling
+  files it matters: a head slice of 40 `live_simple` rows averages 2.35 arguments per call
+  against the category's own 2.76, so it quietly screens the easy end. On the other two
+  benchmarks the rows are already interleaved and it changes nothing, which is the opposite of
+  what I wrote here an hour ago; the correction is in `runs/s5.2-baselines.md` with the counts.
+  Striding is deterministic either way, so a capped comparison between two models stays exactly
+  paired.
+- 2026-08-25 · s5.2 · Split the evaluation into two named profiles and made the caps explicit
+  per-component parameters. Full counts for the baseline row and the final checkpoints; a
+  screening profile for ranking the eight sweep arms against each other. Ranking arms does not
+  need all 2,000 structured-output rows, and it does need every probe item, because the
+  guardrail criteria are pass or fail over the whole set.
+- 2026-08-25 · s5.2 · Re-priced evaluation against the smoke's own measurement rather than the
+  estimate in this report an hour ago, which was too low. Full item counts and the arithmetic
+  are under "Compute" below: about 2.5 GPU-hours per full-precision baseline and 0.55 per
+  screened arm, which puts the stage through the sweep at roughly 49 of the approved 145
+  GPU-hours. Nothing needs asking for.
 
 ## s5.1 What the smoke runs are for
 
@@ -271,6 +308,28 @@ share a seed and differ only in that one line: val loss 1.3223 to 0.4771 against
 across a 30-step run on shuffled data is the noise floor of a smoke, not a discrepancy to
 chase. The replay half is still on GPU. The full attempt log, the failure signature and the
 relaunch accounting are in `runs/s5.1-smoke.md`.
+- 2026-08-25 · s5.2 · Queued the reference baseline row: `4350ce4e` runs the full-precision
+  instruct checkpoint at full item counts, 3,491 tool-calling items, 2,000 structured-output
+  rows, 541 instruction-following prompts and the whole 464-item probe set, in both surface
+  forms. Every later delta in this project is measured against it.
+- 2026-08-25 · s5.2 · Hardened the tool-call parser before letting it near a competitor. Tested
+  against the call formats other 1B-class checkpoints emit, it read **none** of them, and one
+  case failed silently: arguments under a `parameters` key came back as a correctly named call
+  with an empty argument dict, which the grader would have marked wrong with nothing looking
+  broken. Scoring the competitor with that parser would have floored it and turned a published
+  threshold into a figure we invented. 14 fixtures now pass, and re-running the change over the
+  756 real completions already saved confirms zero of them are read through a newly added path,
+  so the extra leniency cannot manufacture a call and inflate the restraint categories.
+- 2026-08-25 · s5.2 · The pre-registered threshold has two published values. Granite 4.0-1B
+  scores **52.43** on Liquid's card, measured with Liquid's own weighted handler, and **54.82**
+  on IBM's card for the same dense 1B checkpoint. Neither is what this harness computes.
+  `overview.md` keeps 52.43 as the pre-registered figure, since moving a bar after seeing a
+  second source is how a bar becomes whatever the result needs; the matched rerun is what
+  settles it. Recorded in `runs/s5.2-baselines.md`.
+- 2026-08-25 · s5.2 · Queued `c644aac2`, a 40-item Granite smoke, before paying for the full
+  competitor pass. It answers whether the checkpoint loads on this stack, whether its own chat
+  template accepts our tool rendering, and whether the hardened parser reads its real output
+  rather than the fixtures written for it. 0.15 GPU-hours against the 2.5 a full pass costs.
 
 ## s5.2 The evaluation harness, and what its numbers mean
 
@@ -344,8 +403,8 @@ Fixture checks in the sandbox, none of them a result.
 
 Hugging Face `transformers`, bf16, greedy, left-padded length-sorted batches, on one L4. It is
 the same code path the training jobs load a model through, which is why it was chosen: nothing
-extra to install and no batching-dependent numerics to argue about later. A screening pass is
-roughly 5 million generated tokens, about half a GPU-hour per model. Moving to a faster
+extra to install and no batching-dependent numerics to argue about later. Measured cost is
+about 2.5 GPU-hours for a full pass and 0.55 for a screened one, priced under "Compute". Moving to a faster
 inference server later invalidates every full-precision number taken here and means rerunning
 all of them, so the backend, the card and the decoding settings are part of every recorded
 result. The 4-bit builds (`B2`, `B3`, `B5`) need a separate `llama.cpp` serving path and are not
@@ -443,6 +502,48 @@ its throughput per token is lower than an adapter's and by how much is not measu
 budgeted at the same 64.0M tokens as its siblings and flagged here as the one arm whose cost
 could overrun its share. If it does, the overrun gate catches it before the next launch.
 
+### What evaluation costs, priced against the harness smoke
+
+The estimate in this report an hour before the smoke ran was half a GPU-hour per model. The
+smoke measured it, and the estimate was low. Both figures below are derived from job
+`5fe7a828`'s own saved completions: 378 tool-calling items generated 21,000 tokens at 255
+tokens per second, so 0.22 seconds per item is the unit everything else scales from.
+
+Full item counts, read from the benchmark files rather than assumed:
+
+| Component | Items | Passes | Est. task time |
+| --- | --- | --- | --- |
+| Tool calling | 3,491 across 11 categories | 2 surface forms | ~40 min |
+| Structured output | 2,000 | 1 | ~30 min |
+| Instruction following | 541 | 1 | ~15 min |
+| Probes + clean control | 464 | 1 | ~6 min |
+| | | | **~1.5 h task, ~2.5 GPU-h with provisioning** |
+
+The screening profile caps the two large components and keeps the probe set whole: 120 items
+per tool-calling category in one surface form, 400 structured-output rows, 200
+instruction-following prompts, all 464 probe items. About 23 minutes of task time, **0.55
+GPU-hours per arm**. Arms are screened in the training convention only, because after
+supervised fine-tuning that is the model's own format; the native-form regression check is
+reserved for the finalists, where it is a question worth 40 minutes and on eight arms it would
+not be.
+
+Where the stage lands, with the sweep already resized at `s5.1`:
+
+| Row | GPU-hours |
+| --- | --- |
+| spent to here (`s5.1` smokes, calibration, harness smoke) | 0.88 |
+| `s5.2` full baselines: `B1`, `B4`, `B6` at full counts | 7.5 |
+| `B1` again at the screening profile, so arm comparisons are paired | 0.55 |
+| `s5.3` sweep training, 8 arms at 64.0M tokens each | 35.6 |
+| `s5.3` arm screening, 8 arms | 4.4 |
+| **through `s5.3`** | **~49 of 145 approved** |
+
+The remaining 96 GPU-hours cover what the plan allotted 66 to (preference rung, merging, the
+RL arm behind its kill-line, export and final evaluation), so the stage stays inside the
+approved figure and nothing needs asking for. The 4-bit baselines `B2`, `B3` and `B5` are not
+in the table: they need the `llama.cpp` serving path, which is not built, and they are priced
+when it is.
+
 ## Immediate next actions
 
 1. Read the harness smoke `5fe7a828` against its own assertions: the model's template must
@@ -459,3 +560,6 @@ could overrun its share. If it does, the overrun gate catches it before the next
    and fails at launch, or worse, on a smaller card whose numbers are not comparable.
 4. Carry the 64.0M-token arm budget into the `s5.3` sweep tasks as a parameter, not a
    convention, so no arm can quietly run longer than the one it is compared against.
+5. Build the `llama.cpp` serving path before the 4-bit baselines `B2`, `B3` and `B5`. The
+   success criteria ask a 4-bit build to hold the full-precision quality bar, so the comparison
+   is only meaningful once both sides are measured, and only one side has a harness.

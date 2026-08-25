@@ -37,9 +37,20 @@ parameters:
   probes_object: tidepool/s4.4/probes/probes.jsonl
   # 0 = the whole component. Anything else is a smoke, and the summary says so.
   limit_per_component: 40
+  # Per-component caps. -1 inherits limit_per_component, 0 means the full set. Set
+  # explicitly per run so a screening profile is a recorded parameter and not a habit.
+  limit_bfcl: -1
+  limit_ifstruct: -1
+  limit_ifeval: -1
+  limit_probes: -1
+  profile: ""
   batch_size: 16
   max_new_bfcl: 320
   max_new_ifstruct: 768
   max_new_ifeval: 768
   max_new_probes: 320
-minutes_requested: 90
+# A full pass is ~1.5 h of task time on top of a setup that installs torch, so the ceiling is
+# set for the largest run this task will ever do. A screened run finishes in well under half an
+# hour and is billed for what it uses; a ceiling that cuts a full baseline off at 90 minutes
+# would throw away the whole pass.
+minutes_requested: 240

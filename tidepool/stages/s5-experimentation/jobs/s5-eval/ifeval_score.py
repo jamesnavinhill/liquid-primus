@@ -36,8 +36,12 @@ def load(path, limit=0):
                           "spec": {"prompt": r["prompt"],
                                    "instruction_id_list": r.get("instruction_id_list") or [],
                                    "kwargs": r.get("kwargs") or []}})
-            if limit and len(items) >= limit:
-                break
+    # Strided, not the first N: the file is ordered (prompts arrive grouped by instruction family), so a head slice would
+    # screen one slice of the benchmark and report it as the benchmark. Deterministic, so a
+    # capped pass is still exactly paired across models.
+    if limit and len(items) > limit:
+        stride = len(items) // limit
+        items = items[::stride][:limit]
     return items
 
 

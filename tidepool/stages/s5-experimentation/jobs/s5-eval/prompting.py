@@ -134,8 +134,26 @@ class Prompter:
 
 _JSON_CALL = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.S)
 _NATIVE_CALL = re.compile(r"<\|tool_call_start\|>\s*(.*?)\s*<\|tool_call_end\|>", re.S)
-# A model that has been shown the JSON convention sometimes emits it inside a fence.
-_FENCED = re.compile(r"```(?:json|tool_call)?\s*(\{.*?\})\s*```", re.S)
+# Granite and several other 1B-class checkpoints mark a call with a pipe token and put a JSON
+# *array* after it. B4 exists to turn a published threshold into a number from this harness, and
+# a parser that cannot read its output would floor it and hand us a threshold we invented.
+_PIPE_CALL = re.compile(r"<\|tool_call\|>\s*(\[.*?\]|\{.*?\})", re.S)
+# A model that has been shown the JSON convention sometimes emits it inside a fence, as an
+# object or as an array.
+_FENCED = re.compile(r"```(?:json|tool_call)?\s*(\{.*?\}|\[.*?\])\s*```", re.S)
+
+
+def _as_calls(obj):
+    """One parsed blob -> a list of calls. A blob may hold an object or an array of them."""
+    if isinstance(obj, list):
+        out = []
+        for o in obj:
+            c = _as_call(o)
+            if c:
+                out.append(c)
+        return out
+    c = _as_call(obj)
+    return [c] if c else []
 
 
 def _as_call(obj):
@@ -144,7 +162,10 @@ def _as_call(obj):
     if "function" in obj and isinstance(obj["function"], dict):
         obj = obj["function"]
     name = obj.get("name")
-    args = obj.get("arguments", obj.get("args", {}))
+    # `parameters` is the third spelling in circulation. Reading only `arguments` and `args`
+    # returned an empty argument dict for it, which scores as a call with every argument
+    # missing: a wrong answer that looks like the model's fault rather than the parser's.
+    args = obj.get("arguments", obj.get("args", obj.get("parameters", {})))
     if isinstance(args, str):
         try:
             args = json.loads(args)
@@ -153,6 +174,32 @@ def _as_call(obj):
     if not isinstance(name, str) or not isinstance(args, dict):
         return None
     return {"name": name, "args": args}
+
+
+def jsonable(v):
+    """Coerce a parsed literal into something `json.dumps` will take.
+
+    `ast.literal_eval` returns real Python objects, and the model is free to write a set or a
+    tuple where a scalar belongs (`solve_quadratic(c={-4})` is a real completion from the first
+    harness run). A set reaching the artifact writer raised after 378 generations had already
+    been paid for, which is the wrong place to find out. Sets become sorted lists so the value
+    is still visible to the grader and still wrong in the same way; ordering falls back to the
+    repr when the members are not mutually comparable.
+    """
+    if isinstance(v, (set, frozenset)):
+        try:
+            return [jsonable(x) for x in sorted(v)]
+        except TypeError:
+            return [jsonable(x) for x in sorted(v, key=repr)]
+    if isinstance(v, tuple):
+        return [jsonable(x) for x in v]
+    if isinstance(v, list):
+        return [jsonable(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): jsonable(x) for k, x in v.items()}
+    if isinstance(v, (str, int, float, bool)) or v is None:
+        return v
+    return repr(v)
 
 
 def _parse_python_calls(text):
@@ -188,7 +235,7 @@ def _parse_python_calls(text):
                 ok = False
                 break
             try:
-                args[kw.arg] = ast.literal_eval(kw.value)
+                args[kw.arg] = jsonable(ast.literal_eval(kw.value))
             except Exception:                                      # noqa: BLE001
                 ok = False
                 break
@@ -198,29 +245,31 @@ def _parse_python_calls(text):
 
 
 def parse_calls(completion):
-    """Every tool call in a completion, in either surface form. [] means none."""
+    """Every tool call in a completion, in whichever surface form it arrived. [] means none.
+
+    Deliberately generous about *form* and strict about *content*: the grader decides whether a
+    call is right, and this function's only job is to not lose one. Every model in the project
+    is read by this one function, including the competitor whose published score becomes our
+    absolute threshold, so a form it cannot read is a scoring bias and not a parsing detail.
+    """
     text = completion or ""
     calls = []
     for blob in _JSON_CALL.findall(text):
-        c = _as_call(_loads(blob))
-        if c:
-            calls.append(c)
+        calls.extend(_as_calls(_loads(blob)))
+    for blob in _PIPE_CALL.findall(text):
+        calls.extend(_as_calls(_loads(blob)))
     for blob in _NATIVE_CALL.findall(text):
         calls.extend(_parse_python_calls(blob))
     if not calls:
         for blob in _FENCED.findall(text):
-            c = _as_call(_loads(blob))
-            if c:
-                calls.append(c)
+            calls.extend(_as_calls(_loads(blob)))
     if not calls:
-        # A bare JSON object with name+arguments and nothing else around it.
         s = text.strip()
         if s.startswith("{") and s.endswith("}"):
-            c = _as_call(_loads(s))
-            if c:
-                calls.append(c)
-        elif s.startswith("[") and "(" in s and s.endswith("]"):
-            calls.extend(_parse_python_calls(s))
+            calls.extend(_as_calls(_loads(s)))
+        elif s.startswith("[") and s.endswith("]"):
+            # An array is either JSON call objects or the template's Python call list.
+            calls.extend(_as_calls(_loads(s)) or _parse_python_calls(s))
     return calls
 
 
@@ -229,6 +278,6 @@ def _loads(blob):
         return json.loads(blob)
     except Exception:                                              # noqa: BLE001
         try:
-            return ast.literal_eval(blob)
+            return jsonable(ast.literal_eval(blob))
         except Exception:                                          # noqa: BLE001
             return None

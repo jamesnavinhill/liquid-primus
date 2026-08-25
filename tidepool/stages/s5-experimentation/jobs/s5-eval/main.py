@@ -72,7 +72,18 @@ def sha(path):
     return h.hexdigest()[:16]
 
 
+_SAVED = set()
+
+
 def save(obj, name, kind=None):
+    # The artifact store keys on the *basename*, so `completions/x.jsonl` and `scored/x.jsonl`
+    # register as the same artifact and the second silently replaces the first. The first
+    # smoke lost its raw structured-output text that way. Names are flat now, and a repeat is
+    # recorded as a note rather than passing unnoticed.
+    base = os.path.basename(name)
+    if base in _SAVED:
+        NOTES.append("artifact name reused, the earlier one is gone: %s" % base)
+    _SAVED.add(base)
     path = os.path.join(OUT, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if isinstance(obj, (dict, list)) and name.endswith(".json"):
@@ -81,7 +92,11 @@ def save(obj, name, kind=None):
     else:
         with open(path, "w", encoding="utf-8") as fh:
             for row in obj:
-                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+                # `default=repr` on purpose: a row that will not serialize must not
+                # destroy a pass whose generations are already paid for. The parser
+                # normalizes values (prompting.jsonable), so this is a last resort that
+                # leaves the odd value visible in the artifact rather than raising.
+                fh.write(json.dumps(row, ensure_ascii=False, default=repr) + "\n")
     try:
         if kind:
             lab.save_artifact(path, type=kind)
@@ -178,8 +193,8 @@ def run_bfcl(cfg, runner, prompter, categories, styles, limit):
             scored.append({"id": it["id"], "category": it["category"], "style": style,
                            "correct": ok, "reason": why, "n_calls": len(calls),
                            "calls": calls})
-        save(raw, "completions/bfcl_%s.jsonl" % style)
-        save(scored, "scored/bfcl_%s.jsonl" % style, kind="evals")
+        save(raw, "completions_bfcl_%s.jsonl" % style)
+        save(scored, "scored_bfcl_%s.jsonl" % style, kind="evals")
         summaries[style] = bfcl.summarize(scored)
         per_style[style] = summaries[style]["composite_category_mean"]
         log("  bfcl/%-13s composite %.4f (item-weighted %.4f)"
@@ -205,8 +220,8 @@ def run_ifstruct(cfg, runner, prompter, limit):
                     "completion": o})
         scored.append({"id": it["id"], "correct": ok, "detail": detail,
                        "output_format": it["spec"]["output_format"]})
-    save(raw, "completions/ifstruct.jsonl")
-    save(scored, "scored/ifstruct.jsonl", kind="evals")
+    save(raw, "completions_ifstruct.jsonl")
+    save(scored, "scored_ifstruct.jsonl", kind="evals")
     out = ifstruct_score.summarize(scored)
     out["input_sha"] = shas
     log("  ifstruct first-attempt validity %.4f (n=%d)"
@@ -227,8 +242,8 @@ def run_ifeval(cfg, runner, prompter, limit):
         raw.append({"id": it["id"], "prompt_sha": hashlib.sha256(p.encode()).hexdigest()[:12],
                     "completion": o})
         scored.append({"id": it["id"], "correct": ok, "detail": detail})
-    save(raw, "completions/ifeval.jsonl")
-    save(scored, "scored/ifeval.jsonl", kind="evals")
+    save(raw, "completions_ifeval.jsonl")
+    save(scored, "scored_ifeval.jsonl", kind="evals")
     out = ifeval_score.summarize(scored)
     out["input_sha"] = shas
     log("  ifeval prompt-level strict %.4f loose %.4f (n=%d)"
@@ -264,8 +279,8 @@ def run_probes(cfg, runner, prompter, limit):
         scored.append({"id": it["id"], "probe": it["probe"], "arm": it["arm"],
                        "mode": it["mode"], "depth": it["depth"], "correct": ok,
                        "detail": detail})
-    save(raw, "completions/probes.jsonl")
-    save(scored, "scored/probes.jsonl", kind="evals")
+    save(raw, "completions_probes.jsonl")
+    save(scored, "scored_probes.jsonl", kind="evals")
     out = probes_score.summarize(scored)
     out["input_sha"] = shas
     out["control_sha"] = csha
@@ -290,8 +305,19 @@ def main():
     styles = [s.strip() for s in str(cfg.get("bfcl_styles", "tools_text,native_tools")).split(",") if s.strip()]
     cats = [c.strip() for c in str(cfg.get("bfcl_categories", ",".join(bfcl.DEFAULT_CATEGORIES))).split(",") if c.strip()]
     limit = int(cfg.get("limit_per_component", 0) or 0)
-    log("run %s: model=%s adapter=%s components=%s limit=%s"
-        % (run_tag, base, adapter_obj or "-", components, limit or "all"))
+    # Per-component caps, because the components differ in cost by an order of magnitude and a
+    # single number cannot express a screening profile. A sweep arm does not need all 2,000
+    # structured-output rows to be ranked against its siblings, and it does need every probe
+    # item, since the guardrail criteria are pass/fail on the whole set. Unset (-1) inherits
+    # `limit_per_component`; 0 means the full set.
+    def cap(name):
+        v = cfg.get("limit_" + name, -1)
+        v = int(v) if v not in ("", None) else -1
+        return limit if v < 0 else v
+    limits = {c: cap(c) for c in ("bfcl", "ifstruct", "ifeval", "probes")}
+    profile = str(cfg.get("profile", "") or ("screening" if limit else "full"))
+    log("run %s [%s]: model=%s adapter=%s components=%s limits=%s"
+        % (run_tag, profile, base, adapter_obj or "-", components, limits))
 
     # nltk's punkt tokenizer is a runtime download and IFEval's registry needs it.
     if "ifeval" in components:
@@ -323,16 +349,16 @@ def main():
     for i, comp in enumerate(components):
         log("component %s" % comp)
         if comp == "bfcl":
-            results["bfcl"] = run_bfcl(cfg, runner, prompter, cats, styles, limit)
+            results["bfcl"] = run_bfcl(cfg, runner, prompter, cats, styles, limits["bfcl"])
             score["bfcl_ast_composite"] = round(results["bfcl"]["composite"], 4)
         elif comp == "ifstruct":
-            results["ifstruct"] = run_ifstruct(cfg, runner, prompter, limit)
+            results["ifstruct"] = run_ifstruct(cfg, runner, prompter, limits["ifstruct"])
             score["ifstruct_validity"] = round(results["ifstruct"][ifstruct_score.FIRST_ATTEMPT], 4)
         elif comp == "ifeval":
-            results["ifeval"] = run_ifeval(cfg, runner, prompter, limit)
+            results["ifeval"] = run_ifeval(cfg, runner, prompter, limits["ifeval"])
             score["ifeval_prompt_strict"] = round(results["ifeval"]["prompt_level_strict"], 4)
         elif comp == "probes":
-            results["probes"] = run_probes(cfg, runner, prompter, limit)
+            results["probes"] = run_probes(cfg, runner, prompter, limits["probes"])
             p = results["probes"]
             score["probe_flag_rate"] = p["flag_rate_malformed"]
             score["probe_false_flag"] = p["false_flag_rate_clean"]
@@ -350,7 +376,9 @@ def main():
                     "padding_side": "left", "batch_size": int(cfg.get("batch_size", 16))},
         "template": {"mode": prompter.mode, "note": prompter.note,
                      "supports_tools_arg": prompter.supports_tools_arg},
+        "profile": profile,
         "limit_per_component": limit or None,
+        "limits": limits,
         "components": components,
         "results": results,
         "throughput": runner.throughput(),
@@ -361,6 +389,12 @@ def main():
         "config": {k: cfg.get(k) for k in sorted(cfg)},
     }
     save(summary, "eval_summary.json", kind="evals")
+    # The .json above does not come back from `job download`: the artifact store registered
+    # every .jsonl this run wrote and silently dropped the .json, so the first smoke's summary
+    # existed in the log and nowhere retrievable. The same object goes out as one .jsonl line,
+    # which does register. Both are written because the .json is the readable one on the job's
+    # own file tree.
+    save([summary], "eval_summary.jsonl", kind="evals")
     score["assertion_failures"] = summary["assertion_failures"]
     score["generated_tokens"] = summary["throughput"]["generated_tokens"]
     log(json.dumps({k: v for k, v in score.items()}, indent=1, sort_keys=True))

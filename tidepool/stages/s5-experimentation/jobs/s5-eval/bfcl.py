@@ -115,8 +115,13 @@ def load_category(data_dir, cat, limit=0):
             continue                                  # no ground truth, not scoreable
         items.append({"id": r["id"], "category": cat, "messages": msgs,
                       "tools": to_openai_tools(r.get("function")), "ground_truth": gt})
-        if limit and len(items) >= limit:
-            break
+    # Strided, not the first N. The files are ordered, and within a category the harder
+    # multi-argument rows cluster; a head slice of `live_multiple` would sample 120 of 1,053
+    # rows from one corner of the distribution and call the result a category score. Striding
+    # is deterministic, so a screening cap is still an exactly paired comparison across models.
+    if limit and len(items) > limit:
+        stride = len(items) // limit
+        items = items[::stride][:limit]
     return items
 
 

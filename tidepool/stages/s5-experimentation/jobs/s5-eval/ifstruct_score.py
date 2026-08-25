@@ -51,8 +51,12 @@ def load(path, limit=0):
                          "require_wrapper_key": bool(r.get("require_wrapper_key")),
                          "require_code_block": bool(r.get("require_code_block"))},
             })
-            if limit and len(items) >= limit:
-                break
+    # Strided, not the first N: the file is ordered (1,000 JSON rows then 1,000 YAML rows), so a head slice would
+    # screen one slice of the benchmark and report it as the benchmark. Deterministic, so a
+    # capped pass is still exactly paired across models.
+    if limit and len(items) > limit:
+        stride = len(items) // limit
+        items = items[::stride][:limit]
     return items
 
 
