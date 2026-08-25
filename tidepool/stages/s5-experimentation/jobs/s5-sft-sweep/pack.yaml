@@ -26,6 +26,11 @@ parameters:
   # fragmentation, the CUDA context each process holds, and the transient peak during model
   # load. Each child is capped at pack_headroom / len(arms) and fails alone if it exceeds it.
   pack_headroom: 0.92
+  # Comma-separated, parallel to `arms`; empty means equal shares. The arms do not have equal
+  # appetites -- a full-parameter arm carries gradients and fp32 optimizer moments for every
+  # parameter, several times what a rank-16 adapter needs -- so an even split would starve it
+  # while the LoRA arms sat under ceilings they never approach.
+  pack_weights: ""
   # Every child peaks its memory while loading the same base model. Starting them together
   # stacks load peaks the steady state would never reach, so they are spaced out.
   stagger_seconds: 45

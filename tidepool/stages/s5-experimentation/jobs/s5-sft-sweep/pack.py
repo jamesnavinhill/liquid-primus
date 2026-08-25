@@ -55,6 +55,7 @@ def C(k, default):
 
 ARMS = [a.strip() for a in str(C("arms", "")).split(",") if a.strip()]
 HEADROOM = float(C("pack_headroom", 0.92))
+WEIGHTS_RAW = str(C("pack_weights", ""))
 STAGGER = float(C("stagger_seconds", 45))
 GRACE = float(C("shutdown_grace_seconds", 30))
 POLL = 5.0
@@ -66,7 +67,24 @@ if not ARMS:
 OUT = "out"
 os.makedirs(OUT, exist_ok=True)
 N = len(ARMS)
-MEMFRAC = round(HEADROOM / N, 4)
+
+# Shares are weighted, not equal. The arms in this sweep do not have equal appetites: a
+# full-parameter arm carries gradients and fp32 optimizer moments for every parameter and
+# needs several times what a rank-16 adapter does, so splitting the card evenly would starve
+# it while leaving the LoRA arms holding ceilings they never approach. `pack_weights` is a
+# comma-separated list parallel to `arms`; an empty list means equal shares.
+if WEIGHTS_RAW.strip():
+    W = [float(x) for x in WEIGHTS_RAW.split(",") if x.strip()]
+    if len(W) != N:
+        lab.error(message="pack_weights has %d entries for %d arms" % (len(W), N))
+        raise SystemExit(2)
+    if min(W) <= 0:
+        lab.error(message="pack_weights must all be positive, got %r" % (W,))
+        raise SystemExit(2)
+else:
+    W = [1.0] * N
+TOTAL_W = sum(W)
+MEMFRAC = {a: round(HEADROOM * w / TOTAL_W, 4) for a, w in zip(ARMS, W)}
 
 # The child's whole configuration travels on the environment. A child never calls the job
 # API, so it cannot ask for its own config; passing the supervisor's verbatim is what keeps a
@@ -80,8 +98,9 @@ def log(msg):
 
 
 log("packing %d arms onto one GPU: %s" % (N, ", ".join(ARMS)))
-log("per-arm memory ceiling %.1f%% of the card (headroom %.2f / %d arms), "
-    "stagger %.0fs" % (100 * MEMFRAC, HEADROOM, N, STAGGER))
+log("per-arm memory ceilings (headroom %.2f, stagger %.0fs): %s"
+    % (HEADROOM, STAGGER,
+       ", ".join("%s %.1f%%" % (a, 100 * MEMFRAC[a]) for a in ARMS)))
 
 children = {}          # arm -> Popen
 started = {}           # arm -> monotonic start
@@ -111,7 +130,7 @@ def spawn(arm):
     env["TIDEPOOL_PACK_CHILD"] = "1"
     env["TIDEPOOL_PACK_ARM"] = arm
     env["TIDEPOOL_PACK_OUT"] = adir
-    env["TIDEPOOL_PACK_MEMFRAC"] = str(MEMFRAC)
+    env["TIDEPOOL_PACK_MEMFRAC"] = str(MEMFRAC[arm])
     env["TIDEPOOL_PACK_CFG"] = json.dumps(CHILD_CFG)
     env["TIDEPOOL_PACK_LOCAL"] = json.dumps(LOCAL)
     # Distinct W&B run per arm; without this every child reports into one run.
@@ -272,6 +291,7 @@ for arm in ARMS:
 summary = {
     "arms": ARMS,
     "pack_size": N,
+    "pack_weights": dict(zip(ARMS, W)),
     "per_arm_memory_fraction": MEMFRAC,
     "exit_codes": done,
     "wall_clock_hours": round((time.time() - t0) / 3600.0, 3),
