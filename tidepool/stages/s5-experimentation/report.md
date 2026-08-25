@@ -623,6 +623,18 @@ when it is.
   byte-identical as `25e75d99` so the retry tests one hypothesis and not two. A second identical
   signature is a platform fault to raise rather than a fourth build to attempt.
 
+- 2026-08-25 · s5.2 · Attempt 4 of the serving build, `b7de2af2`, changed one value: the compute
+  source, `gcp` to `aws`, with the card held at `L4:1` and `sm_89` so nothing about the
+  comparison moves. It is running and compiling, which settles the question the two lost runs
+  posed: they were specific to one source, and there is no fault for anyone to fix. The
+  provider steering note is what pointed here, since it works a card's full source row before
+  the card counts as unavailable.
+- 2026-08-25 · mirror · This turn's state pushed to `github.com/jamesnavinhill/liquid-primus`
+  under `tidepool/`, commit `387cf92`: the re-sourced build task and its script, the `s5.2` run
+  record with the four build attempts and their diagnosis, the reference row's two full-count
+  scores, the anchor limit now written into `overview.md`, and the ledger at 1.597 of 145
+  GPU-hours.
+
 ## The 4-bit serving path is the stage's open blocker
 
 Three of the six baseline rows are 4-bit GGUF, and the promise in the success criteria is that a
