@@ -109,6 +109,16 @@ metric consults anything the gateway would not have at inference time.
   success rate, and IFStruct first-attempt schema validity. Reported as absolute scores and
   as deltas against a matched rerun of every baseline in the same harness with the same
   seeds, decoding parameters, and prompt templates.
+  - **Neither BFCLv3 nor IFStruct has a public anchor at tier 1, and no published figure may
+    be quoted beside either.** Recorded at `s5.2`, once both had run at full item counts. For
+    BFCLv3 the reason is scale: this harness reports an unweighted mean over 11 named AST and
+    restraint categories, and the published 52.43 is a weighted average over a wider benchmark
+    including categories not run here. For IFStruct the reason is that **the LFM2.5-1.2B-Instruct
+    card publishes no IFStruct score at all** — its seven columns are GPQA, MMLU-Pro, IFEval,
+    IFBench, Multi-IF, AIME25 and BFCLv3. The 85.49 in the source material belongs to LFM2.5-2.6B,
+    a separately post-trained checkpoint of twice the size. On both metrics the operative bar is
+    therefore the `B1` reference row's own figure from this harness at full counts, which is what
+    the plan specified: a matched rerun, never a quoted number.
 - **Reliability axis:** flag rate and false-flag rate on the malformed-tool-return probe,
   reported as a pair, with functional accuracy alongside. Either number alone is gameable: a
   model that flags everything scores perfectly on one and catastrophically on the other, and

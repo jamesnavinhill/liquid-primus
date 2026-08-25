@@ -1,7 +1,7 @@
 # Tasks: tidepool — improving the LFM2.5 on-device family for our agent stack
 
 Status: `[ ]` todo · `[~]` in progress · `[!]` blocked · `[x]` done · `[-]` cancelled (the operator closed the project)
-Active stage: s4
+Active stage: s5
 
 > Project notes (from the operator's plan in `documents/liquid-primus/`): the goal is
 > improved LFM2.5 checkpoints plus a hybrid MoE family, specialized to this
@@ -40,7 +40,7 @@ Active stage: s4
 
 ## s5 - Experimentation
 - [x] s5.1 Smoke tests / toy runs  — both paths clean; L40S throughput measured at 3,994 tok/s and the C sweep resized to fit
-- [~] s5.2 Baselines  — harness built and verified against ground truth; two profiles defined and priced; first full baseline pending the narrowed smoke
+- [~] s5.2 Baselines  — harness verified; reference row B1 scores 0.6700 tool-calling and 0.1355 structured-output validity at full counts, reads behind the 1B incumbent on tool calling, and has no public anchor for structured output; the 4-bit serving path is on its fourth build attempt, moved to a different compute source after two launches provisioned a machine and ran nothing, and the three GGUF rows wait on it
 - [ ] s5.3 Broad sweep
 - [ ] s5.4 Direction decision with researcher  (checkpoint)
 - [ ] s5.5 Detailed runs

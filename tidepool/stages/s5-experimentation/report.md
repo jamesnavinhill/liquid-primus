@@ -2,32 +2,28 @@
 
 _Status: `s5.1` complete, `s5.2` in progress. The throughput the whole budget rests on is
 measured, the sweep is resized to fit it, and the evaluation harness every later number comes
-from is built, verified against ground truth and smoked end to end. The reference baseline is
-running at full item counts and the competitor is being smoked beside it._
+from is built, verified against ground truth and smoked end to end. The reference baseline's
+tool-calling number is in at full item counts and reads below the competitor's smoke, which is
+the finding that now shapes the stage. Its structured-output number is now in too, and it
+refutes the explanation the smoke gave for it. The 4-bit serving path is the open blocker: three
+build attempts have produced no binaries, one on a missing CUDA compiler and two on launches that
+never ran the task at all, and a fourth is in flight on a different compute source._
 
 ## Headline
 
-The one assumption the whole compute budget rested on turned out to be wrong by half. A short
-calibration run measured **3,994 training tokens per second on the 48 GB card against the 6,000
-the plan assumed**, which makes one pass over the training mix cost 6.3 GPU-hours instead of
-4.2. At that rate the planned 8-arm sweep would need 103 GPU-hours where it was given 38, and a
-full two-pass version would need 227 against an account that holds 200, so it could not have
-run at all. The sweep is therefore resized to a fixed 64 million tokens per arm: all 8 arms
-survive, every comparison stays paired at equal exposure, and it fits the approved 145
-GPU-hours with nothing to ask for. Both smoke paths are closed on the science first: validation
-loss fell 1.32 → 0.28 over 60 steps, the model's own chat template accepted tool-call turns
-with no fallback, and the replay path reproduced its 64 completions and 15,677 tokens exactly
-across two runs. Attention then moved to `s5.2`, where the one evaluation harness that scores
-every model in this project was built and checked before it was allowed to spend GPU time: its
-tool-call grader scores a ground-truth oracle at exactly 1.0000 over 858 items and 0.000 on
-three deliberate degradations, and a determinism bug in the vendored instruction-following
-grader was caught locally by a score that is impossible by construction. Two end-to-end smokes
-then found four more faults for the price of 0.31 GPU-hours: a crash on a set-valued argument,
-two artifact bugs that were losing the scored detail and the run summary, and a tool-call parser
-that could read our own checkpoint's format and none of the formats a competitor emits. The last
-one mattered most, because the project's absolute bar is a competitor's published score and a
-parser that cannot read its output would have handed us a threshold we invented. The full
-baseline row is now on the GPU. Spend so far is 1.02 of 145 GPU-hours.
+The reference baseline now has two numbers at full counts, and the second one changed what we can
+claim. On tool calling it scores **0.6700 over all 3,490 held-out items**, behind the 1B-class
+competitor's **0.7795** on a 378-item sample of the same suite under identical decoding, so on the
+capability ranked first here the model we were asked to improve currently sits behind the one it is
+measured against. On structured output it scores **0.1355 over 2,000 items**, which barely moved
+from the 40-item smoke's 0.125 and so refutes the small-sample explanation recorded for it; the
+vendor publishes no structured-output figure for this checkpoint, so that score is a within-harness
+reference with no public anchor and no published number may be quoted beside it. The 4-bit serving
+path is still the stage's open blocker: three builds have produced no binaries, one on a CUDA
+compiler that was installed and then not found, and two on launches that provisioned a machine and
+never ran the task on it. A fourth is in flight on a different compute source, following the team's
+own guidance to work a card's full source list before treating it as unavailable. Spend is 1.597 of
+145 GPU-hours, of which 0.10 bought nothing at all.
 
 ## Work log
 
@@ -330,6 +326,38 @@ relaunch accounting are in `runs/s5.1-smoke.md`.
   competitor pass. It answers whether the checkpoint loads on this stack, whether its own chat
   template accepts our tool rendering, and whether the hardened parser reads its real output
   rather than the fixtures written for it. 0.15 GPU-hours against the 2.5 a full pass costs.
+- 2026-08-25 · s5.2 · Built the missing half of the harness. Three baseline rows are published
+  4-bit GGUF files and the project's headline promise is about 4-bit builds, and neither could be
+  measured: GGUF runs in llama.cpp, which publishes no prebuilt Linux CUDA binary. The evaluation
+  task now carries a second backend behind the same interface, so a 4-bit row and the
+  full-precision row it is compared against differ in weights and runtime and in nothing else.
+  A new job compiles the backend once at a pinned tag, serves the vendor's own Q4 file on the
+  eval card to prove the architecture runs, checks the server reproduces its own output at
+  temperature 0, and prices a full 4-bit pass from measured throughput. The three published files
+  are named explicitly in `runs/s5.2-baselines.md`, and the task refuses to pick a quantization by
+  pattern.
+- 2026-08-25 · s5.2 · The Granite smoke settled all three of its unknowns for 0.30 GPU-hours and
+  paid for itself twice over. The competitor loads and renders our tool contract; its two surface
+  forms differ by a factor of four, with 299 of 378 prose-prompted completions being the bare
+  opening marker and nothing after it; and it generates at a quarter of the reference
+  checkpoint's rate on the same card, which re-prices its full pass at about five hours. Its
+  batch size stays at 16 rather than being raised for speed, because a baseline served
+  differently from the row it is compared against is not a baseline. Ceiling raised to seven
+  hours.
+- 2026-08-25 · s5.2 · Found the real cause of the artifact bug, which the previous run had
+  misdiagnosed. Five of eleven files logged as saved were absent from the artifact listing and
+  from the download path, and the five absent were exactly the five marked as eval results.
+  Marking a file that way files it under metadata the tooling cannot read back. Every save in the
+  eval task is now untyped, the wrong explanation is corrected in the run log and the ledger, and
+  the rule stands: a job's outputs are unproduced until `job artifacts` has listed them.
+- 2026-08-25 · s5.2 · The reference row's tool-calling pass finished: **0.6700 composite over all
+  3,490 held-out items** in the model's own tool template, against 0.5355 in our training
+  convention. The competitor's 378-item smoke reads 0.7795 under the same protocol. On the
+  capability ranked first in this project the incumbent is currently ahead of the checkpoint we
+  were asked to improve, and the gap is larger than sampling noise at that sample size. Recorded
+  as the finding that shapes `s5.3` rather than as a number in a table.
+- 2026-08-25 · s5.2 · Queued `ad6cded5` into the freed GPU slot: the pinned-tag CUDA build of the
+  4-bit serving stack, which every quantized baseline row waits on.
 
 ## s5.2 The evaluation harness, and what its numbers mean
 
@@ -409,6 +437,40 @@ inference server later invalidates every full-precision number taken here and me
 all of them, so the backend, the card and the decoding settings are part of every recorded
 result. The 4-bit builds (`B2`, `B3`, `B5`) need a separate `llama.cpp` serving path and are not
 scored through this task.
+
+## s5.2 The 4-bit half of the harness
+
+Half of what this project promises is about 4-bit builds: three of the six baseline rows are
+published GGUF files, and the success criteria ask a 4-bit form to hold the full-precision bar.
+Until now only the full-precision side had a harness, so that half of the claim had no way to
+be measured.
+
+It is now a second backend on the same task rather than a second task. `backend=gguf` swaps the
+generator and nothing else: item selection, prompt rendering, parsing and scoring are literally
+the same code on both sides of every quantization claim. Prompts are rendered by the tokenizer
+of the full-precision repo the GGUF was quantized from and tokenized by the server with the
+special-token prefix suppressed, because the chat template already writes that token as text and
+two of them in front of every prompt would make the comparison a comparison of prompts.
+
+llama.cpp publishes no prebuilt Linux CUDA binary, so the backend is compiled by its own job at
+a pinned tag, targeted at the one GPU architecture both project cards share, and kept as a
+stored artifact that later 4-bit runs download rather than rebuild. That job does not stop at a
+successful compile: it serves the vendor's own Q4 file, offloads it to the card, generates from
+it, checks that two identical requests at temperature 0 return identical text, and prices a full
+4-bit pass from its own measured throughput. It also keeps the quantizer and the GGUF converter
+from the same tag, because our own checkpoint has to become a GGUF eventually and the converter
+that makes it must match the runtime that serves it.
+
+### The confound, stated rather than hidden
+
+GGUF only runs in llama.cpp, so a 4-bit row and a full-precision row cannot share a backend.
+What the resulting delta measures is two *deployed artifacts*, weights and runtime together,
+which is what the operator's criterion is about: an 8 GB card runs a 4-bit build, not a
+dequantized tensor. Quantization and runtime are still separable, and cheaply, because the vendor
+publishes an F16 GGUF beside the Q4 ones: F16-in-llama.cpp against Q4-in-llama.cpp isolates
+quantization, and F16-in-llama.cpp against full precision in `transformers` prices the runtime.
+All three are one parameter change on the same task, and each number records which comparison it
+belongs to.
 
 ## Operator input (s5.1)
 
@@ -544,22 +606,157 @@ approved figure and nothing needs asking for. The 4-bit baselines `B2`, `B3` and
 in the table: they need the `llama.cpp` serving path, which is not built, and they are priced
 when it is.
 
+- 2026-08-25 · s5.2 · The first `llama.cpp` build, `ad6cded5`, failed in its own environment
+  probe: no CUDA compiler in the image, and the wheel that installed one landed in a
+  site-packages the job never looked in. Charged 0.18 GPU-hours as an observed bracket, since
+  the platform recorded no end time.
+- 2026-08-25 · s5.2 · Repaired and relaunched the serving build as `602b78a9`. Four changes:
+  find the compiler by searching the filesystem and install with the same interpreter that
+  searches; assemble one CUDA prefix from all four toolchain wheels, because the compiler wheel
+  has no `cuda_runtime.h`; assert the running server reports a CUDA device, so a CPU fallback
+  cannot pass as a build; and drop `type=` from every artifact save, which this project has
+  already proven makes a file unreachable. Signatures and attempt counts in
+  `runs/s5.2-baselines.md`.
+- 2026-08-25 · s5.2 · `602b78a9` came back complete having run nothing: a zero-byte log, no
+  artifacts, and fifteen empty polls for a job on its own machine. Ruled out the disk request and
+  a broken script, charged the 0.09 GPU-hours the instance really held, and relaunched
+  byte-identical as `25e75d99` so the retry tests one hypothesis and not two. A second identical
+  signature is a platform fault to raise rather than a fourth build to attempt.
+
+## The 4-bit serving path is the stage's open blocker
+
+Three of the six baseline rows are 4-bit GGUF, and the promise in the success criteria is that a
+4-bit build holds the full-precision bar. Only one side of that comparison can currently be
+measured. The first build of the `llama.cpp` serving path, job `ad6cded5`, failed inside its own
+environment probe: the image ships no CUDA compiler, the wheel fallback installed one and
+reported success, and the job could not find it, because it searched only `PATH` and the
+site-packages of the interpreter running the script while installing with whichever `pip` was on
+`PATH`. Cost 0.18 GPU-hours and produced nothing.
+
+Repairing it surfaced three faults that had not fired yet and would each have cost a launch of
+their own: the CUDA prefix handed to CMake was the compiler wheel alone, which has no
+`cuda_runtime.h`; nothing asserted the served model actually reached the GPU, so a CPU fallback
+would have finished green and mispriced every 4-bit measurement by roughly thirty times; and all
+three artifact saves were typed, which this project has already proven puts a file where no `job`
+subcommand can list it — including the tarball that is the job's whole deliverable. Attempt 2 carried
+all of that: the compiler located by searching the filesystem, a synthetic CUDA prefix assembled
+from all four toolchain wheels, a hard refusal to build without `cuda_runtime.h`, a hard
+assertion that the running server reports a CUDA device, untyped saves, and its own
+shared-storage upload to the object name the Q4 evaluation task already reads.
+
+None of it ran. Attempt 2 was reported complete five minutes after launch having written a
+zero-byte log, saved no artifacts, and recorded fifteen consecutive empty polls for a running job
+on its machine: the instance was provisioned and the task never started on it. Two candidate
+causes were checked and dropped — the disk request, which four other jobs in this project have
+provisioned fine at the same size, and a broken script, which a local compile rules out and which
+would have written a traceback rather than nothing. Across eighteen jobs in this project this is
+the only one with a nonzero empty-poll count, so the launch is the suspect and the task is not.
+
+Attempt 3, job `25e75d99`, therefore went out byte-identical. With no evidence that any task code
+executed, changing the task would only confound the one question worth asking. If it returns the
+same signature the repeat is itself the finding and the next move is to raise it as an
+infrastructure fault, not to rebuild a fourth time.
+
+The full narrative, including the exact failure signature of each attempt, is in
+`runs/s5.2-baselines.md`. Attempt count in this substage: 3, of which one failure had a cause in
+the task and one had none.
+
+## The lost runs were not one-off, and the fix was a source rather than a marker (s5.2)
+
+Attempt 3 of the 4-bit build repeated attempt 2's signature exactly and faster: reported complete
+fourteen seconds after launch, zero-byte log, no task logs, no machine logs, no artifacts. The
+entry above committed the next move to raising this as an infrastructure fault. **On re-reading
+the provider steering note that commitment was wrong, and it was not followed.**
+
+The note of 2026-08-23 lists the source row for the 24 GB card this build uses as AWS, then GCP,
+then RunPod, to be worked left to right without stopping before the last entry, and it is explicit
+that exhausting a row is still not a reason to park a project. Two of those three sources had
+never been tried. The only reason both lost attempts landed on the one that fails is a pin this
+project itself added at attempt 2, after attempt 1 provisioned there cleanly. A pin of our own is
+a fix available on our side, which makes this the relaunch case and not the escalate case: parking
+the project while two thirds of the card's sources were untouched would have cost the operator a
+day and reached people who could not have helped.
+
+Attempt 4 therefore changes exactly one value, checked by diffing the uploaded task against the
+running one before it was applied: the compute source moves to the first entry in the row. The
+card is held identical, which is what keeps the binaries and the measured throughput comparable
+with every full-precision number in this project, so the note's re-measure exception does not
+apply. If this attempt prints a single line, pass or fail, the build is debuggable again. If it
+comes back empty the fault follows the task across two sources, and the next step is the third
+and last source in the row before anything is escalated.
+
+**This decision was taken without operator review**, under the standing instruction to proceed on
+my own recommendation and record it. The steering note is what decided it, and it outranked the
+plan recorded here an hour earlier.
+
+## The structured-output result has no public anchor, and that is a limit on the claim (s5.2)
+
+The reference row's structured-output pass finished at full counts: **first-attempt schema
+validity 0.1355 over 2,000 items**, against 0.125 on the 40-item smoke. The smoke's recorded
+explanation was that the small sample was to blame and the full pass would settle it upward.
+Fifty times the items moved the number by a single point, so that explanation is now withdrawn.
+
+The same section promised to re-investigate the harness if the full number came in far under the
+vendor's published figure, and following that promise turned up something more useful. **The
+vendor publishes no structured-output score for this checkpoint at all.** Its card carries seven
+columns and this benchmark is not among them; the one published figure in the source material,
+85.49, belongs to a different checkpoint of twice the size, in a table whose five models spread
+from 36.25 to 85.49. There is no published number for this model to fall short of, so the trigger
+never fires and the harness is not implicated.
+
+What that leaves is a constraint rather than reassurance: on this device tier the structured-output
+score has no comparable public reference, so it is a within-harness figure only and no published
+number may be quoted beside it. The tool-calling metric is already in exactly that position for
+the same reason. The bar every later checkpoint is measured against is this harness's own
+reference row at full counts, which is what the plan specified.
+
+Two loose ends are recorded and neither holds the substage. The harness computes a partial-credit
+score alongside strict validity and only the strict one was printed, so whether the model
+half-satisfies these schemas or misses them wholesale is still unknown, and it is the difference
+between two quite different claims about this tier. And the per-item scored file for this run is
+not retrievable, because the run launched before the typed-save fix. Both are recoverable from the
+raw completions, which *are* on the job record, by re-scoring rather than regenerating. That
+re-scoring step has to exist before the error analysis in stage 6 reads per-item detail, and it is
+queued work rather than local work, because the partial score is a number this project would cite.
+
+## Operator input (no checkpoint)
+
+A prompt raised at the end of the previous wake was answered automatically rather than by a
+person: _"Full Self Driving: no operator is answering this. Proceed on your own recommendation, and
+record in the stage report which option you took and why."_ Two decisions followed from that and
+both are recorded above in full: the lost 4-bit build was moved to a different compute source
+instead of being escalated as an infrastructure fault, on the strength of the team's own provider
+guidance; and the structured-output score was accepted as a within-harness reference with no public
+anchor, rather than triggering another harness investigation, because the published figure it was
+going to be checked against turned out to belong to a different checkpoint. Nobody reviewed either.
+
 ## Immediate next actions
 
-1. Read the harness smoke `5fe7a828` against its own assertions: the model's template must
-   accept tool turns with no fallback, both surface forms must render and parse, every grader
-   must return, and the artifacts must be on the job record. The rates it reports are not
-   results at 40 items per component and the summary marks the run as limited.
-2. Then the baseline row at full item counts: `B1` the full-precision instruct checkpoint,
-   `B4` the 1B-class competitor that carries the absolute threshold, and `B6` the base
-   non-instruct checkpoint, all through the same task with the model swapped by parameter.
-   `B2`, `B3` and `B5` are 4-bit builds and wait on the `llama.cpp` serving path.
-3. Pin the provider in every task that asks for the 48 GB card. The stored calibration task
-   carries `resources.compute_provider: aws`, which is where the field validates; at the top
-   level it is rejected. Left unset a sweep arm lands on a provider that does not sell the card
-   and fails at launch, or worse, on a smaller card whose numbers are not comparable.
-4. Carry the 64.0M-token arm budget into the `s5.3` sweep tasks as a parameter, not a
+1. Read attempt 4 of the 4-bit build, job `b7de2af2`, on one question before any other: did it
+   print a single line? Any task log at all, pass or fail, means the two lost runs were specific
+   to the previous compute source and the build is debuggable again. A zero-byte log with empty
+   polls means the fault follows the task, and the next step is the third and last source in the
+   card's row before anything is escalated.
+2. If it ran, read it on the specifics the previous attempts never reached: where the CUDA
+   compiler came from, whether the assembled toolkit yielded a `cuda_runtime.h`, the offload lines
+   echoed after the server reports healthy, the 8-slot generated tokens per second, the hours that
+   prices for a full 4-bit pass, and whether `job artifacts` actually lists the tarball. If it is
+   listed but the in-job storage upload did not happen, place it in shared storage as
+   `tidepool/llama-b10622-sm89.tar.gz` before queueing any 4-bit row. `B2`, `B3`, `B5` and the F16
+   runtime reference all wait on this one job.
+3. Finish the reference row `4350ce4e`: instruction following and the probe set with its 30-item
+   control arm are still to land. Its per-item scored files will not be retrievable, so do not
+   plan the stage-6 error analysis around them.
+4. Build the re-scoring path before stage 6. It scores an existing completions file without
+   regenerating it, which is the only way to recover this row's partial structured-output score
+   and its per-item detail, and it makes every finished run re-scorable when the parser improves.
+   It is a queued job, not local work.
+5. Then the remaining full-precision rows: `B4`, the 1B-class competitor carrying the absolute
+   threshold, and `B6`, the base non-instruct checkpoint, through the same task with the model
+   swapped by parameter. `B4` is priced from its own smoke rather than from the reference row's
+   throughput, because it generates at a fraction of the rate.
+6. Pin the compute source in every task that asks for the 48 GB card, at `resources` level where
+   the field validates. Left unset, a sweep arm lands somewhere that does not sell the card and
+   fails at launch, or worse on a smaller card whose numbers are not comparable.
+7. Carry the 64.0M-token arm budget into the `s5.3` sweep tasks as a parameter rather than a
    convention, so no arm can quietly run longer than the one it is compared against.
-5. Build the `llama.cpp` serving path before the 4-bit baselines `B2`, `B3` and `B5`. The
-   success criteria ask a 4-bit build to hold the full-precision quality bar, so the comparison
-   is only meaningful once both sides are measured, and only one side has a harness.

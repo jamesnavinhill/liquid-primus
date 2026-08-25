@@ -170,7 +170,70 @@
    "durationHours": 0.14,
    "spend": 0.14,
    "recordedAt": "2026-08-25T13:26:00Z",
-   "description": "s5.2 evaluation-harness smoke, attempt 2, narrowed to the three components attempt 1 never reached. COMPLETE with 0 assertion failures: structured output, instruction following and the probe set with its clean control arm all generated, scored and saved. 27,054 generated tokens at 247.2 tok/s. Instruction following read 0.800 prompt-level at n=40 against a published 86.23 for this checkpoint, which is the harness landing where it should. Two silent artifact bugs found by reading what came back: a basename collision that replaced raw completions with scored files, and a .json summary that logged as saved and was not retrievable. Both fixed."
+   "description": "s5.2 evaluation-harness smoke, attempt 2, narrowed to the three components attempt 1 never reached. COMPLETE with 0 assertion failures: structured output, instruction following and the probe set with its clean control arm all generated, scored and saved. 27,054 generated tokens at 247.2 tok/s. Instruction following read 0.800 prompt-level at n=40 against a published 86.23 for this checkpoint, which is the harness landing where it should. Two silent artifact bugs found by reading what came back: a basename collision that replaced raw completions with scored files, and a summary that logged as saved and was not retrievable. The first was fixed here; the second was misdiagnosed as a .json-versus-.jsonl problem and the real cause was only found on c644aac2, recorded there."
+  },
+  {
+   "id": "s5.2-B4-granite-smoke",
+   "jobId": "c644aac2-4505-4d85-b3c8-e2c450501e6d",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "task": "s5-eval",
+   "resources": "L4:1",
+   "accelerators": "L4:1",
+   "status": "COMPLETE",
+   "durationHours": 0.3,
+   "spend": 0.3,
+   "recordedAt": "2026-08-25T14:05:00Z",
+   "description": "s5.2 competitor smoke at 40 items per category on ibm-granite/granite-4.0-1b, the checkpoint that carries the absolute threshold. COMPLETE, 0 assertion failures, 54,839 generated tokens at 73.6 tok/s. Bought three answers for 0.30 GPU-h. The competitor loads and renders our tool contract under its own chat template. The two surface forms are not interchangeable for it: 0.7795 composite under native_tools against 0.1841 under tools_text, where 299 of 378 completions are the bare string <tool_call> and nothing after it, which is a fact about the checkpoint and not about our parser. And it generates at a quarter of the reference checkpoint's rate on the same card at the same batch size, so its full pass was repriced at about 5 h and the task ceiling raised to 7 h rather than raising its batch size away from the reference it is compared against.",
+   "note": "Also the run that found the artifact bug properly. Five of eleven files logged as saved were absent from the artifact listing and from job download; the six present were exactly the six saved without type=\"evals\". The type argument files a copy under eval-results metadata instead of the generic artifact store, and the CLI has no path to it. Every save in the eval task now saves untyped, so the scored per-item files and the run summary come back from here on."
+  },
+  {
+   "jobId": "ad6cded5-da97-431f-9eb0-cdff23af589f",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "description": "s5.2 4-bit serving path, attempt 1. Built nothing: the image ships no CUDA compiler, and the wheel fallback installed one (rc=0, 25 s) that the job then could not find, because it searched only PATH and this interpreter's site-packages. Superseded by 602b78a9; no numbers from this attempt are cited anywhere.",
+   "resources": "L4:1 (8 vCPU / 32 GB / 100 GB disk, gcp)",
+   "durationHours": 0.18,
+   "spend": 0.18,
+   "status": "FAILED",
+   "note": "Started 14:03:21Z; the platform recorded no end time, so the duration is the observed bracket to the 14:14Z status check rather than a reported figure, and is rounded up rather than down. The compute was really held: the cluster provisioned, the setup step ran, and the task reached its own environment probe before raising.",
+   "recordedAt": "2026-08-25T14:20:00Z"
+  },
+  {
+   "jobId": "602b78a9-bcfb-4288-be54-38e365721372",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "description": "s5.2 4-bit serving path, attempt 2. Marked COMPLETE 5m13s after launch having produced a zero-byte output file, no task logs, no machine logs and no artifacts, with 15 consecutive empty provider job polls: the VM was inserted and the task never ran on it. None of this attempt's fixes were exercised and no number from it is cited anywhere. Relaunched byte-identical as 25e75d99 to test whether the lost run was transient.",
+   "resources": "L4:1 (8 vCPU / 32 GB / 200 GB disk, gcp)",
+   "durationHours": 0.09,
+   "spend": 0.09,
+   "status": "COMPLETE (produced nothing)",
+   "note": "Charged on the recorded 14:19:06Z-14:24:19Z bracket, which the platform reported in full. The instance was really provisioned, so the time is charged even though the run produced no output; recording it as free would understate what the project has spent on this one job.",
+   "recordedAt": "2026-08-25T14:33:00Z"
+  },
+  {
+   "jobId": "25e75d99-14a1-4a6e-9629-443962a1519b",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "description": "s5.2 4-bit serving path, attempt 3. Relaunched byte-identical to attempt 2 to test one hypothesis: whether the lost run was transient. It was not. Marked COMPLETE 14 seconds after launch with a zero-byte log, no task logs, no machine logs and no artifacts, in the same gcp zone (us-central1-a) as attempts 1-3. Nothing in main.py executed, so no number from it is cited anywhere. The repeat is the evidence: two consecutive launches accepted the instance insert and never ran the task.",
+   "resources": "L4:1 (8 vCPU / 32 GB / 200 GB disk, gcp)",
+   "durationHours": 0.01,
+   "spend": 0.01,
+   "status": "COMPLETE (produced nothing)",
+   "note": "Charged on the platform's own 14:26:03Z-14:26:17Z bracket, rounded up from 0.0039 GPU-h. The instance was really inserted, so the time is charged rather than recorded as free, on the same principle as attempt 2.",
+   "recordedAt": "2026-08-25T14:44:00Z"
+  },
+  {
+   "jobId": "b7de2af2-e141-4bf0-a717-442e5d791734",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "description": "s5.2 4-bit serving path, attempt 4. Byte-identical to attempts 2 and 3 except the compute provider, gcp -> aws, following the steering note's source row for L4 (AWS, GCP, RunPod, worked left to right). Card unchanged at L4:1 sm_89. Launched into us-east-1a. Unblocks baseline rows B2, B3, B5 and the F16 runtime reference.",
+   "resources": "L4:1 (8 vCPU / 32 GB / 200 GB disk, aws)",
+   "durationHours": null,
+   "spend": null,
+   "status": "LAUNCHING",
+   "note": "Queued 2026-08-25T14:42Z, still launching at the time of writing. Spend is unknown until it terminates and is recorded as null rather than estimated.",
+   "recordedAt": "2026-08-25T14:44:00Z"
   }
  ]
 }

@@ -1,0 +1,46 @@
+# s5.2 — build the Q4 serving path once, verify it on the eval card, and keep the binaries.
+#
+# Three of the six baseline rows are 4-bit GGUF, and the project's headline promise is that a
+# 4-bit build holds the full-precision bar. Neither can be measured without llama.cpp, and no
+# prebuilt Linux CUDA binary is published: the upstream release carries CUDA builds for Windows
+# only. So it is built here, once, from a pinned tag, and the binaries are kept as an artifact
+# every later Q4 job downloads instead of rebuilding.
+#
+# The card is the same L4 every full-precision number is taken on, and the CUDA architecture is
+# pinned to sm_89, which is what both project cards are (L4 and L40S). Building for one
+# architecture instead of the default fan-out is the difference between a ten-minute compile and
+# an hour of it.
+#
+# It also runs the real thing rather than reporting a successful compile: it pulls the vendor's
+# own Q4 GGUF, serves it, generates from it, and measures tokens per second. A Q4 pass over the
+# full benchmark suite is priced off that number, not off an assumption.
+name: s5-llama-build
+run: python main.py
+setup: |
+  pip install -q -U cmake ninja huggingface_hub requests
+resources:
+  cpus: 8
+  memory: 32
+  # The CUDA toolchain arrives as wheels (~3 GB unpacked) on top of the source tree, the build
+  # tree and a 700 MB GGUF, so the default disk is not enough headroom to be safe.
+  disk_space: 200
+  accelerators: "L4:1"
+  # Attempts 2 and 3 were both lost on gcp: the instance insert was accepted and no job ever
+  # ran on the machine. The steering note's source row for L4 is AWS, GCP, RunPod, worked left
+  # to right, so attempt 4 moves to AWS with the card unchanged. Left unset, a build lands
+  # wherever the default points and these binaries are compiled for one card.
+  compute_provider: aws
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+parameters:
+  # Pinned. A serving backend that moves under the project changes every Q4 number taken with it.
+  llama_tag: b10622
+  cuda_arch: "89"
+  # The verification model: the vendor's own quantization-aware Q4_0 build, which is also
+  # baseline row B2.
+  verify_repo: LiquidAI/LFM2.5-1.2B-Instruct-GGUF
+  verify_file: LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf
+  verify_prompt_tokens: 1024
+  verify_new_tokens: 256
+  verify_parallel: 8
+minutes_requested: 120
