@@ -8,8 +8,9 @@ calling and at the floor on the guardrail axis. The competitor row that carries 
 tool-calling threshold is running, the **4-bit serving path is built,
 verified and priced**, and the guardrail supervision the corpus measurement forced has had its
 first run fail loudly and its causes fixed. The first 4-bit row lost a launch to a cloud that
-provisioned a machine and ran nothing, and is relaunched; the guardrail generator failed six of
-its own gates, wrote nothing, and is requeued after two real fixes._
+provisioned a machine and ran nothing, and is relaunched. **The guardrail training set is built
+and clean**: three attempts, nine gates, 7,988 rows and 4.35M tokens in shared storage with a
+138-item clean control arm._
 
 ## Headline
 
@@ -38,11 +39,15 @@ completion, wrote nothing, and failed six of nine gates: its contamination filte
 of rows because the probe preamble was deliberately written to match the corpus's formatting, and
 its no-fabrication check was matching single digits inside prose. Both are fixed against measured
 held-out data and requeued.
-Alongside them, on a CPU box that holds no accelerator slot, the guardrail training set is
-generating: defective tool returns built by the vendored probe transforms, paired one-for-one with
-their own intact counterparts, with two defect kinds held out of training and the taught phrasings
-split against the frozen detector so the flag rate cannot become a recall test on our own wording.
-Spend is 3.786 of 145 GPU-hours, of which 0.68 bought nothing at all.
+The guardrail training set is now built and clean on all nine gates, on the third attempt and on a
+CPU box that held no accelerator slot: **7,988 rows and 4.35M tokens** of defective tool returns
+built by the vendored probe transforms, each paired one-for-one with its own intact counterpart,
+with two defect kinds held out of training and the taught phrasings split against the frozen
+detector at **0.6838 coverage** so the flag rate cannot become a recall test on our own wording.
+Nothing quotes a value its damaged response no longer carries, nothing shares a question with a
+probe, and the **138-item clean control arm** is four times the frozen one, which is what lets the
+plan's 0.15 false-alarm ceiling be measured rather than asserted. Spend is 3.871 of 145 GPU-hours,
+of which 0.68 bought nothing at all.
 
 ## Work log
 
@@ -1315,3 +1320,60 @@ Two local diagnostics are checked in beside the generator, both explicit in thei
 docstrings that they produce no citable numbers: `decon_check.py`, which measured the
 contamination rule, and `leak_check.py`, which found the function-name collision. The fixture
 is up to 26 checks and includes the function-name case as a regression. Attempt 3 is `7248507b`.
+
+- 2026-08-25 · mirror · Pushed to `github.com/jamesnavinhill/liquid-primus` under `tidepool/`,
+  commit `109c309`: the prompt-scoped forbidden list and the two-split control arm, the third
+  local check script (`leak_check.py`), the 26-check fixture, this stage's record of attempt 2,
+  the ledger and the task list.
+
+## The guardrail training set is built and clean on all nine gates (s5.3)
+
+`7248507b` finished in 4 m 53 s on CPU and passed every gate. `SCORE` reads
+`{"rows": 7988, "train_tokens": 4351790, "detector_coverage": 0.6838, "control_n": 138,
+"gate_failures": 0}`. Both files are in shared storage:
+`tidepool/s5.3/tooldata/tooldata_train.jsonl.gz` and
+`tidepool/s5.3/tooldata/clean_control.jsonl`.
+
+The three defects that killed attempts 1 and 2 are all gone from the counters, and their
+absence is the evidence:
+
+| what failed before | attempt 1 | attempt 2 | attempt 3 |
+|---|---|---|---|
+| rows dropped on a probe-question 13-gram | 2,166 of 2,166 | 0 | **0** |
+| targets quoting a value the damaged response lost | 1,371 of 2,166 | 1,405 of 4,031 | **0** |
+| clean control arm | not reached | 68, floor 200 | **138**, floor 100 |
+| gates failed | 6 of 9 | 2 of 9 | **0 of 9** |
+
+`target_leaked_value` does not appear in the generation counters at all, so the leak rate is
+0.0000 against a ceiling of 0.10, and `no_mode_applied` is likewise absent: every one of the
+4,031 harvested sources got a defect. The only decontamination drop left is 37 rows carrying a
+value some probe forbids, which is the tighter of the two nets doing exactly its job.
+
+**Detector coverage landed at 0.6838**, inside the `[0.60, 0.90]` band and slightly below
+attempt 2's 0.704. The number is the fraction of defective targets the frozen 26-pattern
+detector fires on; the band exists so the training set teaches both the phrasings the detector
+recognises and a third of a corpus it does not, which is what keeps the s6 measurement from
+collapsing into a test of the detector's own vocabulary. 2,756 targets came from the
+`DETECTED` pool and 1,275 from `PARAPHRASE`.
+
+**One imbalance worth naming for the sweep.** `silently_truncated` carries 1,042 of the 4,031
+rows against roughly 580 for each of the other five common modes, because it is the mode that
+never skips: the 494 sources whose payload echoes no call argument cannot take `wrong_entity`,
+and the rotation hands them to the next mode in order. `wrong_entity` ends up at 91. The
+defect kinds are still all present and the two held-out kinds (`null_leaf`, `stale_as_of`) are
+absent by construction, so the s6 split between taught and untaught kinds is intact. If the
+sweep shows the model over-fitting the truncation phrasing specifically, rotating from a
+per-source random offset rather than a fixed mode order is the one-line fix.
+
+The control arm is 138 items, 70 from the validation split and 68 from test, and it carries
+the probe item schema (`arm`, `check`, `defect`, `depth`, `id`, `messages`, `mode`, `probe`,
+`scenario`) so it drops into the existing probe scorer without a second code path. Wiring
+`clean_control_object` into `s5-eval` and giving B1 a supplementary pass over it stays queued
+behind s5.2, since changing the harness while four baseline rows are mid-flight would put the
+rows on two different versions of it.
+
+**The corpus ceiling held.** 494,341 training rows yielded 5,734 tool turns, 4,031 of them
+with a parseable JSON object and a quotable headline value. 3,994 pairs survive
+decontamination, giving 7,988 rows and 4.35M tokens. The `s5.3` sweep parameter allows 24,000;
+the data supplies about 4,000, and the validation split is the next source if the arms prove
+thin.
