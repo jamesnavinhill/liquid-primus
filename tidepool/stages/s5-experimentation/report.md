@@ -1,18 +1,17 @@
 # Stage 5: Experimentation
 
-_Status: `s5.1` complete, `s5.2` in progress with four of its seven rows complete, a fifth
-running and a sixth queued. The
-throughput the whole budget rests on is measured, the sweep is resized to fit it, and the
-evaluation harness every later number comes from is built, verified against ground truth and
-smoked end to end. **The reference baseline is complete at full item counts on all four
-components**, and it reads below the competitor on tool calling and at the floor on the guardrail
-axis. **The competitor's tool-calling component is now measured at full item counts**, and it sits 9.4
-points above the reference. **Three 4-bit-or-control rows are complete**, through a `llama.cpp` path this stage built and verified; the runtime-vs-quantization
-control has landed and splits into two different findings depending on the axis (see below).
-`B5` (a competitor's own 4-bit fine-tune) is now running in the freed slot and is what ticks `s5.2`.
-**The guardrail training set is built and clean**: three attempts, nine gates, 7,988 rows and
-4.35M tokens in shared storage with a 138-item clean control arm. One sweep arm was retired as
-unrunnable and replaced._
+_Status: `s5.1` and **`s5.2` both complete**. All six baseline rows are down at full item
+counts on all four components, verified against their artifacts and mirrored. The throughput the
+whole budget rests on is measured, the sweep is resized to fit it, and the evaluation harness
+every later number comes from is built, verified against ground truth and smoked end to end.
+**Both competitors beat the reference on native tool calling and lose everywhere else**, which
+turns the headline gap into a question about calling convention rather than a single number to
+beat. **Three 4-bit-or-control rows** ran through a `llama.cpp` path this stage built and
+verified, and the runtime-vs-quantization control splits into two different findings depending on
+the axis. **The guardrail training set is built and clean**: three attempts, nine gates, 7,988
+rows and 4.35M tokens in shared storage with a 138-item clean control arm. One sweep arm was
+retired as unrunnable and replaced. `s5.3` is now under way: both GPU slots carry its
+prerequisites, the replay buffer at size and the gating sweep smoke on arm `C4`._
 
 ## Headline
 
@@ -53,8 +52,22 @@ serving runtime, not the bit width. On native tool calling the answer flips — 
 quantization-aware build (0.6392) scores *higher* than this unquantized control (0.6252), so
 quantization-aware training is not just recovering what the runtime costs on that axis, it is
 outperforming the full-precision weights served the same way. The community post-training quant
-still trails the control on both axes. `B5`, a competitor's own 4-bit fine-tune with its own
-template, is now running in the freed slot; it is what completes `s5.2`.
+still trails the control on both axes.
+
+**`s5.2` is complete, and the last two rows turn the headline gap into a different question.**
+Both competitor rows are in. Granite at full precision takes native tool calling by 9.4 points
+over the reference (0.7641 against 0.6700) and structured output by 18.5; the other vendor's 4-bit
+tool-calling fine-tune takes native tool calling too, at 0.6821, above our own full-precision
+reference and the best of any 4-bit row. Neither is a better agent model. Granite gives up **35.4
+points** on the `s4` text convention and 7.8 on instruction following; the 4-bit specialist gives
+up **28.0 points** of instruction following and half the structured-output validity. The ordering
+reverses exactly between the two surfaces: the two rows that beat us at native tool calling are
+the two worst rows at the text convention, by a wide margin. So the pre-registered tool-calling
+bar is better read as a question about which calling surface we intend to serve than as one
+number to beat, and `s6` should carry both surfaces separately rather than a pooled composite.
+One caution on the safety axis: Granite's flag rate is **0.0000**, so it never raises the
+guardrail at all and its zero false-flag rate says nothing about discrimination. Five of six rows
+sit at or below 0.0222, and no baseline comes near the pre-registered 0.35 target.
 
 The 4-bit path itself works, on the fifth attempt: `llama.cpp` b10622 compiled for the target
 architecture in 1,039 seconds, the binaries are in shared storage, and the first full pass through
@@ -1608,3 +1621,32 @@ restart trades certain spent hours for an uncertain speedup.
   138-item corpus arm. `B4` (Granite) is past structured output (validity 0.3205) and into
   instruction-following, still advancing normally. `B5` (`64fa9373`, Nova Q4_K_M) queued into the
   freed slot: aws L4:1, all five limit overrides at zero, carries the clean-control arm.
+- 2026-08-25 · s5.2 · **complete.** `B4` (`c319ebb1`, Granite 4.0-1b, full precision) landed at
+  19:06:47Z after 4h08m27s and 4.141 GPU-h; `B5` (`64fa9373`, Nova Function-Calling Q4_K_M) landed
+  at 19:33:21Z after 38m32s and 0.642 GPU-h. Both success, both verified against full artifact
+  lists. Granite: native tool calling 0.7641, text convention 0.1817, structured output 0.3205,
+  instruction following 0.7394, flag rate 0.0000. Nova: 0.6821 / 0.2681 / 0.0710 / 0.5379, flag
+  rate 0.0185 with zero false alarms on both control arms. Both competitors win native tool
+  calling and lose every other axis, and the two surfaces order in opposite directions, so the
+  tool-calling bar is a convention question. Granite's zero flag rate is uninformative rather than
+  clean, since a model that never flags cannot false-flag. `B6` was dropped as redundant against
+  the sweep's own `C1` reference arm; the reasoning is in `runs/s5.2-baselines.md`.
+- 2026-08-25 · ledger · two defects fixed while mirroring the above. `total_spent` had gone stale
+  at 3.871 against a real 6.077, and `c4091ac9` carried both a completed entry and an orphaned
+  `RUNNING` placeholder from its relaunch; the placeholder was removed. No recorded spend changed.
+  30 entries, none open, **10.860 of 145 approved GPU-hours**.
+- 2026-08-25 · s5.3 · both freed slots went straight to the sweep's prerequisites rather than to
+  the optional `B6` row: `62d88386` is the replay buffer at size (8,000 prompts, L40S:1, the hard
+  prerequisite for arms `C5a`/`C5b`) and `2680e4a8` is the gating smoke on arm `C4` (30 steps,
+  exercising the multi-source sampler, the guardrail role and the entropy-weighted loss together).
+  Queueing the smoke first required a task fix: `s5-sft-sweep`'s registered parameter block was
+  missing `smoke`, `smoke_rows` and `max_steps` even though `main.py` reads all three, so the queue
+  validator rejected them as unknown keys. All three were added at exactly `main.py`'s own defaults
+  (`false` / `512` / `0`), so the eight full arms are unaffected.
+- 2026-08-25 · operator · asked for the account's capacity to be used to its fullest, with no
+  limits of their own beyond the trial plan's. The binding constraint is that plan's cap of **2
+  concurrent GPUs**, so both slots are kept saturated whenever work is queued and the preference is
+  recorded for later runs. Their suggestion of batching several arms onto one long-lived instance
+  is noted and not yet taken: it would cut idle time between arms, and it would also let one
+  failure take several arms down and cost the per-arm job ids the ledger and the writeup are built
+  on. Revisit if the first arms show material idle time.
