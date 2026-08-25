@@ -1,0 +1,150 @@
+# s5/s6 — the evaluation harness, several models at once on one card.
+#
+# The same `main.py` the solo eval task runs, supervised by the same `pack.py` the sweep
+# uses. An eval pass alternates a generation batch with a stretch of CPU-bound grading, so a
+# card running one of them is idle for a good part of its own job; `s6` has eight checkpoints
+# to score over four components, which one-per-card is eight card-hours to do about three
+# cards' worth of work.
+#
+# The card stays an L4 and is not negotiable. Every full-precision number in this project was
+# taken on one, and moving the comparison onto a second set of numerics to gain a bigger card
+# would cost more than the card-hours it saved. What packing changes is how many models share
+# it, never which one it is.
+#
+# Arms here differ in their *inputs* rather than in a recipe name, so each arm's checkpoint,
+# components and caps arrive through `pack_overrides` and the supervisor stages the objects
+# named there alongside the shared ones. Two 4-bit arms are safe on one card because each
+# child derives its server port from its position in the pack; two on the same port would not
+# fail loudly, the second would die on bind and the first would answer both.
+name: s5-eval-pack
+run: python pack.py
+setup: |
+  python -c "import torch" 2>/dev/null || pip install -q torch
+  pip install -q -U transformers peft accelerate huggingface_hub
+  # Scoring dependencies only. IFStruct's validator needs PyYAML; Google's IFEval
+  # registry needs absl-py, immutabledict, langdetect and nltk. nltk is pinned below 3.9
+  # because the registry loads the punkt *pickle*, which 3.9 removed in favour of
+  # punkt_tab, and an unpinned install fails on sentence-count instructions only.
+  pip install -q "pyyaml>=6" absl-py immutabledict langdetect "nltk==3.8.1"
+resources:
+  # Feeding three or four scoring children at once: each holds its own tokenizer, its own
+  # grader pass and its own completions on disk. The GPU count is what the quota prices, so
+  # the fatter host is free and an under-provisioned one would starve the card.
+  cpus: 16
+  memory: 64
+  disk_space: 200
+  accelerators: "L4:1"
+  compute_provider: aws
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+parameters:
+  # Comma-separated arms to run concurrently on this one card. Everything below is passed
+  # through to each child unchanged, so a packed arm's recipe is byte-identical to the same
+  # arm queued alone; only `arm` is overridden, per child, from this list.
+  arms: ""
+  # Fraction of the card the children may divide between them. The remainder is left for
+  # fragmentation, the CUDA context each process holds, and the transient peak during model
+  # load. Each child is capped at pack_headroom / len(arms) and fails alone if it exceeds it.
+  pack_headroom: 0.92
+  # Comma-separated, parallel to `arms`; empty means equal shares. The arms do not have equal
+  # appetites -- a full-parameter arm carries gradients and fp32 optimizer moments for every
+  # parameter, several times what a rank-16 adapter needs -- so an even split would starve it
+  # while the LoRA arms sat under ceilings they never approach.
+  pack_weights: ""
+  # Preferred over pack_weights: each arm's ceiling in gigabytes, parallel to `arms`. Absolute
+  # is the right unit here because it is the unit the measurements arrive in (a LoRA r16 arm
+  # holds 7.5 GB as the driver sees it, the entropy-weighted arm 11.4, a full-parameter arm
+  # about 22) and because relative shares divide the card between arms that never coexist.
+  pack_gb: ""
+  # The card the ceilings are measured against. An L40S reports 47.7 GB decimal.
+  # `arm=script.py`. An arm does not have to be a trainer: the replay generator runs as one.
+  pack_scripts: ""
+  # `arm=other_arm`. Holds an arm back until the other has exited clean. One level deep.
+  pack_after: ""
+  # `arm=config_key:filename`. When that arm finishes, out/<arm>/<filename> becomes the local
+  # stand-in for the object config_key names, and the supervisor uploads it there once. It is
+  # how a buffer generated on this card reaches the arms consuming it without a round trip,
+  # while still landing in shared storage for every later stage.
+  pack_provides: ""
+  # JSON: `{"<arm>": {"<key>": <value>}}`, merged onto the shared config for that arm alone.
+  # The sweep trainer does not need it -- `arm` selects a recipe from a table inside main.py --
+  # but a program whose arms differ by which checkpoint and which component they run cannot
+  # recognise itself from a name, and this is how such an arm is configured without pushing an
+  # arm table into every future child script. JSON rather than a bare string so values keep
+  # their types.
+  pack_overrides: ""
+  # How often the supervisor looks at its children. Only lowered by the scheduling tests.
+  poll_seconds: 5
+  # Every child peaks its memory while loading the same base model. Starting them together
+  # stacks load peaks the steady state would never reach, so they are spaced out.
+  stagger_seconds: 45
+  shutdown_grace_seconds: 30
+  # A hung arm is the one failure a process boundary does not contain: it holds its slice
+  # of the card and the pack sits behind it until the job's wall clock kills everything.
+  # A child that produces no output at all for this long is killed on its own. Generous,
+  # because legitimate quiet stretches exist (model download, corpus indexing, validation)
+  # and killing a merely slow arm is worse than waiting for it.
+  stall_minutes: 45
+  # An L4 reports 24.0 GB decimal. A full-precision 1.2B arm holds its weights in bf16 plus
+  # a batch of activations; measure the first packed run and set pack_gb from what the driver
+  # saw, exactly as the sweep's ceilings were set, rather than from max_memory_allocated.
+  card_gb: 24.0
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  # A storage path to a LoRA adapter directory, merged before evaluation. Empty = the
+  # base checkpoint as published.
+  adapter_object: ""
+  run_tag: s5.2-harness-smoke
+  components: bfcl,ifstruct,ifeval,probes
+  # Both surface forms for the tool contract: the s4 training convention and the model's
+  # own native tools= rendering. A baseline's score is the better of the two.
+  bfcl_styles: tools_text,native_tools
+  bfcl_categories: simple,multiple,parallel,parallel_multiple,live_simple,live_multiple,live_parallel,live_parallel_multiple,irrelevance,live_irrelevance,live_relevance
+  probes_object: tidepool/s4.4/probes/probes.jsonl
+  # The enlarged clean arm built at s5.3: 138 real intact tool returns from the held-out
+  # splits, against the frozen arm's 30 synthetic ones. Empty by default so a re-run of an
+  # already-measured baseline row stays byte-comparable to the row it replaces. Set it, and
+  # the items arrive tagged clean_corpus and report under their own summary keys; every
+  # pre-existing key keeps the meaning it had when B1 through B6 were measured.
+  clean_control_object: ""
+  # 0 = the whole component. Anything else is a smoke, and the summary says so.
+  limit_per_component: 40
+  # Per-component caps. -1 inherits limit_per_component, 0 means the full set. Set
+  # explicitly per run so a screening profile is a recorded parameter and not a habit.
+  limit_bfcl: -1
+  limit_ifstruct: -1
+  limit_ifeval: -1
+  limit_probes: -1
+  profile: ""
+  # ---- score-only replay. Non-empty = read every component's completions from this storage
+  # directory instead of generating them: no weights, no GPU, no tokens. It exists because
+  # scoring is deterministic CPU work over saved text, so a grader fix after eight sweep arms
+  # costs one CPU pass rather than eight GPU passes, and because anything a run computed but
+  # did not print comes back without paying for generation twice. The prompts are re-rendered
+  # and checked against each recorded prompt hash, so a moved chat template shows up as an
+  # assertion failure rather than as a quietly incomparable number.
+  rescore_object: ""
+  # ---- the 4-bit serving path. backend=gguf switches every row below to llama.cpp; the
+  # scoring, prompting and item selection are unchanged, which is what makes a Q4 row
+  # comparable to the FP row above it.
+  backend: hf
+  # The stored serving path built once by s5-llama-build at a pinned tag. A Q4 number taken
+  # against an unpinned backend is not comparable to the next one.
+  llama_object: ""
+  gguf_repo: ""
+  # Required explicitly: these repos publish a dozen quantizations and picking one by pattern
+  # is a choice a run should not make for itself.
+  gguf_file: ""
+  # The full-precision repo the GGUF was quantized from. It renders the prompts, so a Q4 row
+  # and its FP reference see the same bytes. Empty falls back to base_model.
+  tokenizer_repo: LiquidAI/LFM2.5-1.2B-Instruct
+  gguf_parallel: 8
+  gguf_ctx_per_slot: 8192
+  gguf_port: 8080
+  batch_size: 16
+  max_new_bfcl: 320
+  max_new_ifstruct: 768
+  max_new_ifeval: 768
+  max_new_probes: 320
+# Wall clock is the slowest arm on the card, not the sum, so the ceiling is the solo one with
+# room for the contention several arms put on the host's CPUs during grading.
+minutes_requested: 600

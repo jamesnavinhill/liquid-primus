@@ -185,6 +185,12 @@ if "OVERRIDES[a] for a in sorted(OVERRIDES)" not in PACK:
     fails.append("pack.py does not stage objects named in per-arm overrides, so a packed "
                  "evaluation could not reach its checkpoints")
 
+# The benchmark caches are the same hazard as the port, one level quieter: two children
+# copying BFCL into one directory means one of them can read a half-written file.
+if SOURCES.get(EVAL) and ('"data/bfcl"' in SOURCES[EVAL] or '"data/ifstruct_test.jsonl"' in SOURCES[EVAL]):
+    fails.append("the evaluation harness still caches benchmarks in a shared `data/`; two "
+                 "packed arms would write each other's files while reading them")
+
 # The 4-bit server is a separate process on a fixed port. Two of them on one card is not an
 # OOM: the second fails to bind and the first answers both arms, which yields two plausible
 # score sets from one model.

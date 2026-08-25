@@ -136,6 +136,11 @@ ARM = str(os.environ.get("TIDEPOOL_PACK_ARM") or C("arm", "") or "")
 # on bind and the first one silently answers both arms' requests, which would produce two
 # plausible score sets from one model.
 PACK_INDEX = int(os.environ.get("TIDEPOOL_PACK_INDEX") or 0)
+# The benchmark caches go under the arm's directory for the same reason. Two children both
+# copying BFCL into `data/bfcl` is not a crash and not an OOM: it is one of them reading a
+# file the other is halfway through writing, which surfaces as a JSON parse error in a
+# component that has nothing to do with downloads, or worse, does not surface at all.
+DATA = os.path.join(OUT, "data")
 NOTES = []
 ASSERTS = []
 
@@ -220,8 +225,8 @@ def save(obj, name, kind=None):
 
 def fetch_bfcl(categories):
     from huggingface_hub import hf_hub_download
-    root = "data/bfcl"
-    os.makedirs(root + "/possible_answer", exist_ok=True)
+    root = os.path.join(DATA, "bfcl")
+    os.makedirs(os.path.join(root, "possible_answer"), exist_ok=True)
     shas = {}
     for cat in categories:
         for sub in ("", "possible_answer/"):
@@ -237,8 +242,8 @@ def fetch_bfcl(categories):
 
 
 def fetch_ifstruct():
-    os.makedirs("data", exist_ok=True)
-    dst = "data/ifstruct_test.jsonl"
+    os.makedirs(DATA, exist_ok=True)
+    dst = os.path.join(DATA, "ifstruct_test.jsonl")
     with urllib.request.urlopen(IFSTRUCT_URL, timeout=120) as r, open(dst, "wb") as fh:
         fh.write(r.read())
     return dst, {"ifstruct/data/test.jsonl": sha(dst)}

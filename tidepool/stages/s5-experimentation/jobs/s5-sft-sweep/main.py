@@ -260,6 +260,24 @@ if plan["notes"].get("doses_exceeded_budget"):
     fails.append("the guardrail and replay doses alone exceed the %d-token budget, so this "
                  "arm saw none of the base mix" % BUDGET)
 
+# A replay buffer is sized by the `n_tok` its generator wrote, and the first buffer built at
+# size wrote 2 for every row -- len() over a BatchEncoding's keys rather than its ids. The
+# generator asserts against that now and refuses to be trusted, but the bad file is still in
+# shared storage under the name the good one takes, and a consumer that believed it would ask
+# for a 3.2M-token dose from a set indexed at 15,890 tokens, replay the same 8,000 rows two
+# hundred times over, and measure memorization while calling it replay. Nothing about that
+# looks wrong from inside the run, so it is checked here rather than left to the file being
+# the right one. A self-distilled row is a couple of hundred tokens; anything under sixteen
+# is a field counting something else.
+if REPLAY_FRAC > 0 and not plan["notes"].get("replay_unavailable"):
+    _rows = len(order.get(sample.REPLAY) or [])
+    _mean = (per_role.get(sample.REPLAY, 0) / _rows) if _rows else 0.0
+    if _mean < 16:
+        fails.append("the replay set indexes %d row(s) at %.1f tokens each, which is a miscount "
+                     "rather than a corpus: %s was written by a generator that did not tokenize "
+                     "its own output, and dosing from it would replay a handful of tokens "
+                     "hundreds of times over" % (_rows, _mean, REPLAY_OBJ))
+
 if MIX == "raw":
     # C7. Every base-mix row once, in the same hash order, so the only difference from C1 is
     # which rows and how often, not the order they arrive in. The guardrail and replay blocks
