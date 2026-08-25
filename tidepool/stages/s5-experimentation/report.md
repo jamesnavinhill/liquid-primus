@@ -1,44 +1,53 @@
 # Stage 5: Experimentation
 
-_Status: `s5.1` complete, `s5.2` in progress. The throughput the whole budget rests on is
-measured, the sweep is resized to fit it, and the evaluation harness every later number comes
-from is built, verified against ground truth and smoked end to end. **The reference baseline is
-complete at full item counts on all four components**, and it reads below the competitor on tool
-calling and at the floor on the guardrail axis. The competitor row that carries the operative
-tool-calling threshold is running, the **4-bit serving path is built,
-verified and priced**, and the guardrail supervision the corpus measurement forced has had its
-first run fail loudly and its causes fixed. The first 4-bit row lost a launch to a cloud that
-provisioned a machine and ran nothing, and is relaunched. **The guardrail training set is built
-and clean**: three attempts, nine gates, 7,988 rows and 4.35M tokens in shared storage with a
-138-item clean control arm._
+_Status: `s5.1` complete, `s5.2` in progress with two of its six rows complete and a third part way. The
+throughput the whole budget rests on is measured, the sweep is resized to fit it, and the
+evaluation harness every later number comes from is built, verified against ground truth and
+smoked end to end. **The reference baseline is complete at full item counts on all four
+components**, and it reads below the competitor on tool calling and at the floor on the guardrail
+axis. **The competitor's tool-calling component is now measured at full item counts**, and it sits 9.4
+points above the reference. **The first 4-bit row is complete**, through a `llama.cpp` path this stage
+built and verified, and it holds every axis except the one our training data is written in.
+**The guardrail training set is built and clean**: three attempts, nine gates, 7,988 rows and
+4.35M tokens in shared storage with a 138-item clean control arm. One sweep arm was retired as
+unrunnable and replaced._
 
 ## Headline
 
 The reference baseline is complete on all four components at full item counts, and two of its four
 numbers reset what this project is aiming at. On tool calling it scores **0.6700 over all 3,490
-held-out items** in its own calling format and 0.5355 in the convention our training data uses,
-behind the 1B-class competitor's **0.7795** on a 378-item sample of the same suite under identical
-decoding, so on the capability ranked first here the model we were asked to improve sits behind the
-one it is measured against. On the safety axis it is **at the floor with a clean floor**: it flags
-3 of 434 malformed tool returns against a target of 0.70, and raises **zero** false alarms on the
-30 clean control items, which is a large gap to close and no bad habit to unlearn. Structured
-output reads 0.1355 over 2,000 items, a within-harness reference with no published figure that may
-be quoted beside it. Instruction following reads 0.8170 over all 541 prompts, 4.5 points under the
-card's 86.23, which the four-way IFEval mean plausibly reconciles and the harness never printed the
-numbers to confirm. The competitor's full pass is still running. **The 4-bit serving build now works**, on
-the fifth attempt and 51% under its estimate: `llama.cpp` b10622 compiled for the target
-architecture in 1,039 seconds, the binaries are in shared storage, the runtime enumerates the card,
-and it served the vendor's quantization-aware 4-bit build at **196 generated tokens per second over
-8 concurrent slots** with two identical requests returning identical output. A full 4-bit pass is
-priced at 1.71 hours from that measurement. Two runs since then came back empty and both told us
-something. The first 4-bit row provisioned a machine that never executed the command, so it is
-relaunched on the cloud the provider note names first for this card; reading its job record also
-caught that the recorded queue commands for all three 4-bit rows would have run 40 items per
-component while labelling themselves full passes. And the guardrail data generator ran to
-completion, wrote nothing, and failed six of nine gates: its contamination filter discarded 100%
-of rows because the probe preamble was deliberately written to match the corpus's formatting, and
-its no-fabrication check was matching single digits inside prose. Both are fixed against measured
-held-out data and requeued.
+held-out items** in its own calling format and 0.5355 in the convention our training data uses.
+The 1B-class competitor has now finished the same 3,490 items under identical decoding and scores
+**0.7641**, so on the capability ranked first here the model we were asked to improve sits **9.4
+points behind** the one it is measured against. The full pass is kinder than the 0.7795 its
+378-item screening sample suggested, and the gap it leaves is still larger than any single
+intervention in the sweep is priced to close. On the safety axis the reference is **at the floor
+with a clean floor**: it flags 3 of 434 malformed tool returns against a target of 0.70, and
+raises **zero** false alarms on the 30 clean control items, which is a large gap to close and no
+bad habit to unlearn. Structured output reads 0.1355 over 2,000 items, a within-harness reference
+with no published figure that may be quoted beside it. Instruction following reads 0.8170 over all
+541 prompts, 4.5 points under the card's 86.23, which the four-way IFEval mean plausibly
+reconciles and the harness never printed the numbers to confirm.
+
+**The first 4-bit row is in, and its most alarming number is not yet attributable.** The vendor's
+own quantization-aware Q4_0 build, served through the `llama.cpp` b10622 binary this stage
+compiled and stored, holds 95.4% of the reference on its native calling format (0.6392 against
+0.6700), 98.9% on instruction following and 101.1% on structured output. On the `s4` text
+convention it holds **78.6%** (0.4208 against 0.5355), far under the project's 93% per-axis floor
+and the loudest result the stage has produced. The naive reading is that 4-bit quantization
+destroys the exact surface form our training data teaches, which is what nine papers in `s2`
+predict and would be a serious problem for the whole export plan. The two rows differ in **two**
+things though, precision and serving runtime, so the reading cannot be accepted yet. The control
+that separates them, the same weights unquantized through the same binary, was scheduled fourth
+in the baseline queue and has been **promoted to run next**. Every 4-bit claim downstream waits on
+it.
+
+The 4-bit path itself works, on the fifth attempt: `llama.cpp` b10622 compiled for the target
+architecture in 1,039 seconds, the binaries are in shared storage, and the first full pass through
+them ran at **776.7 generated tokens per second** over 1.33M tokens. The 1.71-hour price the
+ledger carries for each 4-bit row came from an 8-slot concurrency measurement and is roughly three
+times too high for a serial pass; the row finished in 34 minutes.
+
 The guardrail training set is now built and clean on all nine gates, on the third attempt and on a
 CPU box that held no accelerator slot: **7,988 rows and 4.35M tokens** of defective tool returns
 built by the vendored probe transforms, each paired one-for-one with its own intact counterpart,
@@ -46,8 +55,17 @@ with two defect kinds held out of training and the taught phrasings split agains
 detector at **0.6838 coverage** so the flag rate cannot become a recall test on our own wording.
 Nothing quotes a value its damaged response no longer carries, nothing shares a question with a
 probe, and the **138-item clean control arm** is four times the frozen one, which is what lets the
-plan's 0.15 false-alarm ceiling be measured rather than asserted. Spend is 3.871 of 145 GPU-hours,
-of which 0.68 bought nothing at all.
+plan's 0.15 false-alarm ceiling be measured rather than asserted.
+
+**One sweep arm was retired.** `C2` was specified as "public data only", subtracting the in-house
+stack corpus to isolate what it buys. `s4.2` authorized that mining and `s4.4` recorded that it
+produced zero supervised rows, so `C2` would have spent 4.45 GPU-hours reproducing its own
+reference arm byte for byte. The cell now runs **`C2'`, the reference arm with the guardrail block
+removed**, which isolates a claim the project is making: the amended gate requires the probe flag
+rate to reach 0.35 from a baseline of 0.0074, and without `C2'` the sweep would pass or miss that
+gate with no evidence about which part of the recipe moved it.
+
+Spend is **4.442 of 145 GPU-hours**, of which 0.68 bought nothing at all.
 
 ## Work log
 
@@ -1377,3 +1395,60 @@ with a parseable JSON object and a quotable headline value. 3,994 pairs survive
 decontamination, giving 7,988 rows and 4.35M tokens. The `s5.3` sweep parameter allows 24,000;
 the data supplies about 4,000, and the validation split is the next source if the arms prove
 thin.
+
+- 2026-08-25 · mirror · Pushed to `github.com/jamesnavinhill/liquid-primus` under `tidepool/`,
+  commit `56280c1`: attempt 3's passing record, the ledger and the task list. The generator
+  code itself went up unchanged in `109c309`, since attempt 3 ran exactly the code that commit
+  carries.
+- 2026-08-25 · s5.2 · A checkpoint marker arrived paired with a decline: no operator is
+  answering, and the instruction was to proceed on my own recommendation and record which option
+  I took. Both markers are retired. The recommendation I proceeded on is the one below, and every
+  judgement in this turn was made unreviewed under autonomous mode.
+- 2026-08-25 · s5.2 · **B2 is complete and verified.** The vendor's quantization-aware Q4_0
+  build, through the `llama.cpp` binary this stage compiled, finished in 34 minutes 14 seconds
+  with 0 assertion failures and all fourteen artifacts listed, including the four scored files
+  and both summary forms. It came in 67% under its estimate because the estimate was taken from
+  an 8-slot concurrency measurement and a serial pass runs at 776.7 tokens per second. The full
+  row, its retention against the reference, and the four readings it supports are in
+  `runs/s5.2-baselines.md`. The one number that matters most is the `s4` text convention at
+  **78.6% retention**, well under the 93% per-axis floor.
+- 2026-08-25 · s5.2 · **Promoted the runtime control ahead of the competitor quant.** B1 ran on
+  `transformers` and B2 on `llama.cpp`, so the 78.6% figure could be quantization or it could be
+  the serving stack, and nothing downstream about 4-bit export is interpretable until the two are
+  separated. The bf16-through-`llama.cpp` row now runs next, ahead of the Nova Q4 row, which
+  answers a different question and loses nothing by waiting one slot.
+- 2026-08-25 · s5.2 · **The competitor threshold is 0.7641, not 0.7795.** Granite 4.0-1B has
+  finished all 3,490 tool-calling items at full count and is part way through structured output.
+  The full pass reads 3.9 points kinder than its screening sample, and it still leaves our
+  reference 9.4 points behind. The rest of its row lands later today.
+- 2026-08-25 · s5.2 · **Retired sweep arm `C2` and replaced it with `C2'`.** `C2` subtracts an
+  in-house corpus that `s4.4` measured at zero rows, so it would have reproduced its own reference
+  arm exactly. The freed cell tests the guardrail block instead, which is the supervision the
+  amended stop/go gate turns on. Recorded in `../s3-research-plan/plan.md`.
+- 2026-08-25 · s5.2 · B3 (unsloth UD-Q4_K_XL) queued into the slot B2 freed, pinned to the cloud
+  the provider note names first for this card and carrying all five item-count overrides. Both
+  GPU slots are occupied, so the remaining rows wait on capacity rather than on a decision.
+- 2026-08-25 · s5.3 · **The sweep task is authored, registered and tested.** `s5-sft-sweep`
+  (`37186b22`) runs all eight arms from one code path selected by a single `arm` parameter, so
+  the specification of the sweep is one readable table rather than eight command lines that can
+  drift apart. What it adds over the calibration task: the guardrail rows wired in as a second
+  source in the same id space, the 64.0M-token per-arm budget as an explicit parameter the run
+  asserts against itself, an entropy-weighted loss, a full-parameter mode, and a replay hook.
+  The design record, the per-role token table and the queue order are in `runs/s5.3-sweep.md`.
+- 2026-08-25 · s5.3 · Three choices in it are worth naming because each avoids a silent way the
+  sweep could have measured the wrong thing. The guardrail block comes **out of** the budget
+  rather than on top of it, so `C2'` is cost-matched and the comparison is guardrail supervision
+  against an equal weight of ordinary supervision. `C4`'s entropy weights are centred on the
+  batch mean, holding the mean weight at 1, so `entropy_beta` cannot act as a hidden
+  learning-rate multiplier. And every arm is scored on plain cross-entropy over the held-out
+  split, never on its own training objective, because `C4` reweights what it optimizes.
+- 2026-08-25 · s5.3 · A CPU fixture test runs in about a second and covers the three ways this
+  sweep could be quietly invalid: arms costing different amounts, the guardrail-off arm getting
+  guardrail rows anyway, and selection order drifting between arms. **25 checks, all passing.**
+  The calibration numbers in it are the real measured corpus sizes, so the token table in the
+  design record is the one the arms will actually run.
+- 2026-08-25 · s5.3 · Recorded a prerequisite that is not yet met: **the self-distillation replay
+  set does not exist.** Its task passed a 64-prompt smoke at `s5.1` and has never been run at
+  size. `C5b` needs 3.2M replay tokens, so the generation run is sized at roughly 8,000 prompts.
+  Six of the eight arms can run without it, and an arm queued for replay with no replay set now
+  fails loudly rather than training the reference recipe under a `C5` label.

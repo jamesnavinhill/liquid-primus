@@ -360,6 +360,22 @@
       "recordedAt": "2026-08-25T17:10:00Z",
       "description": "s5.3 guardrail supervision, attempt 3. Two fixes over attempt 2: the forbidden-value list is scoped to the whole prompt rather than the damaged tool body alone, and a leak falls through the mode rotation instead of discarding the source; and the clean control arm is drawn from both held-out splits against a floor of 100 rather than from the test split alone against an unreachable 200.",
       "note": "No GPU and no charge; 4 m 53 s wall. Passed all nine gates: 7,988 rows (3,994 defective + 3,994 clean) and 4.35M tokens, zero target leaks against a 0.10 ceiling, zero rows dropped on a probe question gram, detector coverage 0.6838 inside [0.60, 0.90], and a 138-item clean control arm split 70 val / 68 test. Both files are in shared storage under tidepool/s5.3/tooldata/. Three CPU attempts cost 0.29 h of wall time in total and bought a training set whose three defects were each found by a gate rather than at s6."
+    },
+    {
+      "id": "s5.2-B2-q4-vendor-qad",
+      "jobId": "c4091ac9-a484-4ec9-8182-baf73744b006",
+      "experiment": "tidepool",
+      "substage": "s5.2",
+      "task": "s5-eval",
+      "resources": "L4:1 (aws)",
+      "accelerators": "L4:1",
+      "status": "COMPLETE",
+      "durationHours": 0.571,
+      "spend": 0.571,
+      "estimateHours": 1.71,
+      "recordedAt": "2026-08-25T16:45:00Z",
+      "description": "B2, the vendor's quantization-aware Q4_0 build of LFM2.5-1.2B-Instruct, served through the b10622 llama.cpp path built at s5.2 and prompted with the instruct tokenizer. Full item counts on all four components.",
+      "note": "Success with artifacts listed. 34 m 14 s against an estimate of 1.71 h, so 67% under, because the 8-slot throughput measured on the build job understated what a single long pass achieves: 776.7 tok/s averaged over 1.33M generated tokens. This is the first complete 4-bit row and the first measurement of what quantization costs on this family."
     }
   ],
   "total_spent": 3.871

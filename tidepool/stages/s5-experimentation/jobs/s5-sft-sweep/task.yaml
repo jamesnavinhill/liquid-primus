@@ -1,0 +1,65 @@
+name: s5-sft-sweep
+run: python main.py
+setup: |
+  python -c "import torch" 2>/dev/null || pip install -q torch
+  pip install -q -U transformers peft accelerate wandb
+  python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+resources:
+  cpus: 8
+  memory: 48
+  disk_space: 200
+  # L40S 48GB is the card the compute budget is written against and the card the 3,994.2
+  # tok/s figure was measured on, so every arm runs on it. The full-parameter arm is the
+  # only one that strains it and it is given a smaller micro-batch rather than a bigger card,
+  # which keeps the sweep priced on one number.
+  accelerators: "L40S:1"
+  # Pinned rather than left to the default, which does not sell L40S at any count. The card's
+  # source row is AWS g6e, then Nebius, then RunPod. Belongs under resources, not at top level.
+  compute_provider: aws
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  WANDB_API_KEY: "{{secret._WANDB_API_KEY}}"
+parameters:
+  # The only parameter that should ever be overridden at queue time. Everything below is the
+  # C1 reference recipe; each arm's delta lives in the ARMS table in main.py so that the
+  # specification of the sweep is one readable block of code rather than eight command lines.
+  arm: C1
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  train_object: tidepool/s4.4/train.jsonl.gz
+  val_object: tidepool/s4.4/val.jsonl.gz
+  guardrail_object: tidepool/s5.3/tooldata/tooldata_train.jsonl.gz
+  # C5 only. Left empty on purpose: the self-distillation replay set does not exist yet, and
+  # an arm that asks for replay without one fails loudly rather than quietly training C1.
+  replay_object: ""
+  # 64.0M tokens is 0.71 of an epoch over the calibrated mix and 4.45 GPU-hours at the
+  # measured L40S rate. Eight arms therefore cost 35.6 GPU-hours. Every arm gets the same
+  # number so the sweep measures the recipe and not the compute.
+  budget_tokens: 64000000
+  # Dosed in passes like structured output, for the same reason: the block is small and fixed,
+  # so what matters is how many times the model sees it. Two passes is 8.7M tokens, 13.6% of
+  # the budget, and sits under the three passes the same argument already allows struct.
+  guardrail_epochs: 2.0
+  replay_frac: 0.0
+  entropy_beta: 1.0
+  mix: role_balanced
+  tuning: lora
+  loss: ce
+  max_seq_len: 2048
+  micro_batch_size: 2
+  grad_accum: 8
+  learning_rate: 1e-4
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  val_rows: 256
+  warmup_ratio: 0.03
+  tool_epochs: 1.0
+  struct_max_epochs: 3.0
+  min_priority_share: 0.5
+  seed: 17
+# No sweeps: block, deliberately. A sweep_config fans out inside one job, and three things
+# here argue against that: the account allows two GPUs at a time, each arm is 4.45 GPU-hours
+# so one coordinated job would run for a day and a half, and a single failure would take the
+# whole C row with it. Arms are queued individually with -p arm=<id>, two at a time, which
+# also gives each one its own job id for the ledger and its own artifact bundle.
+minutes_requested: 420

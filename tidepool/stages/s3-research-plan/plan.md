@@ -120,7 +120,7 @@ cheap quant". B6 is the optional starting-checkpoint ablation and nothing depend
 | Row | Arm | Varies | Metric it moves | Suite |
 | --- | --- | ------ | --------------- | ----- |
 | C1 | LoRA SFT, r16 / α32 / LR 1e-4, full mix | reference arm | BFCLv3, IFStruct | screening |
-| C2 | LoRA SFT, **public data only** | data provenance | isolates stack specialization | screening |
+| C2' | LoRA SFT, **guardrail block removed** | guardrail supervision | probe flag rate | screening |
 | C3 | Full-parameter SFT | adapter vs full | BFCLv3 ceiling | screening |
 | C4 | LoRA SFT + entropy-weighted loss | loss shaping | guardrail deltas | screening |
 | C5 | Replay fraction ∈ {0%, 1%, 5%} | replay | guardrail deltas | screening ×3 |
@@ -138,6 +138,25 @@ Per-role sampling weights are calibrated once at `s5.1` against a single epoch's
 with tool calling and structured output together taking at least half the budget. `C7` keeps
 the raw mix as an explicit comparison, so the balancing is a measured choice rather than a
 silent one.
+
+**Amended again at `s5.2`, and this one retires a row.** `C2` was specified as "public data
+only", isolating what the in-house stack corpus buys by removing it. `s4.2` authorized and
+scoped that mining across the operator's eleven public non-forked repositories, and `s4.4`
+recorded the outcome: **it yielded zero supervised rows**. Every one of the 518,330 rows in the
+split comes from the eleven public Hugging Face corpora. `C2` as written subtracts something
+the training data does not contain, so the arm and its reference arm would be byte-identical.
+It cannot be run, and running it would burn 4.45 GPU-h to reproduce `C1`.
+
+The freed cell becomes **`C2'`: `C1` with the guardrail block removed.** The substitution is
+chosen because it isolates a claim the project is actually making. `s5.3` introduces 7,988
+guardrail rows (3,994 defective tool returns paired with 3,994 clean controls) built to move the
+probe flag rate, and the amended stop/go gate below requires that rate to reach 0.35 from a B1
+baseline of 0.0074. Without `C2'` the sweep would clear or miss that gate with no evidence about
+which part of the recipe was responsible. The operator's standing note to specialize toward the
+underlying technology rather than one vendor's SDK idiosyncrasies argues against rebuilding the
+in-house idiom corpus now, so the retired comparison is not simply deferred to a later stage.
+
+Recorded under autonomous mode: the choice was made and not reviewed by an operator.
 
 `C5`'s replay buffer draws on the **base model's own greedy completions over a sample of the
 `s4.4` prompt pool**, generated once as a job at `s5.1` and frozen for the whole sweep. The
