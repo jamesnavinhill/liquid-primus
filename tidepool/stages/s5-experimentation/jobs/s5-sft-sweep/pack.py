@@ -283,15 +283,31 @@ LOCAL = {}
 # An object one of these arms is about to generate must not be fetched: it does not exist yet,
 # and the whole reason it is in this pack is so that it never has to make the round trip.
 PROVIDED_OBJS = {CFG.get(k) for k, _ in PROVIDES.values() if CFG.get(k)}
-for key in ("train_object", "val_object", "guardrail_object", "replay_object", "pool_object"):
-    obj = CFG.get(key)
-    if not obj or obj in LOCAL:
-        continue
+# Every config key ending in `_object` names something in shared storage, by this project's
+# own convention, and that convention is a better list than one written out here: a naming
+# rule cannot fall behind a new input the way an enumeration silently does. Per-arm patches
+# are scanned too, because that is where an evaluation pack keeps the checkpoint each arm
+# reads, and those differ by arm while still deduplicating across arms that share one.
+WANTED = []
+for src in [CFG] + [OVERRIDES[a] for a in sorted(OVERRIDES)]:
+    for key in sorted(src):
+        obj = src.get(key)
+        if key.endswith("_object") and isinstance(obj, str) and obj and obj not in WANTED:
+            WANTED.append(obj)
+for obj in WANTED:
     if obj in PROVIDED_OBJS:
         log("%s is produced inside this pack, so it is not fetched" % obj)
         continue
     t = time.time()
-    LOCAL[obj] = lab.storage_download(obj)
+    try:
+        LOCAL[obj] = lab.storage_download(obj)
+    except Exception as exc:
+        # Not fatal here. A pack can legitimately carry a config naming an object no arm on it
+        # reads; an arm that DOES need this one exits immediately saying which object it was
+        # denied, which is a clearer failure than one the supervisor guesses at.
+        log("could not stage %s (%s); any arm that needs it will say so and fail alone"
+            % (obj, exc))
+        continue
     log("fetched %s -> %s (%.0fs)" % (obj, LOCAL[obj], time.time() - t))
 log("%d shared input(s) staged for %d arms" % (len(LOCAL), N))
 
@@ -323,6 +339,9 @@ def spawn(arm):
     # grow and release a single region instead of stranding fixed-size blocks.
     env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     env["TIDEPOOL_PACK_ARM"] = arm
+    # Its position in the pack, which is how a child derives any host resource that has a
+    # fixed default it would otherwise share with a sibling -- a listening port above all.
+    env["TIDEPOOL_PACK_INDEX"] = str(ARMS.index(arm))
     env["TIDEPOOL_PACK_OUT"] = adir
     env["TIDEPOOL_PACK_MEMFRAC"] = str(MEMFRAC[arm])
     cfg = dict(CHILD_CFG)

@@ -87,15 +87,26 @@ def _extract_backend(tarball_path, dest="llama"):
     raise RuntimeError("the serving-path archive %s contains no llama-server" % tarball_path)
 
 
-def load_gguf(cfg, log=print):
+def load_gguf(cfg, log=print, out_dir="out", storage=None, port=None):
     """Fetch the backend and the weights, serve them, and return (server, tokenizer, facts).
 
     `tokenizer_repo` is the full-precision repo the GGUF was quantized from. It is what renders
     the prompts, so a Q4 row and the FP row it is compared against see the same bytes.
+
+    Three arguments exist so that several of these can serve on one card at the same time.
+    `port` is the caller's, offset by the arm's position in the pack, because two servers
+    that both bind 8080 do not fail loudly: the second dies and the first answers both arms.
+    `out_dir` puts the extracted backend, the weights and the server log under the arm's own
+    directory, so no two children write the same path. `storage` is the caller's resolver,
+    which inside a pack returns a path the supervisor already fetched rather than reaching
+    for the network from a child that is supposed to be isolated.
     """
     from huggingface_hub import hf_hub_download, list_repo_files
     from transformers import AutoTokenizer
-    from lab import lab
+
+    if storage is None:
+        from lab import lab
+        storage = lab.storage_download
 
     backend_object = str(cfg.get("llama_object", "") or "")
     if not backend_object:
@@ -103,8 +114,8 @@ def load_gguf(cfg, log=print):
                            "by s5-llama-build; without it a Q4 number would come from an "
                            "unpinned backend")
     log("downloading the serving path: %s" % backend_object)
-    tarball = lab.storage_download(backend_object)
-    server_bin = _extract_backend(tarball)
+    tarball = storage(backend_object)
+    server_bin = _extract_backend(tarball, dest=os.path.join(out_dir, "llama"))
     log("serving path at %s" % server_bin)
 
     repo = str(cfg.get("gguf_repo", ""))
@@ -116,7 +127,8 @@ def load_gguf(cfg, log=print):
         raise RuntimeError("`gguf_file` is empty and a repo publishes many quantizations, which "
                            "is not a choice a run should make for itself. Files: %s"
                            % ", ".join(sorted(files)))
-    gguf = hf_hub_download(repo_id=repo, filename=name, local_dir="gguf")
+    gguf = hf_hub_download(repo_id=repo, filename=name,
+                           local_dir=os.path.join(out_dir, "gguf"))
     size_mb = round(os.path.getsize(gguf) / 1e6, 1)
     log("weights: %s :: %s (%.1f MB)" % (repo, name, size_mb))
 
@@ -126,13 +138,13 @@ def load_gguf(cfg, log=print):
 
     slots = int(cfg.get("gguf_parallel", 8))
     per_slot = int(cfg.get("gguf_ctx_per_slot", 8192))
-    port = int(cfg.get("gguf_port", 8080))
+    port = int(port if port is not None else cfg.get("gguf_port", 8080))
     cmd = [server_bin, "--model", gguf, "--host", "127.0.0.1", "--port", str(port),
            "-ngl", "99", "-c", str(per_slot * slots), "--parallel", str(slots),
            "--no-warmup", "--seed", "0"]
     log("$ %s" % " ".join(cmd))
-    log_path = os.path.join("outputs", "llama_server.log")
-    os.makedirs("outputs", exist_ok=True)
+    log_path = os.path.join(out_dir, "llama_server.log")
+    os.makedirs(out_dir, exist_ok=True)
     handle_log = open(log_path, "w")
     proc = subprocess.Popen(cmd, stdout=handle_log, stderr=subprocess.STDOUT)
     srv = Server(proc, "http://127.0.0.1:%d" % port, log_path, gguf, slots, log=log)
@@ -155,7 +167,7 @@ def load_gguf(cfg, log=print):
 
     facts = {"backend": "llama.cpp", "llama_object": backend_object, "gguf_repo": repo,
              "gguf_file": name, "gguf_mb": size_mb, "tokenizer_repo": tok_repo,
-             "slots": slots, "ctx_per_slot": per_slot}
+             "slots": slots, "ctx_per_slot": per_slot, "port": port}
     return srv, tok, facts
 
 

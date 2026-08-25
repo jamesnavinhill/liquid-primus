@@ -219,10 +219,24 @@ for bad, why in (('{"NOPE": {"x": 1}}', "an override for an arm not in the pack"
     r = run(dict(BASE, arms="A,B", pack_gb="10,10", pack_overrides=bad), {})
     check("overrides", r["rc"] == 2, "%s was accepted" % why)
 
+# 9. Inputs are staged once per card, by naming convention, and per-arm inputs are found in
+#    the patches -- an evaluation pack keeps each arm's checkpoint there, not in the shared
+#    config. An object no arm reads must not take the pack down.
+r = run(dict(BASE, arms="A,B", pack_gb="10,10", val_object="corpus/train.jsonl.gz",
+             pack_overrides=json.dumps({"A": {"adapter_object": "ckpt/a.tar"},
+                                        "B": {"adapter_object": "ckpt/b.tar"}})),
+        {"A": {}, "B": {}})
+out = r["stdout"]
+check("staging", out.count("fetched ") == 3,
+      "expected 3 distinct objects staged (one shared, two per-arm), saw %d in:\n%s"
+      % (out.count("fetched "), out))
+check("staging", r["summary"] and not r["summary"]["failed"],
+      "staging per-arm objects failed the pack: %s" % (r["summary"] or {}).get("failed"))
+
 if fails:
     print("FAIL")
     for f in fails:
         print("  - " + f)
     sys.exit(1)
 print("pack scheduling holds: handover, failed producer, empty producer, peak sizing, "
-      "overcommit, per-arm scripts, per-arm config, 7 validation cases")
+      "overcommit, per-arm scripts, per-arm config, input staging, 7 validation cases")

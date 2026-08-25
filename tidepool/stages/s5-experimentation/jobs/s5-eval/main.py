@@ -30,7 +30,6 @@ import os
 import time
 import urllib.request
 
-from lab import lab
 
 import bfcl
 import gen
@@ -41,18 +40,110 @@ import probes_score
 import prompting
 import replay
 
+# ------------------------------------------------------------------ packing
+#
+# `s6` scores eight checkpoints on four components. Run one per card that is eight card-hours
+# of a job whose GPU sits near idle between generation batches; `pack.py` from the sweep runs
+# several of these at once on a single card instead, one isolated child process per arm, each
+# reading its own checkpoint and writing its own results directory.
+#
+# The contract is the sweep's, unchanged: config and output directory arrive on the
+# environment, the job API belongs to the supervisor alone, shared-storage objects are
+# resolved to paths the supervisor already fetched, and an assertion failure exits non-zero
+# rather than calling lab.error. What is specific to an evaluation is that its arms differ in
+# their *inputs* -- each one reads a different adapter -- so the objects a pack must stage
+# come from the per-arm overrides as well as the shared config, and any host resource with a
+# fixed default (the 4-bit server's port, its scratch directories) has to be made per-arm or
+# two children will fight over it.
+PACK_CHILD = os.environ.get("TIDEPOOL_PACK_CHILD") == "1"
+PACK_MEMFRAC = float(os.environ.get("TIDEPOOL_PACK_MEMFRAC") or 0.0)
+PACK_LOCAL = json.loads(os.environ.get("TIDEPOOL_PACK_LOCAL") or "{}")
+
+if PACK_CHILD:
+    class _SupervisedLab(object):
+        """Stands in for the job API inside a packed child.
+
+        Every reporting call in this file is already guarded by `if not PACK_CHILD`; this
+        catches anything that is ever added without one, turning it into a visible no-op
+        rather than a second writer on the job's stream. It says so once per method so a
+        missed guard shows up in the console without flooding it.
+
+        Storage calls are the exception and must raise. The file probes for them with
+        `getattr(lab, "storage_upload", None)`, and a stub that answered would hand back a
+        no-op the caller then reports as a successful upload: the weights would never reach
+        shared storage and the log would say they had. Raising makes the probe fail, which is
+        exactly what sends the caller down its CLI fallback -- a separate process writing to
+        an arm-specific prefix, which is safe to run concurrently."""
+
+        _warned = set()
+        _must_raise = ("storage_upload", "upload_storage", "storage_put",
+                       "storage_download", "get_config", "init")
+
+        def __getattr__(self, name):
+            if name in _SupervisedLab._must_raise:
+                raise AttributeError(
+                    "lab.%s is deliberately absent in a packed child; storage goes through "
+                    "the CLI and config arrives on the environment" % name)
+
+            def _noop(*a, **k):
+                if name not in _SupervisedLab._warned:
+                    _SupervisedLab._warned.add(name)
+                    print("[pack] suppressed lab.%s() in child mode" % name, flush=True)
+            return _noop
+
+    lab = _SupervisedLab()
+    CFG = json.loads(os.environ.get("TIDEPOOL_PACK_CFG") or "{}")
+else:
+    from lab import lab
+    lab.init()
+    CFG = lab.get_config() or {}
+
+
+def storage(obj):
+    """Resolve a shared-storage object to a local path.
+
+    A packed child downloads nothing. Every arm on the card reads the same corpus, so N
+    children fetching it N times would multiply the transfer, the disk and the failure
+    surface for no benefit; the supervisor fetches each object once and hands the resolved
+    paths down. A missing path is fatal rather than silently re-downloaded, because a child
+    that quietly reaches for the network has stopped being isolated."""
+    if not PACK_CHILD:
+        return lab.storage_download(obj)
+    p = PACK_LOCAL.get(obj)
+    if not p or not os.path.exists(p):
+        raise SystemExit("pack child was given no local path for %r (supervisor should have "
+                         "downloaded it before spawning children)" % obj)
+    return p
+
+
+def C(k, default):
+    v = CFG.get(k)
+    return default if v is None or v == "" else v
+
+
 IFSTRUCT_URL = "https://raw.githubusercontent.com/Liquid4All/ifstruct/main/data/test.jsonl"
 BFCL_REPO = "gorilla-llm/Berkeley-Function-Calling-Leaderboard"
 IFEVAL_REPO = "google/IFEval"
 IFEVAL_FILE = "ifeval_input_data.jsonl"
 
-OUT = "out"
+# A packed child writes into `out/<arm>/`, which the supervisor sweeps at the end and uploads
+# under an `<arm>__` prefix, so eight arms' completions land in one job's artifact list without
+# a collision and each file still says which arm produced it.
+OUT = os.environ.get("TIDEPOOL_PACK_OUT") or "out"
+ARM = str(os.environ.get("TIDEPOOL_PACK_ARM") or C("arm", "") or "")
+# Anything a child puts on the host -- a listening port, a download cache -- has to be
+# per-arm. Two llama.cpp servers both defaulting to 8080 is not an OOM; the second one dies
+# on bind and the first one silently answers both arms' requests, which would produce two
+# plausible score sets from one model.
+PACK_INDEX = int(os.environ.get("TIDEPOOL_PACK_INDEX") or 0)
 NOTES = []
 ASSERTS = []
 
 
 def log(msg):
-    print(msg, flush=True)
+    print(("[%s] %s" % (ARM, msg)) if ARM else msg, flush=True)
+    if PACK_CHILD:
+        return
     try:
         lab.log(str(msg))
     except Exception:                                              # noqa: BLE001
@@ -109,6 +200,13 @@ def save(obj, name, kind=None):
                 # normalizes values (prompting.jsonable), so this is a last resort that
                 # leaves the odd value visible in the artifact rather than raising.
                 fh.write(json.dumps(row, ensure_ascii=False, default=repr) + "\n")
+    if PACK_CHILD:
+        # The supervisor walks this directory when the arm exits and uploads what it finds,
+        # so a child that also uploaded would either duplicate the artifact or race the
+        # collector for the name.
+        log("wrote %s (%d bytes)%s"
+            % (name, os.path.getsize(path), (" [%s]" % kind) if kind else ""))
+        return path
     try:
         lab.save_artifact(path)
         log("saved artifact %s (%d bytes)%s"
@@ -153,7 +251,7 @@ def fetch_ifeval():
 
 
 def fetch_probes(obj):
-    local = lab.storage_download(obj)
+    local = storage(obj)
     if os.path.isdir(local):
         local = os.path.join(local, os.path.basename(obj))
     rows = []
@@ -333,10 +431,22 @@ def run_probes(cfg, runner, prompter, limit):
 # ------------------------------------------------------------------ driver
 
 def main():
-    lab.init()
-    cfg = lab.get_config() or {}
+    cfg = CFG
     t0 = time.time()
     os.makedirs(OUT, exist_ok=True)
+    if PACK_MEMFRAC > 0:
+        # The ceiling is what makes a pack safe: an arm that reaches for more than its share
+        # gets an OOM inside its own process and dies alone, instead of taking whichever
+        # sibling happened to allocate next down with it. It binds the transformers path,
+        # which allocates through torch in this process. The 4-bit path serves from a
+        # separate llama.cpp process that torch cannot constrain, so a pack carrying one
+        # sizes it by its context and slot count instead, and says so in the summary.
+        try:
+            import torch
+            torch.cuda.set_per_process_memory_fraction(PACK_MEMFRAC, 0)
+            log("memory ceiling %.3f of the card" % PACK_MEMFRAC)
+        except Exception as exc:                                   # noqa: BLE001
+            log("could not set a memory ceiling (%s)" % exc)
 
     base = cfg.get("base_model", "LiquidAI/LFM2.5-1.2B-Instruct")
     adapter_obj = (cfg.get("adapter_object") or "").strip()
@@ -387,7 +497,7 @@ def main():
         if adapter_obj:
             raise RuntimeError("a replay scores saved completions: an adapter changes the "
                                "model and cannot apply to text already generated")
-        src = lab.storage_download(rescore_obj)
+        src = storage(rescore_obj)
         if os.path.isfile(src):
             src = os.path.dirname(src)
         log("re-scoring %s from %s" % (run_tag, rescore_obj))
@@ -402,14 +512,16 @@ def main():
         if adapter_obj:
             raise RuntimeError("a LoRA adapter cannot be merged into a GGUF here: quantize the "
                                "merged checkpoint first and pass it as gguf_repo/gguf_file")
-        server, tok, serving = gen_gguf.load_gguf(cfg, log=log)
+        server, tok, serving = gen_gguf.load_gguf(
+            cfg, log=log, out_dir=OUT, storage=storage,
+            port=int(cfg.get("gguf_port", 8080)) + PACK_INDEX)
         n_params = 0
         runner = gen_gguf.GgufRunner(server, tok, log=log)
         serving.update({"decoding": "greedy", "temperature": 0.0, "top_k": 1,
                         "cache_prompt": False})
     elif backend == "hf":
         if adapter_obj:
-            adapter_dir = lab.storage_download(adapter_obj)
+            adapter_dir = storage(adapter_obj)
             log("adapter downloaded to %s" % adapter_dir)
         model, tok, n_params = gen.load_model(base, adapter_dir, log=log)
         runner = gen.Runner(model, tok, log=log)
@@ -417,7 +529,8 @@ def main():
                    "padding_side": "left", "batch_size": int(cfg.get("batch_size", 16))}
     else:
         raise RuntimeError("unknown backend %r: expected hf or gguf" % backend)
-    lab.update_progress(10)
+    if not PACK_CHILD:
+        lab.update_progress(10)
 
     prompter = prompting.Prompter(tok, log=log)
     # Mode is picked on real rows that carry a tool turn, which is what a published
@@ -452,17 +565,19 @@ def main():
             score["probe_stack_idiom"] = p["stack_idiom_accuracy"]
         else:
             NOTES.append("unknown component ignored: %s" % comp)
-        lab.update_progress(10 + int(85 * (i + 1) / steps))
+        if not PACK_CHILD:
+            lab.update_progress(10 + int(85 * (i + 1) / steps))
 
     if server is not None:
         # The server's own log carries the load line, the offload count and any slot warning,
         # which is the only place a silent CPU fallback would show up. A 4-bit number taken on
         # the CPU by accident would look fine and cost a day, so the log travels with the run.
         server.stop()
-        try:
-            lab.save_artifact(server.log_path)
-        except Exception as exc:                                   # noqa: BLE001
-            NOTES.append("could not save the server log: %r" % exc)
+        if not PACK_CHILD:
+            try:
+                lab.save_artifact(server.log_path)
+            except Exception as exc:                               # noqa: BLE001
+                NOTES.append("could not save the server log: %r" % exc)
 
     summary = {
         "run_tag": run_tag,
@@ -496,26 +611,42 @@ def main():
     score["assertion_failures"] = summary["assertion_failures"]
     score["generated_tokens"] = summary["throughput"]["generated_tokens"]
     log(json.dumps({k: v for k, v in score.items()}, indent=1, sort_keys=True))
-    lab.update_progress(100)
+    if not PACK_CHILD:
+        lab.update_progress(100)
     tput = summary["throughput"]
     # A replay generated nothing, so reporting its tokens per second would read as a
     # measurement. It reports how many saved completions it scored instead.
     done_note = (("%d completion(s) replayed" % tput.get("replayed_completions", 0))
                  if rescore_obj else ("%s tok/s" % tput["tokens_per_second"]))
+    numeric = {k: v for k, v in score.items() if isinstance(v, (int, float))}
+    if PACK_CHILD:
+        # `score.json` is the file the supervisor reads back for every arm to build the
+        # pack's own summary, so the name is part of the contract rather than a convention.
+        save(dict(numeric, run_tag=run_tag, arm=ARM, components=components,
+                  assertion_failures=summary["assertion_failures"],
+                  wall_seconds=summary["wall_seconds"]), "score.json")
+        log("%s: %d component(s), %d assertion failure(s), %s"
+            % (run_tag, len(components), summary["assertion_failures"], done_note))
+        # Non-zero on an assertion failure, because a packed child has no lab.error: its
+        # exit code is the only channel the supervisor reads it on.
+        raise SystemExit(3 if summary["assertion_failures"] else 0)
     lab.finish(message=("%s: %d component(s), %d assertion failure(s), %s"
                         % (run_tag, len(components), summary["assertion_failures"],
                            done_note)),
-               score={k: v for k, v in score.items() if isinstance(v, (int, float))})
+               score=numeric)
 
 
 if __name__ == "__main__":
     try:
         main()
+    except SystemExit:
+        raise
     except Exception as exc:                                       # noqa: BLE001
         import traceback
         traceback.print_exc()
-        try:
-            lab.error(message="s5-eval failed: %s" % exc)
-        except Exception:                                          # noqa: BLE001
-            pass
+        if not PACK_CHILD:
+            try:
+                lab.error(message="s5-eval failed: %s" % exc)
+            except Exception:                                      # noqa: BLE001
+                pass
         raise

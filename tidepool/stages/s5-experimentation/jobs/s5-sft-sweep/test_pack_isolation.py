@@ -26,7 +26,10 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Every script pack.py can hand to a child. Adding one here is the only step needed to bring
 # a new packable program under the same contract.
-CHILD_SCRIPTS = ("main.py", "replay.py")
+# Paths are relative to this file, so a script belonging to a different job directory is
+# named by its path: the contract belongs to the packing supervisor, not to one job.
+CHILD_SCRIPTS = [f for f in ("main.py", "replay.py", "../s5-eval/main.py")
+                 if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), f))]
 
 fails = []
 
@@ -145,11 +148,13 @@ def audit(fname):
 
 SOURCES = {f: audit(f) for f in CHILD_SCRIPTS}
 SRC = SOURCES["main.py"]
+EVAL = "../s5-eval/main.py"
 
 # And pack.py must forward config and staged paths, or children silently train the default arm.
 PACK = open(os.path.join(HERE, "pack.py")).read()
 for needed in ("TIDEPOOL_PACK_CHILD", "TIDEPOOL_PACK_ARM", "TIDEPOOL_PACK_OUT",
-               "TIDEPOOL_PACK_MEMFRAC", "TIDEPOOL_PACK_CFG", "TIDEPOOL_PACK_LOCAL"):
+               "TIDEPOOL_PACK_MEMFRAC", "TIDEPOOL_PACK_CFG", "TIDEPOOL_PACK_LOCAL",
+               "TIDEPOOL_PACK_INDEX"):
     if needed not in PACK:
         fails.append("pack.py never sets %s" % needed)
 for fname, src in SOURCES.items():
@@ -167,9 +172,34 @@ def preamble(src):
     return src[a:b].strip()
 
 
-if preamble(SOURCES["main.py"]) != preamble(SOURCES["replay.py"]):
-    fails.append("main.py and replay.py no longer share a packing preamble; one of them has "
-                 "a stub or a storage() resolver the other does not")
+for other in [f for f in CHILD_SCRIPTS if f != "main.py"]:
+    if preamble(SOURCES["main.py"]) != preamble(SOURCES[other]):
+        fails.append("main.py and %s no longer share a packing preamble; one of them has a "
+                     "stub or a storage() resolver the other does not" % other)
+
+# An evaluation's arms differ in the checkpoint each one reads, and a checkpoint arrives as a
+# per-arm override rather than in the shared config. If the supervisor only staged objects
+# named in the shared config, every eval child would be handed a config naming an adapter and
+# no local path for it, and would exit on the first read.
+if "OVERRIDES[a] for a in sorted(OVERRIDES)" not in PACK:
+    fails.append("pack.py does not stage objects named in per-arm overrides, so a packed "
+                 "evaluation could not reach its checkpoints")
+
+# The 4-bit server is a separate process on a fixed port. Two of them on one card is not an
+# OOM: the second fails to bind and the first answers both arms, which yields two plausible
+# score sets from one model.
+GGUF = (open(os.path.join(HERE, "..", "s5-eval", "gen_gguf.py")).read()
+        if os.path.exists(os.path.join(HERE, "..", "s5-eval", "gen_gguf.py")) else "")
+if GGUF and ("def load_gguf(cfg, log=print, out_dir=" not in GGUF
+             or "port if port is not None" not in GGUF):
+    fails.append("gen_gguf.load_gguf does not take a per-arm port and output directory; two "
+                 "packed 4-bit arms would collide on the server port")
+# The reference `storage = lab.storage_download` is the solo-mode default and is fine; a
+# *call* is not, because inside a pack it fetches once per arm from a child that is supposed
+# to be isolated.
+if "lab.storage_download(" in GGUF:
+    fails.append("gen_gguf still calls lab.storage_download directly; inside a pack that is "
+                 "one fetch per arm from a child that is supposed to be isolated")
 
 if fails:
     print("FAIL")
