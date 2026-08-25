@@ -163,9 +163,24 @@ if not texts:
 path = os.path.join(OUT, "replay.jsonl.gz")
 
 
+def _ids(enc):
+    # apply_chat_template(tokenize=True) returns a list of ids on some versions and a
+    # BatchEncoding/dict on others. len() on the latter counts its KEYS -- two of them,
+    # input_ids and attention_mask -- which is how the first run at size wrote n_tok=2 for
+    # every row and indexed a 1.85M-token buffer as 15,890 training tokens. Unwrap first.
+    if hasattr(enc, "input_ids"):
+        enc = enc.input_ids
+    elif isinstance(enc, dict):
+        enc = enc["input_ids"]
+    if len(enc) and isinstance(enc[0], (list, tuple)):
+        enc = enc[0]
+    return enc
+
+
 def row_tokens(msgs):
     try:
-        return len(tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=False))
+        return len(_ids(tok.apply_chat_template(msgs, tokenize=True,
+                                                add_generation_prompt=False)))
     except Exception:
         return len(tok("\n".join(m.get("content") or "" for m in msgs)).input_ids)
 
@@ -213,6 +228,17 @@ if n_out == 0:
 if empty > 0.2 * max(1, len(texts)):
     fails.append("%d of %d generations came back empty, which is too many to treat as noise"
                  % (empty, len(texts)))
+
+# An exact invariant, not a heuristic: a training row is its prompt plus its completion, so
+# the buffer's training-token total can never be below the completion tokens it was built
+# from. The first run at size violated this by two orders of magnitude (15,890 against
+# 1,850,696) because n_tok was counting dict keys. The C5b ratio check below did catch it,
+# but only after inferring the cause from a replay-passes number; this names it directly.
+if n_out and train_tok < n_tok:
+    fails.append("the buffer reports %d training tokens against %d generated completion "
+                 "tokens, which is impossible for rows that carry prompt AND completion "
+                 "(%.1f per row): n_tok is being miscounted, not the generation"
+                 % (train_tok, n_tok, train_tok / max(1, n_out)))
 
 # The dose the sweep will ask for. `C5b` replays 5% of a 64.0M-token budget, so a buffer
 # under 3.2M training tokens is not an error, it just means the sampler repeats rows; the

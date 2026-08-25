@@ -1650,3 +1650,21 @@ restart trades certain spent hours for an uncertain speedup.
   is noted and not yet taken: it would cut idle time between arms, and it would also let one
   failure take several arms down and cost the per-arm job ids the ledger and the writeup are built
   on. Revisit if the first arms show material idle time.
+- 2026-08-25 · s5.3 · **the sweep gate passed and the first two arms are away.** The `C4` smoke
+  (`2680e4a8`) ran 30 steps over 238,195 tokens in 6m25s, val loss 1.2552 → 0.3599 at 2,833 tok/s,
+  exercising the multi-source sampler, the guardrail role and the entropy-weighted loss together.
+  All eight arms are cleared. `e4bd367a` (`C1`, the reference recipe) and `a68b3e57` (`C7`,
+  `mix: raw`) are now running on both slots at 64.0M tokens each.
+- 2026-08-25 · s5.3 · **the replay buffer failed on the defect it was rewritten to prevent, and
+  the assertion caught it.** `62d88386` generated cleanly (7,945 completions, 0 empty, 1,850,696
+  completion tokens at 1,688.5 tok/s, placed in storage) and then wrote `n_tok: 2` into every row.
+  `row_tokens` took `len()` of `apply_chat_template(tokenize=True)`, which on this `transformers`
+  version returns a `BatchEncoding` whose `len()` is its **key count**, so a 1.85M-token buffer
+  indexed as 15,890 training tokens. The 17:09Z rewrite had made sure `n_tok` was written; it had
+  not made sure the number written was a token count. The downstream `C5b` ratio check read 201.4
+  passes against a 2.0 ceiling and failed the run, so no arm ever trained on it. Fixed three ways:
+  `_ids()` unwraps every return shape; an **exact invariant** now asserts that training tokens can
+  never fall below the completion tokens the rows were built from, naming the cause at the point of
+  failure rather than leaving it to be inferred from a replay-passes number; and an 8-case fixture
+  test covers each shape plus the `len() == 2` regression itself. `C5a`/`C5b` are last in the arm
+  order, so nothing is blocked; the requeue goes out when a slot frees. 0.372 GPU-h recorded.
