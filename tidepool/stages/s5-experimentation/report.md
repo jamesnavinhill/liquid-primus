@@ -1452,3 +1452,29 @@ thin.
   size. `C5b` needs 3.2M replay tokens, so the generation run is sized at roughly 8,000 prompts.
   Six of the eight arms can run without it, and an arm queued for replay with no replay set now
   fails loudly rather than training the reference recipe under a `C5` label.
+- 2026-08-25 · mirror · Pushed to `github.com/jamesnavinhill/liquid-primus` under `tidepool/`,
+  commit `b8daccb`: B2's verified row and its retention table, the promoted runtime control, the
+  Granite threshold at full item counts, the retired `C2` and its replacement, and the whole
+  `s5-sft-sweep` source tree including the fixture test. The paper corpus and the compressed
+  splits stay out of the repository, as they have on every previous push.
+- 2026-08-25 · s5.2/s5.3 · Wired the enlarged clean control arm into the eval harness. The plan
+  sets a ceiling of 0.15 on false alarms over clean tool returns, and the frozen clean arm is 30
+  items, which is too few to place a number against that ceiling with any confidence: one extra
+  flag moves the rate by 3.3 points. `s5.3` built a 138-item clean corpus alongside the guardrail
+  training data, and `s5-eval` now reads it through a new `clean_control_object` setting. The
+  harness reports the two arms separately (`false_flag_rate_clean` stays the frozen 30, the new
+  `false_flag_rate_clean_corpus` covers the 138) and pools them in `false_flag_rate_all_clean`.
+- 2026-08-25 · s5.2/s5.3 · The wiring is **authored and tested but deliberately not applied**,
+  because two baseline rows are in flight against the current harness and editing a task under a
+  running job is how a table stops being self-consistent. It goes to the server once `s5.2`'s
+  rows are down, and `B1` then gets a supplementary pass over the new arm so the reference has a
+  number on the same footing as everything measured after it.
+- 2026-08-25 · s5.2/s5.3 · The additivity claim is a test, not an assertion. `test_probes_additive.py`
+  builds a scored run with and without the new arm and checks that **none of the eight
+  pre-existing summary keys move**, that the new keys read empty when the arm is unconfigured, and
+  that the envelope-depth breakdown stays scoped to the original arms. That last one was a real
+  break rather than a hypothetical: the depth table aggregated over every `tool_return` row, so
+  adding 138 clean rows would have silently changed what `depth` meant for the four baseline rows
+  already published. The corpus arm now gets its own `depth_clean_corpus` bucket. Nine checks,
+  all passing, and the default stays empty so a re-run of an already-measured row is
+  byte-comparable to what it produced before.

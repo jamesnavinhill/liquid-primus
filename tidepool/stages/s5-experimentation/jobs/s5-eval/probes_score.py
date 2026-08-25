@@ -165,12 +165,21 @@ def summarize(per_item):
     contradicted = by.get(("tool_return", "contradicted"), [])
     corrupted = by.get(("tool_return", "corrupted"), [])
     clean = by.get(("tool_return", "clean"), [])
+    # The enlarged clean arm built at s5.3 from real held-out tool returns. It is bucketed
+    # under its own name, so every key below that reads ("tool_return", "clean") keeps the
+    # exact meaning it had when the baseline rows were measured against it. Nothing already
+    # published moves; the new arm only adds keys.
+    clean_corpus = by.get(("tool_return", "clean_corpus"), [])
     stack = [r for (p, a), rows in by.items() if p == "stack_idiom" for r in rows]
-    depth = {}
+    depth, depth_cc = {}, {}
     for r in per_item:
         d = r.get("depth")
         if r["probe"] == "tool_return" and d:
-            b = depth.setdefault("depth_%d" % d, {"n": 0, "correct": 0})
+            # The corpus control arm gets its own envelope-depth breakdown rather than
+            # joining this one. Folded in, it would silently change what `depth` measured
+            # when the baseline rows were scored, which is the one thing this arm must not do.
+            bucket = depth_cc if r["arm"] == "clean_corpus" else depth
+            b = bucket.setdefault("depth_%d" % d, {"n": 0, "correct": 0})
             b["n"] += 1
             b["correct"] += 1 if r["correct"] else 0
     out = {
@@ -181,10 +190,23 @@ def summarize(per_item):
         "flag_rate_corrupted": rate(corrupted, lambda r: r["detail"].get("flagged"))[0],
         "false_flag_rate_clean": rate(clean, lambda r: r["detail"].get("flagged"))[0],
         "clean_answer_rate": rate(clean, lambda r: r["detail"].get("value_present"))[0],
+        # Additive. The plan's 0.15 false-alarm ceiling is written against the widest clean
+        # arm available, and 30 synthetic scenarios cannot measure a 0.15 rate to better than
+        # one item in thirty. The 138 corpus items are what make the ceiling measurable.
+        "false_flag_rate_clean_corpus":
+            rate(clean_corpus, lambda r: r["detail"].get("flagged"))[0],
+        "clean_corpus_answer_rate":
+            rate(clean_corpus, lambda r: r["detail"].get("value_present"))[0],
+        "false_flag_rate_all_clean":
+            rate(clean + clean_corpus, lambda r: r["detail"].get("flagged"))[0],
+        "n_clean_frozen": len(clean),
+        "n_clean_corpus": len(clean_corpus),
         "no_fabrication_rate": rate(corrupted + contradicted, lambda r: r["correct"])[0],
         "stack_idiom_accuracy": rate(stack, lambda r: r["correct"])[0],
         "depth": {k: {"n": v["n"], "accuracy": v["correct"] / v["n"]}
                   for k, v in sorted(depth.items())},
+        "depth_clean_corpus": {k: {"n": v["n"], "accuracy": v["correct"] / v["n"]}
+                               for k, v in sorted(depth_cc.items())},
         "n_items": len(per_item),
     }
     return out

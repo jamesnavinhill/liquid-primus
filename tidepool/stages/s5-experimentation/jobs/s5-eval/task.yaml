@@ -35,6 +35,12 @@ parameters:
   bfcl_styles: tools_text,native_tools
   bfcl_categories: simple,multiple,parallel,parallel_multiple,live_simple,live_multiple,live_parallel,live_parallel_multiple,irrelevance,live_irrelevance,live_relevance
   probes_object: tidepool/s4.4/probes/probes.jsonl
+  # The enlarged clean arm built at s5.3: 138 real intact tool returns from the held-out
+  # splits, against the frozen arm's 30 synthetic ones. Empty by default so a re-run of an
+  # already-measured baseline row stays byte-comparable to the row it replaces. Set it, and
+  # the items arrive tagged clean_corpus and report under their own summary keys; every
+  # pre-existing key keeps the meaning it had when B1 through B6 were measured.
+  clean_control_object: ""
   # 0 = the whole component. Anything else is a smoke, and the summary says so.
   limit_per_component: 40
   # Per-component caps. -1 inherits limit_per_component, 0 means the full set. Set

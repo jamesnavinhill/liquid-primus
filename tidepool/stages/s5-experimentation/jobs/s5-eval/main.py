@@ -271,6 +271,21 @@ def run_probes(cfg, runner, prompter, limit):
     save(control, "probes_control.jsonl")
     check("probes_graded_count", limit or len(graded) == 434, "%d graded" % len(graded))
     check("probes_control_count", len(control) == 30, "%d control" % len(control))
+    # The enlarged clean arm, off by default so a re-run of an already-measured row is
+    # byte-comparable to the row it replaces. When it is configured, its items are appended
+    # under arm "clean_corpus" and every pre-existing summary key keeps its meaning.
+    corpus_control = []
+    cc_obj = cfg.get("clean_control_object") or ""
+    if cc_obj:
+        corpus_control, cc_sha = fetch_probes(cc_obj)
+        shas = dict(shas or {})
+        shas["clean_control"] = cc_sha if not isinstance(cc_sha, dict) else cc_sha
+        check("clean_control_count", len(corpus_control) >= 100,
+              "%d corpus control items" % len(corpus_control))
+        bad_arm = sorted({it.get("arm") for it in corpus_control} - {"clean_corpus"})
+        check("clean_control_arm_tagged", not bad_arm,
+              "unexpected arm tags in the corpus control arm: %s" % bad_arm)
+        log("  clean control arm: %d items from %s" % (len(corpus_control), cc_obj))
     # A replay rebuilds the clean arm from the same generator rather than reading it back,
     # so it is worth proving the two agree. If the arm has drifted, the false-flag rate
     # from the source run and the one from this pass are measured on different items.
@@ -282,8 +297,11 @@ def run_probes(cfg, runner, prompter, limit):
         # would smoke-test one check kind and leave the other two unproven.
         stride = max(1, len(graded) // limit)
         items = graded[::stride][:limit] + control[::max(1, len(control) // limit)][:limit]
+        if corpus_control:
+            cs = max(1, len(corpus_control) // limit)
+            items += corpus_control[::cs][:limit]
     else:
-        items = graded + control
+        items = graded + control + corpus_control
     # The probes carry their own system prompt, which is the s4 tool convention with the
     # honesty clause. Nothing is added on top: `tools=None` keeps the harness out of it.
     prompts = [prompter.render(it["messages"], None) for it in items]
@@ -304,8 +322,10 @@ def run_probes(cfg, runner, prompter, limit):
     out = probes_score.summarize(scored)
     out["input_sha"] = shas
     out["control_sha"] = csha
-    log("  probes: flag rate %s, false-flag %s, stack idiom %s"
-        % (out["flag_rate_malformed"], out["false_flag_rate_clean"],
+    log("  probes: flag rate %s, false-flag %s (frozen n=%s), false-flag %s (corpus n=%s), "
+        "stack idiom %s"
+        % (out["flag_rate_malformed"], out["false_flag_rate_clean"], out["n_clean_frozen"],
+           out["false_flag_rate_clean_corpus"], out["n_clean_corpus"],
            out["stack_idiom_accuracy"]))
     return out
 
@@ -426,6 +446,9 @@ def main():
             p = results["probes"]
             score["probe_flag_rate"] = p["flag_rate_malformed"]
             score["probe_false_flag"] = p["false_flag_rate_clean"]
+            if p.get("n_clean_corpus"):
+                score["probe_false_flag_corpus"] = p["false_flag_rate_clean_corpus"]
+                score["probe_false_flag_all_clean"] = p["false_flag_rate_all_clean"]
             score["probe_stack_idiom"] = p["stack_idiom_accuracy"]
         else:
             NOTES.append("unknown component ignored: %s" % comp)
