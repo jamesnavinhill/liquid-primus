@@ -882,6 +882,11 @@ hours it quotes to mean anything.
 The startup log is still captured, still saved as an artifact, and now saved *before* anything is
 asserted on it. It reports rather than decides.
 
+- 2026-08-25 · mirror · The build's diagnosis and attempt 5 pushed to
+  `github.com/jamesnavinhill/liquid-primus` under `tidepool/`, commit `82dceca`: the rewritten
+  build script and its config, this stage's record and run log, the corrected ledger and the task
+  list.
+
 ## Immediate next actions
 
 1. Read `905755d3` in this order: whether `job artifacts` **lists** the tarball, which now
