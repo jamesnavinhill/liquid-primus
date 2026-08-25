@@ -39,7 +39,7 @@ Active stage: s4
 - [x] s4.5 Data card + sign-off  (checkpoint)  — taken autonomously; decision recorded in the stage report
 
 ## s5 - Experimentation
-- [ ] s5.1 Smoke tests / toy runs
+- [~] s5.1 Smoke tests / toy runs
 - [ ] s5.2 Baselines
 - [ ] s5.3 Broad sweep
 - [ ] s5.4 Direction decision with researcher  (checkpoint)

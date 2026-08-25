@@ -1,0 +1,40 @@
+name: s5-sft
+run: python main.py
+setup: |
+  python -c "import torch" 2>/dev/null || pip install -q torch
+  pip install -q -U transformers peft accelerate wandb
+  python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+resources:
+  cpus: 8
+  memory: 48
+  disk_space: 200
+  # bf16 is required: the loss is computed in bf16 and T4 does not support it. L4 is the
+  # smallest allowed card that does, and it has three sources rather than one.
+  accelerators: "L4:1"
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  WANDB_API_KEY: "{{secret._WANDB_API_KEY}}"
+parameters:
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  train_object: tidepool/s4.4/train.jsonl.gz
+  val_object: tidepool/s4.4/val.jsonl.gz
+  # s5.1 smoke: real calibration over the whole split, then 30 optimizer steps on 512 rows.
+  # The point is the pipeline, not the number, and the run says so in its own tag.
+  smoke: true
+  smoke_rows: 512
+  max_steps: 30
+  run_tag: s5.1-smoke
+  mix: role_balanced
+  max_seq_len: 2048
+  micro_batch_size: 2
+  grad_accum: 8
+  learning_rate: 1e-4
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  val_rows: 128
+  tool_epochs: 1.0
+  struct_max_epochs: 3.0
+  min_priority_share: 0.5
+  seed: 17
+minutes_requested: 60

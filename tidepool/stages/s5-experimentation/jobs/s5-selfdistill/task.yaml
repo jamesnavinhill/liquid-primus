@@ -1,0 +1,26 @@
+name: s5-selfdistill
+run: python main.py
+setup: |
+  python -c "import torch" 2>/dev/null || pip install -q torch
+  pip install -q -U transformers accelerate
+  python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+resources:
+  cpus: 8
+  memory: 48
+  disk_space: 200
+  accelerators: "L4:1"
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+parameters:
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  pool_object: tidepool/s4.4/prompt_pool.jsonl.gz
+  # s5.1 smoke: 64 prompts, enough to prove the sampling, the template, the generation and
+  # the artifact round trip. The full buffer is generated once the smoke passes.
+  smoke: true
+  n_prompts: 64
+  max_new_tokens: 320
+  batch_size: 16
+  max_prompt_tokens: 1024
+  sample_salt: tidepool-replay-v1
+  run_tag: s5.1-selfdistill-smoke
+minutes_requested: 45

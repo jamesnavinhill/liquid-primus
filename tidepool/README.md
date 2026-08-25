@@ -23,6 +23,7 @@ Nothing has drawn on the GPU allowance yet, since every job so far ran on CPU.
 | `stages/s4-data-preparation/` | Access and licence findings, exploratory analysis, split design. |
 | `stages/s4-data-preparation/eda/diagnostics-<job>/` | Raw per-corpus statistics from the diagnostics job, one file per corpus, plus its figures. |
 | `stages/s4-data-preparation/jobs/` | The code each queued job ran, exactly as submitted. |
+| `stages/s5-experimentation/` | The training report, and `jobs/` holds the supervised fine-tuning task and the replay-generation task as submitted. |
 | `stages/s4-data-preparation/preprocess-4674a2ec/` | Per-corpus rendering counts, the unrenderable-reason breakdown, the purity check and the figure from the preprocessing job. |
 | `stages/s4-data-preparation/probes-05bbcd49/` | `probes.jsonl` is the 434 hand-written evaluation items in full, with the build's own summary and score beside it. |
 
