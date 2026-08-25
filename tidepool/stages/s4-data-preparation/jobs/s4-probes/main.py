@@ -116,24 +116,47 @@ for scen in bank_tools.SCENARIOS:
 
 # ------------------------------------------------------- 2 & 3. held out, and disjoint
 
-probe_grams, prompt_of = {}, {}
+probe_grams, prompt_of, text_of = {}, {}, {}
 for it in items:
     text = "\n".join(m["content"] for m in it["messages"] if m["role"] in ("user", "tool"))
     probe_grams[it["id"]] = set(grams(text))
     prompt_of[it["id"]] = next((m["content"] for m in it["messages"] if m["role"] == "user"), "")
+    text_of[it["id"]] = text
 
-# Probe-to-probe prompt collisions. Surface-form variants of the same bank entry share a
-# scenario id and are expected to overlap; two DIFFERENT scenarios sharing a prompt are not.
+# Two collision checks, and the distinction between them is the point.
+#
+# The corrupted and contradicted arms deliberately ask the SAME question and differ only in
+# what the tool hands back: that is the comparison the probe exists to make, so a shared user
+# prompt within one scenario is intended, not a defect. What must never happen is two items
+# being the same measurement (identical user text AND identical tool text), or one question
+# appearing under two DIFFERENT scenarios, which would make a single failure count twice.
+scen_of = {it["id"]: (it["probe"], it["scenario"]) for it in items}
+
+dup_items = collections.defaultdict(list)
+for pid, t in text_of.items():
+    dup_items[hashlib.blake2b(t.encode("utf-8"), digest_size=8).hexdigest()].append(pid)
+dups = {h: ids for h, ids in dup_items.items() if len(ids) > 1}
+if dups:
+    fails.append("%d groups of probe items are byte-identical on question and tool return, so "
+                 "they are the same measurement counted more than once: %s"
+                 % (len(dups), json.dumps([sorted(v) for v in list(dups.values())[:5]])))
+
 by_prompt = collections.defaultdict(set)
 for pid, p in prompt_of.items():
     by_prompt[hashlib.blake2b(p.encode("utf-8"), digest_size=8).hexdigest()].add(pid)
-cross = 0
+cross = {}
 for h, ids in by_prompt.items():
-    scens = {i.rsplit("/", 1)[0] for i in ids}
-    if len(ids) > 1 and len({s.split("/")[1] for s in scens}) > 1:
-        cross += 1
+    scens = {scen_of[i] for i in ids}
+    if len(scens) > 1:
+        cross[h] = sorted(scens)
 if cross:
-    fails.append("%d prompts are shared between probe items from different arms" % cross)
+    fails.append("%d prompts appear under more than one scenario: %s"
+                 % (len(cross), json.dumps(list(cross.values())[:5])))
+
+collision_report = {"identical_item_groups": len(dups),
+                    "prompts_under_multiple_scenarios": len(cross),
+                    "shared_prompt_groups_within_scenario":
+                        sum(1 for ids in by_prompt.values() if len(ids) > 1)}
 
 overlap_report = {"checked": False, "reason": "no train_object configured"}
 if TRAIN_OBJECT:
@@ -204,9 +227,17 @@ summary = {
     "stack_families": {f["family"]: len(f["items"]) for f in bank_stack.FAMILIES},
     "surface_forms": [f for f, _ in build.FORMS],
     "heldout_check": overlap_report,
+    "collision_check": collision_report,
     "assertion_failures": fails,
 }
 dump("probes_summary.json", summary)
+dump("score.json", {"n_items": len(items),
+                    "items_overlapping_train": overlap_report.get("items_with_overlap", -1),
+                    "heldout_checked": bool(TRAIN_OBJECT),
+                    "identical_item_groups": collision_report["identical_item_groups"],
+                    "prompts_under_multiple_scenarios":
+                        collision_report["prompts_under_multiple_scenarios"],
+                    "assertion_failures": len(fails)})
 for f in fails:
     log("ASSERTION FAILURE: %s" % f)
 

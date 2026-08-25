@@ -35,8 +35,8 @@ Active stage: s4
 - [x] s4.1 Acquire / validate dataset access
 - [x] s4.2 EDA: distributions, missingness, leakage risks
 - [x] s4.3 Build splits (group-aware / time-based)
-- [~] s4.4 Preprocessing pipeline
-- [ ] s4.5 Data card + sign-off  (checkpoint)
+- [x] s4.4 Preprocessing pipeline
+- [x] s4.5 Data card + sign-off  (checkpoint)  — taken autonomously; decision recorded in the stage report
 
 ## s5 - Experimentation
 - [ ] s5.1 Smoke tests / toy runs

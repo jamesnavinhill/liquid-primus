@@ -63,21 +63,24 @@ def _deepest_number(payload):
     return best or next(iter(_paths(payload)))[0]
 
 
-CORRUPTIONS = {
-    # Each returns (tool_response_string, what_is_wrong).
-    "truncated_json": lambda blob, _p: (blob[: int(len(blob) * 0.62)],
-                                        "the response is cut off mid-object and does not parse"),
-    "type_swapped": None,     # filled in below; needs the payload, not just the blob
-    "error_envelope": lambda blob, _p: (
-        json.dumps({"error": {"code": "upstream_timeout", "message": "backend did not respond in 30s",
-                              "retryable": True}}), "the tool returned an error instead of a result"),
-    "empty_body": lambda blob, _p: ("", "the tool returned an empty body"),
-    "null_leaf": None,        # filled in below
-}
+CORRUPTION_MODES = ["truncated_json", "type_swapped", "error_envelope",
+                    "empty_body", "null_leaf"]
 
 
-def corrupt(payload, mode):
+def corrupt(payload, mode, depth=1):
+    """Damage an already-wrapped payload. `depth` is the envelope depth it was wrapped at.
+
+    Every mode has to remain a function of depth, or the depth strata stop being strata.
+    The first version of this returned a bare error object and a bare empty string for two
+    of the five modes, which made those two identical at every depth: 40 of 290 items were
+    byte-for-byte copies of another item, and the build's own duplicate check caught it.
+    Both now sit inside the same envelope the success payload would have arrived in, which
+    is also what a real gateway does with an upstream failure.
+    """
     blob = json.dumps(payload, ensure_ascii=False)
+    if mode == "truncated_json":
+        return blob[: int(len(blob) * 0.62)], \
+            "the response is cut off mid-object and does not parse"
     if mode == "type_swapped":
         p = _deepest_number(payload)
         bad = copy.deepcopy(payload)
@@ -90,7 +93,15 @@ def corrupt(payload, mode):
         _set(bad, p, None)
         return json.dumps(bad, ensure_ascii=False), \
             "the field at %s is null" % ".".join(p)
-    return CORRUPTIONS[mode](blob, payload)
+    if mode == "error_envelope":
+        err = {"error": {"code": "upstream_timeout",
+                         "message": "backend did not respond in 30s", "retryable": True}}
+        return json.dumps(wrap(err, depth), ensure_ascii=False), \
+            "the envelope carries an upstream error where the result should be"
+    if mode == "empty_body":
+        return json.dumps(wrap({}, depth), ensure_ascii=False), \
+            "the envelope is well formed and its body is empty"
+    raise KeyError(mode)
 
 
 CONTRADICTIONS = ["wrong_entity", "silently_truncated", "stale_as_of", "unit_swapped"]
@@ -135,9 +146,8 @@ def build_tools(scenarios):
             ensure_ascii=False, sort_keys=True)
         for depth in (1, 2, 3):
             payload = wrap(scen["payload"], depth)
-            for mode in ("truncated_json", "type_swapped", "error_envelope",
-                         "empty_body", "null_leaf"):
-                body, why = corrupt(payload, mode)
+            for mode in CORRUPTION_MODES:
+                body, why = corrupt(payload, mode, depth)
                 items.append({
                     "probe": "tool_return", "arm": "corrupted", "mode": mode,
                     "scenario": scen["id"], "depth": depth,

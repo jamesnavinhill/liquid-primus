@@ -1,0 +1,8 @@
+{
+ "n_items": 434,
+ "items_overlapping_train": 0,
+ "heldout_checked": true,
+ "identical_item_groups": 0,
+ "prompts_under_multiple_scenarios": 0,
+ "assertion_failures": 0
+}

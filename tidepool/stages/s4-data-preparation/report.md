@@ -1,33 +1,50 @@
 # Stage 4: Data preparation
 
-_Status: in progress (s4.1, s4.2 and s4.3 complete on measured numbers; s4.4 preprocessing is
-authored and awaiting its job)._
+_Status: complete. s4.1 through s4.5 are done on measured numbers, the data card is
+written, and the s4.5 sign-off was taken here under autonomous mode. Stage 5 is next._
 
 ## Headline
 
-The splits are cut and the held-out sets are clean, and getting there caught a leak that a
-group-disjoint split cannot prevent on its own. Groups were kept whole and never divided, which
-is the standard guarantee, and the assignment still put **39,161 prompts on both sides of the
-train/held-out line**, a 4.99% leak rate, because one prompt can carry two different group keys.
-Those rows are now set aside rather than counted and shipped: 42,702 rows, 4.08% of the mix,
-almost all of it out of the held-out sets. The written manifest verifies zero prompts shared
-between train and held-out and zero between val and test. The mix splits 942,029 train /
-31,708 val / 30,516 test over 1,046,955 rows.
+The training corpus is built and measured: **518,330 supervised examples, 201.5 million
+trainable tokens, and a separate pool of 447,053 prompts**, with zero examples landing on both
+sides of the train and held-out line either before or after rendering. Eleven differently
+shaped source corpora now render into one conversation format, and the canonicalizer met **no
+declared parameter type it did not recognize**, at any nesting depth, in any of them.
 
-Reading the corpora correctly this time also closed the four questions the earlier scan left
-open. Benchmark contamination is 25× larger than first reported, 20,166 rows rather than 799,
-and 96% of it sits in the general-quality corpus whose reader had previously found no prompt
-field at all. Duplication, measured on the question-toolset-answer triple rather than on the
-question alone, would remove 149,822 rows, 14.3% of the mix. The code corpus re-keys from 4
-unusable groups into 52,286, with the largest falling from 40.2% of the corpus to 3.7%. And
-every count the earlier scan recorded was re-derived and checked, 110 of 110 passing, after one
-failed attempt whose five failures were all definition drift between the two passes rather than
-disagreements about the data.
+Two measurements change what the experimentation stage does. The general-quality corpus carries
+**no assistant responses at all** — all 447,053 of its renderable rows end on a user turn, so it
+is a prompt set and not training data, and the planned replay control has no corpus to replay
+from. Replay will instead draw on the base model's own frozen completions over that pool, which
+is what a prompt set with no shipped responses is for. And the mix as assembled is weighted
+against the project's own priority order: SQL and code take **79% of the training tokens**,
+tool calling takes 20%, and structured output takes under 1%, on a project whose second headline
+metric is structured-output validity. A role-balanced sampling arm becomes the reference for the
+supervised sweep, with the raw mix kept as the explicit comparison.
 
-One thing the split makes plain and the plan should absorb: the held-out sets are 59% general
-prompts and only 2,820 test rows of tool calling, which is the project's first priority. In-mix
-held-out numbers have to be reported per capability rather than pooled, and the tool-calling
-verdict has to rest on the external benchmarks and on the purpose-built probe sets.
+Getting the splits here caught a leak a group-disjoint split cannot prevent on its own. Groups
+were kept whole, which is the standard guarantee, and the assignment still put **39,161 prompts
+on both sides of the train/held-out line**, a 4.99% leak rate, because one prompt can carry two
+different group keys. Those 42,702 rows are set aside rather than counted and shipped.
+
+Reading the corpora correctly also closed the four questions the earlier scan left open.
+Benchmark contamination is 25× larger than first reported, 20,166 rows rather than 799, and 96%
+of it sits in the general-quality corpus whose reader had previously found no prompt field at
+all. Duplication, measured on the question-toolset-answer triple rather than on the question
+alone, removed 149,822 rows. The code corpus re-keys from 4 unusable groups into 52,286, with
+the largest falling from 40.2% of the corpus to 3.7%. And every count the earlier scan recorded
+was re-derived and checked, 110 of 110 passing.
+
+One thing the split makes plain and the plan should absorb: held-out is small on the axis that
+matters most, at 451 test rows of tool calling out of 11,550. In-mix held-out numbers have to be
+reported per capability rather than pooled, and the tool-calling verdict has to rest on the
+external benchmarks and on the two purpose-built probe sets built here.
+
+Those probes are now built and gated: **434 hand-written items**, and **none of them shares a
+13-gram** with any of the 494,341 rows a model will be trained on. The gates paid for
+themselves on the first attempt, which found that two of the five tool-corruption modes were
+ignoring the nesting depth they were supposed to sit at, making 40 of 290 items duplicates of
+each other. Scored as first built, the one hypothesis those items exist to test would have
+returned a null result for a reason that had nothing to do with any model.
 
 ## Operator input (no-checkpoint, 2026-08-25)
 
@@ -77,6 +94,29 @@ anything measured before it.
   antidoom adapter reads a `conversations` row where the old one returned an empty string,
   the code key is stable when an unrelated import is added, the split rule is deterministic
   and group-disjoint, and a deliberately oversized group is routed wholesale to train.
+- 2026-08-25 · s4.4 · Preprocessing job `4674a2ec` completed over 1,047,820 rows, 34m29s,
+  CPU only, 0 GPU-h, 0 assertion failures and 0 purity violations. 518,330 examples kept and
+  201.5M trainable tokens estimated; 447,053 rows routed to the prompt pool because they carry
+  no assistant turn. Two findings changed the plan and are recorded under "s4.4 Preprocessing
+  — measured": the general-quality corpus is a prompt set, and the token mix runs against the
+  project's own priority order. Both decisions were taken here, unreviewed, under autonomous
+  mode. Artifacts in `preprocess-4674a2ec/`; splits and pool uploaded to `tidepool/s4.4/`.
+- 2026-08-25 · s4.4 · Probe build attempt 1, job `32fc86ad`, failed two of its own three
+  gates and is superseded. One failure was a real defect in the build (two corruption modes
+  ignored envelope depth, so 40 of 290 probe-A items were duplicates); the other was a wrong
+  assertion, which banned the deliberate question-sharing between the corrupted and
+  contradicted arms. Both fixed in the build script, the assertion replaced by two narrower
+  checks. Ledger entry appended.
+- 2026-08-25 · s4.4 · Probe build attempt 2, job `05bbcd49`, is the build of record.
+  2m45s, CPU only, 0 GPU-h, 0 assertion failures. 434 items, 0 sharing a 13-gram with the
+  training split over an index of 494,341 rows and 13,345,986 unique 13-grams, 0 duplicate
+  items and 0 questions under two scenarios. Items at `tidepool/s4.4/probes/`; summary and
+  score in `probes-05bbcd49/`.
+- 2026-08-25 · s4.5 · Data card written from the measured numbers, covering sources and
+  licence position, the deliberate absences, the split guarantee and the leak it does not
+  cover, the per-consumer slices the experiment matrix draws on, and the known defects. The
+  sign-off is a checkpoint in the normal flow; autonomous mode is on for this project, so it
+  was taken here rather than sent, and the decision is recorded under "s4.5 sign-off" below.
 - 2026-08-25 · mirror · Project state through `s4.2` pushed to
   `github.com/jamesnavinhill/liquid-primus` under `tidepool/`, per the standing operator note
   to mirror code and docs there as they land. Commit `61d65e0`: the overview, the checklist,
@@ -819,3 +859,444 @@ appears in the system turn, whether a `tool_call` wrapper appears anywhere. The 
 writes one recovery path against whatever that report shows and drops what it cannot
 recover, with both counts reported. Nothing is counted as trainable on the strength of a
 reader that returned nothing.
+
+## s4.4 Preprocessing — measured
+
+Job `4674a2ec`, COMPLETE, 34m29s, CPU only, **0 assertion failures and 0 purity
+violations**. Every number below is from that job's `preprocess_summary.json`; nothing
+here is estimated.
+
+| | Rows |
+| --- | ---: |
+| Read from the 11 source corpora | 1,047,820 |
+| No manifest entry (set aside at `s4.3`, or unreadable) | 42,917 |
+| Dropped by flag rule | 21,001 |
+| Unrenderable | 4,371 |
+| Duplicate rendered text | 13,270 |
+| Routed to the on-policy prompt pool | 447,053 |
+| **Kept as supervised rows** | **518,330** |
+| — train | 494,341 |
+| — val | 12,439 |
+| — test | 11,550 |
+
+13 rows exceeded the 4,096-token window and were dropped rather than truncated. The
+longest kept example is 3,812 tokens.
+
+### The canonicalizer met no schema type it did not know
+
+`unknown_schema_types` is **empty**. Across all eleven corpora, at every nesting depth,
+every declared parameter type mapped onto the seven-name JSON Schema vocabulary the
+pipeline trains. That is the strongest available evidence that the tool contracts are
+being read rather than approximated, and it is the assertion that would have caught a
+silent normalization failure.
+
+### The general-quality corpus contributes no supervised rows at all
+
+The open question from `s4.2` was whether `antidoom-mix` is training data or a prompt
+set. It is a prompt set: **all 447,053 renderable rows end on a user turn**, and not one
+carries an assistant response. The corpus is 478,229 rows; 20,096 were dropped as
+contaminated and the rest went to the prompt pool.
+
+Two consequences, and both change what `s5` does.
+
+The trainable corpus is **518,330 rows, not the 1,004,253** the `s4.3` split sizes
+suggested. Roughly half the manifest was prompts. That is not a loss: the pool is exactly
+what the preference rung needs, and it is now sized and separated rather than discovered
+mid-training.
+
+The replay control in the plan (`C5`, replay fraction ∈ {0%, 1%, 5%}) has no corpus to
+replay from. There is no general-instruction data with responses anywhere in the mix.
+**Decision, taken here and recorded unreviewed:** replay draws on the base model's own
+greedy completions over a sample of the prompt pool, generated once as a job at `s5.1`
+and frozen for the whole sweep. That is self-distillation replay, it is what a prompt set
+with no shipped responses is designed for, and it keeps the replay distribution on-policy
+for the checkpoint being protected. The alternative, pulling a fourth-party instruction
+corpus in at `s5`, would add a licence surface and an unmeasured contamination surface
+this stage has no budget left to audit.
+
+### Per-corpus, and the mix that comes out of it
+
+| Corpus | Read | Kept | train / val / test | Flag drops | Unrenderable | Dedup |
+| ------ | ---: | ---: | ------------------ | ---: | ---: | ---: |
+| `toolace` | 11,300 | 9,098 | 8,181 / 466 / 451 | 117 | 2,067 | 3 |
+| `apigen` | 49,402 | 46,350 | 42,346 / 1,979 / 2,025 | 41 | 1,856 | 0 |
+| `hermes_fc` | 1,893 | 1,668 | 1,504 / 86 / 78 | 0 | 224 | 0 |
+| `hermes_fc_st` | 1,893 | 1,100 | 910 / 95 / 95 | 0 | 61 | 732 |
+| `hermes_glaive` | 5,209 | 3,833 | 3,748 / 43 / 42 | 3 | 162 | 2 |
+| `hermes_json_ag` | 1,342 | 1,301 | 1,163 / 59 / 79 | 0 | 0 | 41 |
+| `hermes_json_st` | 1,241 | 1,241 | 1,123 / 70 / 48 | 0 | 0 | 0 |
+| `sql_ctx` | 78,577 | 69,543 | 69,069 / 299 / 175 | 0 | 0 | 0 |
+| `sql_clinton` | 262,208 | 243,446 | 237,561 / 3,236 / 2,649 | 2 | 0 | 0 |
+| `codefeedback` | 156,526 | 140,750 | 128,736 / 6,106 / 5,908 | 742 | 1 | 12,492 |
+| `antidoom` | 478,229 | 0 | 0 / 0 / 0 | 20,096 | 0 | 0 |
+
+### The mix is weighted against the project's own priority order
+
+| Role | Rows | Share | Est. tokens | Share |
+| ---- | ---: | ---: | ---: | ---: |
+| SQL | 312,989 | 60.4% | 87.2M | 43.3% |
+| Code | 140,750 | 27.2% | 72.0M | 35.7% |
+| Tool calling | 62,049 | 12.0% | 40.8M | 20.2% |
+| Structured output | 2,542 | 0.5% | 1.5M | 0.7% |
+| **Total** | **518,330** | | **201.5M** | |
+
+The brief's priority order is tool-calling reliability first, then on-device efficiency,
+then no regression in general quality. The corpus as assembled puts 79% of its tokens on
+SQL and code, and under 1% on the axis one of the two headline metrics measures
+(`IFStruct` first-attempt schema validity, target +5.0 points). Uniform sampling over
+this mix would spend most of the training budget on the two roles the project cares about
+least.
+
+That is an artifact of what is publicly available at scale, not of a choice made here:
+the SQL corpora are large because SQL corpora are large. It is recorded now, before any
+training, because it is cheap to fix by sampling weight and expensive to diagnose after a
+sweep comes back flat on structured output.
+
+**Decision, taken here and recorded unreviewed.** `s5.3` gains one control: the reference
+arm `C1` trains on a role-balanced sample rather than on the raw mix, with per-role
+sampling weights set so tool calling and structured output together take at least half
+the token budget, and the raw-mix arm is kept as an explicit comparison. The exact
+weights are an `s5.1` calibration against a single epoch's token count, not a number to
+invent here. The falsification condition on `H1` is unchanged.
+
+### Length, and the sequence budget
+
+Sampled over 178,241 kept rows: mean 428 tokens, median 333, p90 920, p99 1,744, max
+3,812. The 4,096 window set at `s4.2` costs 13 rows in the whole corpus, which settles
+that setting. `hermes_fc` is the one corpus that runs long (mean 2,392, p90 3,425) and it
+is 1,668 rows, so it does not move the packing arithmetic.
+
+Estimated trainable tokens: **201.5M**. One epoch over the full mix is therefore a
+200M-token pass, which is the figure the `s3.3` compute estimate should be read against.
+
+### What the renderer could not read, and why each case is a decision
+
+4,371 rows were dropped as unrenderable, and every reason is named rather than pooled.
+
+- **`toolace` `no_call_turn`, 1,290.** Conversations that declare tools and never call
+  one. They are legitimate text, but they teach a tool-calling model to answer without
+  calling, which is the failure the probe sets are built to catch.
+- **`toolace` `schema_not_json`, 658 across four spellings.** The tool block in the
+  system turn is YAML (142), Markdown (71), a LaTeX `tabular` (66), or unrecognized
+  (379). A tool contract that is not machine-readable cannot be canonicalized, and
+  guessing at one would put an invented schema in front of a real call.
+- **`apigen` `no_tools_declared`, 1,856.** Rows with an answer and no tool list.
+- **`hermes` `conversation_ends_off_assistant`, 325.** The last turn is not the model's,
+  so there is no target.
+- **`hermes` `neither_tools_nor_schema`, 122.** No contract of either kind.
+- **`codefeedback` `empty_answer`, 1.**
+
+### The `glaive` recovery worked
+
+865 of 5,209 rows returned nothing from the `s4.2` reader and were absent from the
+manifest entirely. The `s4.4` renderer reads them: `hermes_glaive` keeps **3,833 rows**,
+with only 162 unrenderable, against 4,344 rows that reached the manifest. The 865 are
+accounted for as `adapter_error` and are not counted as trainable.
+
+### Deduplication, measured
+
+13,270 rows collapsed onto rendered text already emitted, on top of the 149,822 removed
+at triple level in `s4.3`. Nearly all of it is two corpora: `codefeedback` 12,492 and
+`hermes_fc_st` 732. The `hermes_fc_st` figure is the interesting one — 732 of 1,893 rows,
+39% — and it is the single-turn variant of `hermes_fc` collapsing onto itself once the
+conversation is rendered rather than compared field by field.
+
+### Purity survived rendering
+
+The one thing rendering could break that splitting could not: two different source rows
+becoming the same prompt after canonicalization, one in train and one in held-out.
+`purity_violations.json` is **empty**. No rendered prompt lands on both sides of the
+train/held-out line, and none on both sides of val/test.
+
+## s4.4 Probe sets — design
+
+Two evaluation sets are built here rather than at `s6`, because a probe written after
+seeing a model's errors measures the model that produced them and nothing else. Both are
+hand-authored, and both are checked for overlap against the rendered training split on
+the same 13-gram rule the corpora were decontaminated with. Hand-authored is not the same
+as held out.
+
+### Probe A — unreliable tool returns, 290 items
+
+The failure this project is most exposed to is not calling the wrong tool. It is calling
+the right tool, getting back something broken or quietly wrong, and answering anyway with
+an invented number. No public benchmark in the plan measures it: BFCL scores the call,
+not the model's handling of what the call returns.
+
+Ten scenarios, each a realistic tool with a JSON Schema, a user question, and a correct
+payload. Each scenario is then damaged two ways.
+
+**Corrupted, 150 items.** The return is unusable and the only correct behaviour is to say
+so. Five modes: JSON truncated mid-object, a field's type swapped, an error envelope in
+place of a body, an empty body, and a null where a number is required.
+
+**Contradicted, 120 items.** The return is well-formed and wrong in a way the model can
+detect from the request it made. Four modes: the payload describes a different entity
+than the one asked about, a list is silently truncated below its own stated total, the
+`as_of` timestamp is older than the window requested, and a unit is swapped against the
+schema's declared unit.
+
+**Text-only controls, 20 items.** The same questions with no tool at all, to separate a
+model that has learned to hedge from one that has learned to check.
+
+Each item is graded on values the model would have to fabricate to answer, drawn from the
+scenario's *correct* payload. The build asserts that every forbidden value actually
+appears in that correct payload, so a grader cannot pass by accident on a string that was
+never available to fabricate.
+
+The corrupted and contradicted arms are each rendered at **three envelope depths** —
+`{"data": …}`, `{"result": {"body": …}}`, `{"envelope": {"response": {"content": …}}}` —
+because the hypothesis worth testing is that a break three levels down reads as plausible
+where the same break at the top level is visible. Those envelopes are shapes real gateways
+add, so depth is not a synthetic parsing tax.
+
+### Probe B — stack idiom, 144 items
+
+Six families over the operator's own stack: SQL dialect differences (10 base items), JSON
+Schema (7), MCP (5), containers (5), tracing (5) and inter-process communication (4). Each
+of the 36 base items is written around one specific wrong answer a general-purpose small
+model tends to give, and carries both a required pattern and a forbidden one, so partial
+credit for hedging is not available. The trap each item catches is recorded next to it,
+which is what makes a regression readable later.
+
+Each base item is rendered in **four surface forms**: the question directly, the same
+question framed as reviewing a colleague's answer, a terse form, and one that says the
+answer is going into production. The graders do not change across forms, so a model that
+answers the direct question and fails the review framing has a robustness gap rather than
+a knowledge gap, and the set separates the two instead of averaging over them.
+
+### The three gates the build must pass
+
+**Graders are well formed.** Every regex compiles, every item has at least one required
+pattern, and no item requires and forbids the same string. Each corrupted item's forbidden
+values are readable off the scenario's correct payload.
+
+**No item is the same measurement twice.** Two things are checked, and the distinction
+between them is the whole point. Two items may not be byte-identical on question *and*
+tool return, and one question may not appear under two different scenarios, which would
+let a single failure be counted twice. A shared question *within* one scenario is
+intended: the corrupted and contradicted arms deliberately ask the same thing and differ
+only in what the tool hands back, which is the comparison the probe exists to make.
+
+**No item overlaps the training split.** Checked on the same 13-gram rule the corpora were
+decontaminated with, against the rendered training text. If the training split is not
+available to the build, the job says so in its log rather than passing quietly, and no
+probe score may be cited from a build that skipped the check.
+
+## s4.4 Probe sets — measured
+
+Job `05bbcd49`, CPU only, 2m45s, **0 assertion failures**. Attempt 1 (`32fc86ad`) is
+recorded in the ledger and superseded; what it caught is below, because the defect it
+found is the reason to keep gates in the build rather than in a reviewer's head.
+
+**434 items**, matching the design: 290 in probe A and 144 in probe B.
+
+| Set | Arm | Items |
+| --- | --- | ---: |
+| A tool_return | corrupted | 150 |
+| A tool_return | contradicted | 120 |
+| A tool_return | text_only (control) | 20 |
+| B stack_idiom | sql_dialect | 40 |
+| B stack_idiom | json_schema | 28 |
+| B stack_idiom | mcp | 20 |
+| B stack_idiom | containers | 20 |
+| B stack_idiom | tracing | 20 |
+| B stack_idiom | ipc | 16 |
+
+Each of the five corruption modes contributes 30 items and each of the four contradiction
+modes 30, so no mode can dominate a score. Probe A's depth strata are exactly balanced at
+90 items per envelope depth, with the remaining 164 items sitting outside the envelope
+question (the 20 text-only controls and all 144 of probe B). Probe B's four surface forms
+are 36 items each.
+
+### The held-out gate, measured rather than asserted
+
+The build downloaded the rendered training split and indexed it: **494,341 rows,
+13,345,986 unique 13-grams**, in 44.4s. Against that index, **0 of 434 probe items share a
+single 13-gram** with anything a model will be trained on. The worst-overlap list the job
+writes is empty. Every probe score in this project can therefore be cited as held out on
+a measurement, and the check is recorded in the job's own summary artifact rather than
+claimed here.
+
+### The duplicate gate, and the defect it found
+
+Clean on the build of record: **0 byte-identical items, 0 questions appearing under more
+than one scenario**, and 10 shared-question groups, all of them the intended within-scenario
+pairs.
+
+Attempt 1 failed this gate, and correctly. Two of the five corruption modes, the error
+envelope and the empty body, replaced the payload outright and ignored the envelope depth
+they were supposed to be sitting at. Both were therefore identical at depths 1, 2 and 3,
+and **40 of 290 probe-A items were byte-for-byte copies of another item**. Scored as
+built, the depth hypothesis would have been tested on a set where a third of one arm
+carried no depth signal at all, and the finding would have looked like a null result.
+Both modes now sit inside the same envelope the success payload would have arrived in,
+which is also what a real gateway does with an upstream failure.
+
+Attempt 1 also failed a third assertion that was itself wrong: it flagged 10 questions as
+shared between arms. That sharing is the design. The corrupted and contradicted arms ask
+the same question so that the only difference between them is the tool return, and an
+assertion against it would have forced the two arms apart and destroyed the comparison.
+The assertion was replaced by the two narrower checks described above, which keep the real
+guarantee (no item counted twice, no question under two scenarios) without banning the
+intended pairing.
+
+### Stored
+
+Items and summary at `tidepool/s4.4/probes/probes.jsonl` and
+`tidepool/s4.4/probes/probes_summary.json` in shared storage; the summary and score are
+also under `stages/s4-data-preparation/probes-05bbcd49/`. The set is generated
+deterministically from two banks and the build script, with no sampling and no model in
+the loop, so it reproduces exactly and carries no noise between checkpoints.
+
+## s4.5 Data card
+
+### What this dataset is
+
+One supervised corpus of **518,330 examples and 201.5M trainable tokens**, rendered into a
+single conversation format, plus a separate pool of **447,053 prompts** with no responses.
+Assembled to specialize a 1.2B on-device model for the operator's agent stack. Four roles,
+in the priority order the brief sets: tool calling first, then structured output, then
+text-to-SQL and code, with a general-quality guardrail on top.
+
+### Sources, and what each one contributes
+
+| Corpus | Licence | Role | Kept rows | Est. tokens |
+| ------ | ------- | ---- | ---: | ---: |
+| `argilla/Synth-APIGen-v0.1` | Apache-2.0 | tool | 46,350 | 25.8M |
+| `Team-ACE/ToolACE` | Apache-2.0 | tool | 9,098 | 7.7M |
+| `NousResearch/hermes-function-calling-v1` (`func_calling`) | Apache-2.0 | tool | 1,668 | 4.0M |
+| `…` (`glaive_func_calling`) | Apache-2.0 | tool | 3,833 | 2.2M |
+| `…` (`func_calling_singleturn`) | Apache-2.0 | tool | 1,100 | 1.0M |
+| `…` (`json_mode_agentic`) | Apache-2.0 | struct | 1,301 | 1.0M |
+| `…` (`json_mode_singleturn`) | Apache-2.0 | struct | 1,241 | 0.5M |
+| `Clinton/Text-to-sql-v1` | Apache-2.0 | sql | 243,446 | 80.5M |
+| `b-mc2/sql-create-context` | CC-BY-4.0 | sql | 69,543 | 6.6M |
+| `m-a-p/CodeFeedback-Filtered-Instruction` | Apache-2.0 | code | 140,750 | 72.0M |
+| `LiquidAI/antidoom-mix-v1.0` | Apache-2.0 | prompts | 0 (447,053 to the pool) | — |
+
+`Salesforce/xlam-function-calling-60k` is **not** in the mix. It is gated and the terms have
+not been accepted on the account whose token we hold; accepting a licence on someone else's
+behalf is not ours to do. The substitute is larger than the gated set and uniformly
+Apache-2.0.
+
+### Licence position
+
+Every training corpus is Apache-2.0 or CC-BY-4.0, both of which permit commercial use and
+redistribution with attribution. No non-commercial data trains anything.
+`facebook/Multi-IF` is CC-BY-NC-2.0 and is an internal evaluation guardrail only: never
+trained on, and excluded from the reproducibility package.
+
+### What is deliberately absent
+
+Gateway trajectories, meaning the operator's own research-plan-implement-audit loops with
+real tool calls and returns, live in a running service that no credential on file reaches.
+They are the only source of the operator's actual tool-call distribution, and nothing here
+substitutes for them. The public-data-only ablation (`C2`) is what keeps the resulting claim
+honest.
+
+Private repositories are excluded from the in-house mining scope. The artifacts of this
+project are mirrored to a public repository, and a model trained on private source can emit
+it.
+
+### Splits, and the property they guarantee
+
+Group-disjoint by construction across 8 group namespaces, so no near-duplicate family
+straddles the train and held-out line. Group disjointness alone was not enough: it left
+39,161 identical prompts on both sides, because the same question reaches the corpus through
+different sources under different group keys. A second enforcement pass removes any held-out
+row whose prompt also appears in train, and any test row whose prompt also appears in val.
+After it, and again after rendering, **no prompt is shared across the train and held-out
+line, and none across val and test**.
+
+Held-out is small on the axis that matters most: 451 test rows of tool calling out of 11,550.
+In-mix held-out numbers are reported per capability rather than pooled, and the tool-calling
+verdict rests on the external benchmarks and the two probe sets built here.
+
+### What each experiment row consumes
+
+| Consumer | Reads | Why that slice |
+| -------- | ----- | -------------- |
+| `C1` reference arm | `train`, role-balanced sample | the priority order, not the corpus's own shape |
+| `C7` raw-mix comparison | `train`, uniform | measures what the balancing buys |
+| `C2` public-data-only | `train` minus in-house stack rows | isolates what mining the operator's repositories buys |
+| `C5` replay fractions | base-model completions over the prompt pool | the pool ships no responses of its own |
+| `D` preference rung | the prompt pool | prompts without gold responses is what a preference pair needs |
+| `s5.3` model selection | `val` | never `test`, at any point before `s6` |
+| `s6` final numbers | `test` plus the two probe sets | scored once, after selection is frozen |
+
+### Known defects, kept and labelled
+
+Nothing here is claimed clean. Each defect the exploratory pass found is recorded with its
+measured size, and the rows carrying it are either dropped by an explicit rule or kept with a
+flag later stages can condition on. Contaminated rows (20,965), tool-name mismatches (121)
+and unparseable calls (2) are dropped. Rows that refuse a request the tools could have
+satisfied are dropped only where the same query is also answered elsewhere in the corpus,
+which is what makes the refusal wrong rather than merely cautious; on this data that
+conjunction selects all 1,942 suspect rows.
+
+4,371 rows are unrenderable and every reason is named rather than pooled. The largest single
+category is 1,290 ToolACE conversations that declare tools and never call one, and 658 whose
+tool block in the system turn is YAML, Markdown or a LaTeX table rather than JSON.
+
+### Intended and unintended use
+
+Intended: supervised fine-tuning and preference optimization of a small on-device model for
+tool calling, structured output, SQL and code, with a general-quality guardrail.
+
+Not intended: any claim about safety behaviour. The refusal handling in this corpus is tuned
+for over-refusal on benign tool-satisfiable requests, and says nothing about how the
+resulting model handles requests that should be refused. Nor is it a general instruction
+corpus: it is weighted toward one agent stack on purpose, and the role-balancing decision at
+`s4.4` weights it further.
+
+### Where the data lives
+
+Shared storage, as a plain file tree, read by each job that needs it:
+`tidepool/s4.3/splits.jsonl.gz` (the split manifest with per-row flags),
+`tidepool/s4.4/train.jsonl.gz`, `val.jsonl.gz`, `test.jsonl.gz`,
+`prompt_pool.jsonl.gz`, and `tidepool/s4.4/probes/probes.jsonl` (434 items, both probe
+sets, one JSON object per line). Nothing is registered or versioned; the reproducibility
+package at `s7.3` ships the recipes that rebuild them, not the bytes. The probe items are
+the exception worth shipping verbatim, since they are hand-written here and exist nowhere
+else.
+
+### The two probe sets, as data
+
+434 items, written for this project, covering the failure no public benchmark in the plan
+scores: what the model does after a tool returns something broken or quietly wrong. 290
+items on unreliable tool returns across 10 scenarios, 5 corruption modes, 4 contradiction
+modes, 3 envelope depths and a no-tool control arm; 144 items on the operator's own stack
+idioms across 6 families and 4 surface framings each. Licence: ours, and released with the
+project. Held out on a measurement, not an assertion: 0 items share a 13-gram with the
+training split. They are evaluation-only and must never appear in a training mix, which is
+why they are stored under their own prefix rather than beside the splits.
+
+## s4.5 sign-off
+
+Autonomous mode is on for this project, so the checkpoint here was decided rather than
+sent. **Signed off, and the stage is closed.** The bar for that decision was whether
+anything measured at `s4` would make an `s5` result uninterpretable, and three candidates
+were weighed.
+
+**The token mix is wrong for the brief, and the fix is a sampler, not a rebuild.** SQL and
+code carry 79% of the tokens on a project whose headline metrics are tool calling and
+structured-output validity. Re-collecting to fix the ratio would cost days and buy nothing
+a sampling weight cannot: the rows exist, there are simply more of one kind. The reference
+arm draws role-balanced, the raw mix is kept as row `C7`, and the comparison between them
+becomes a result rather than an assumption.
+
+**Structured output is thin in absolute terms, at 2,542 rows and 0.7% of tokens.** It is
+the smallest slice supporting a headline metric, and no open corpus in the licence position
+this project holds would move it much. Flagged as the clearest gap in the data rather than
+papered over; if `s5.2` baselines show structured-output validity failing to move, the
+first thing to try is synthesizing more of it from the schemas already in the tool corpora,
+which is a job, not a re-scope.
+
+**Held-out tool calling is 451 rows.** Small enough that an in-mix test number on that axis
+carries a wide interval, which is why the tool-calling verdict rests on the external
+benchmarks and the two probes, and why held-out numbers are reported per capability.
+
+None of the three blocks the experiment matrix, and each is recorded where the number that
+depends on it will be read. Stage 5 opens on `s5.1` smoke runs, which also generate the
+base model's frozen completions over the prompt pool that `C5` replay needs.

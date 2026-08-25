@@ -1,0 +1,77 @@
+{
+ "n_items": 434,
+ "by_probe_and_arm": {
+  "tool_return:corrupted": 150,
+  "tool_return:contradicted": 120,
+  "tool_return:text_only": 20,
+  "stack_idiom:sql_dialect": 40,
+  "stack_idiom:json_schema": 28,
+  "stack_idiom:mcp": 20,
+  "stack_idiom:ipc": 16,
+  "stack_idiom:containers": 20,
+  "stack_idiom:tracing": 20
+ },
+ "by_mode": {
+  "truncated_json": 30,
+  "type_swapped": 30,
+  "error_envelope": 30,
+  "empty_body": 30,
+  "null_leaf": 30,
+  "wrong_entity": 30,
+  "silently_truncated": 30,
+  "stale_as_of": 30,
+  "unit_swapped": 30,
+  "garbled_prose": 10,
+  "wrong_entity_prose": 10,
+  "direct": 36,
+  "review": 36,
+  "terse": 36,
+  "agentic": 36
+ },
+ "by_depth": {
+  "1": 90,
+  "2": 90,
+  "3": 90,
+  "0": 164
+ },
+ "tool_scenarios": [
+  "flight_price",
+  "acct_balance",
+  "warehouse_stock",
+  "deploy_status",
+  "weather_hourly",
+  "ticket_lookup",
+  "query_rows",
+  "geo_distance",
+  "user_perms",
+  "invoice_total"
+ ],
+ "stack_families": {
+  "sql_dialect": 10,
+  "json_schema": 7,
+  "mcp": 5,
+  "ipc": 4,
+  "containers": 5,
+  "tracing": 5
+ },
+ "surface_forms": [
+  "direct",
+  "review",
+  "terse",
+  "agentic"
+ ],
+ "heldout_check": {
+  "checked": true,
+  "train_object": "tidepool/s4.4/train.jsonl.gz",
+  "train_rows": 494341,
+  "train_unique_grams": 13345986,
+  "items_with_overlap": 0,
+  "worst": {}
+ },
+ "collision_check": {
+  "identical_item_groups": 0,
+  "prompts_under_multiple_scenarios": 0,
+  "shared_prompt_groups_within_scenario": 10
+ },
+ "assertion_failures": []
+}

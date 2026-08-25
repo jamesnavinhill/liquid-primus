@@ -55,16 +55,19 @@ yet and its availability is an open question recorded below.
 
 | Source | Role | License / access | Scale | Teaches or measures |
 | ------ | ---- | ---------------- | ----- | ------------------- |
-| `Salesforce/xlam-function-calling-60k` | train | CC-BY-4.0, **gated** | 60k | execution-verified tool and function calling, structured JSON |
-| `LiquidAI/ifstruct-v1.0` | train + eval | Apache-2.0 | 1k–10k | valid JSON/YAML output under varied phrasing |
+| `Salesforce/xlam-function-calling-60k` | ~~train~~ **not used** | CC-BY-4.0, **gated, access refused** | 60k | superseded at `s4.1` by ToolACE + Synth-APIGen + Hermes (70,387 rows, all Apache-2.0). The terms have not been accepted on the account whose token we hold |
+| `Team-ACE/ToolACE` | train | Apache-2.0 | 11,300 | multi-turn tool calling with returns; added at `s4.1` |
+| `argilla/Synth-APIGen-v0.1` | train | Apache-2.0 | 49,402 | execution-verified single-call tool data; added at `s4.1` |
+| `NousResearch/hermes-function-calling-v1` | train | Apache-2.0 | 11,578 across 5 configs | multi-turn tool calling and the only JSON-schema-conditioned training signal; added at `s4.1` |
+| `LiquidAI/ifstruct-v1.0` | **eval only** | Apache-2.0 | 2,000 test prompts | valid JSON/YAML output under varied phrasing. Corrected at `s4.1`: the repository ships a single test split with no gold responses, so it cannot be trained on. The structured-output training signal comes from the Hermes JSON-mode configs (2,583 rows) |
 | `LiquidAI/antidoom-mix-v1.0` | train (prompts only) | Apache-2.0 | 100k–1M | prompt set for preference pairs against looping and doom behaviour |
 | `m-a-p/CodeFeedback-Filtered-Instruction` | train | Apache-2.0 | 100k+ | iterative code generation with execution feedback |
 | `b-mc2/sql-create-context` | train | CC-BY-4.0 | 78,577 | schema-grounded text-to-SQL, built to suppress invented column names |
 | `Clinton/Text-to-SQL-v1` | train | Apache-2.0 | 100k+ | text-to-SQL scale filler |
-| In-house stack corpus | train | operator-owned | unknown | the operator's repo idioms, gateway trajectories, schema and query patterns |
+| In-house stack corpus | train | operator-owned | 11 public non-forked repositories, ~270 MB | the operator's repo idioms, schema and query patterns. Gateway trajectories are **not** reachable: they live in a running service no credential on file reaches (`s4.1`) |
 | BFCLv3 / BFCLv4, ToolSandbox | eval | public benchmark | — | tool-calling accuracy and reliability, the primary axis |
 | IFEval, IFBench, Multi-IF | eval | public benchmark | — | instruction-following guardrails |
-| MMLU-Pro, GPQA Diamond | eval | public benchmark | — | general-knowledge guardrails |
+| MMLU-Pro | eval | public benchmark | — | general-knowledge guardrail. GPQA Diamond is gated and access was refused at `s4.1`, so MMLU-Pro carries this axis alone |
 | Malformed-tool-return probe | eval | built here (`s4`) | ~300 items | flag-rather-than-assert behaviour on broken tool output |
 | Stack-idiom code probe | eval | built here (`s4`) | ~150 items | idiomatic output for the operator's underlying technologies |
 
@@ -402,11 +405,16 @@ one is unanswerable from this literature, and two are answered.
   public-data-only arm is a real floor roughly 20 points below the target rather than a
   formality. Proceeding on public data plus synthesized stack-flavoured items, and raising a
   request for repository access at `s4.1` where the answer changes what runs.
-- **Is the gated xlam tool-calling set reachable with the credentials on file? — open, and now
-  less critical.** Two papers document defects in that data (trajectories that mismatch their
-  declared schemas, and an extra space after `[` that breaks abstract-syntax-tree parsing), and
-  a third supplies a complete generate-and-verify recipe for building equivalent data. Either
-  way, a repair-and-validate pass on whichever public set is obtained is now mandatory.
+- **Is the gated xlam tool-calling set reachable with the credentials on file? — answered at
+  `s4.1`: no.** It is `gated: auto` and the terms have not been accepted on the account whose
+  token we hold, so every request returns `403`. Accepting a licence on someone's behalf is a
+  legal act, not a configuration step, so no attempt was made to route around it. ToolACE plus
+  Synth-APIGen plus Hermes replaces it at 70,387 rows, all Apache-2.0, built by the same
+  execution-verified recipes. Two papers document defects in the xlam data anyway (trajectories
+  that mismatch their declared schemas, and an extra space after `[` that breaks
+  abstract-syntax-tree parsing), and the repair-and-validate pass they motivate is what `s4.2`
+  and `s4.3` carried out on the substitute mix. If the terms are accepted later the rows are
+  additive and invalidate nothing already measured.
 - **Does the 65K vocabulary materially handicap tool-call tokenization? — unanswerable from
   this literature.** Every tokenizer paper retrieved operates at tokenizer-construction or
   pretraining time and cannot be applied to a frozen 65,536-token vocabulary, and

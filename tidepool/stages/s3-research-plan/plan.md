@@ -125,6 +125,27 @@ cheap quant". B6 is the optional starting-checkpoint ablation and nothing depend
 | C4 | LoRA SFT + entropy-weighted loss | loss shaping | guardrail deltas | screening |
 | C5 | Replay fraction ∈ {0%, 1%, 5%} | replay | guardrail deltas | screening ×3 |
 | C6 | Rank ∈ {16, 64} on the winning recipe | capacity | BFCLv3 vs guardrails | screening ×1 extra |
+| C7 | **Raw mix, uniform sampling** | mix weighting | isolates what role balancing buys | screening |
+
+**Amended at `s4.4`, on measured data.** Two rows above rested on assumptions the rendered
+corpus contradicts, and both amendments are recorded in
+`../s4-data-preparation/report.md`, "s4.4 Preprocessing — measured".
+
+`C1` now trains on a **role-balanced sample**, not the raw mix. The rendered corpus puts 79%
+of its 201.5M tokens on SQL and code, 20% on tool calling and 0.7% on structured output, so
+uniform sampling would spend the training budget inversely to the project's priority order.
+Per-role sampling weights are calibrated once at `s5.1` against a single epoch's token count,
+with tool calling and structured output together taking at least half the budget. `C7` keeps
+the raw mix as an explicit comparison, so the balancing is a measured choice rather than a
+silent one.
+
+`C5`'s replay buffer draws on the **base model's own greedy completions over a sample of the
+`s4.4` prompt pool**, generated once as a job at `s5.1` and frozen for the whole sweep. The
+general-quality corpus carries no assistant responses at all — all 447,053 renderable rows end
+on a user turn — so there is no shipped general-instruction data to replay. Self-distillation
+replay is what a prompt set with no responses is designed for, and it keeps the replay
+distribution on-policy for the checkpoint being protected. Pulling a fourth-party instruction
+corpus in at `s5` instead would add a licence surface and an unaudited contamination surface.
 
 Hyperparameters are taken from the closest matched precedents rather than invented: LoRA
 r16 / α32 / LR 1e-4 / batch 48–64 / 3 epochs (`2409.00920v2`, `2508.12685v3`), entropy

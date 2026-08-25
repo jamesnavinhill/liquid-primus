@@ -1,0 +1,13 @@
+{
+ "rows_train": 494341,
+ "rows_val": 12439,
+ "rows_test": 11550,
+ "prompt_pool_rows": 447053,
+ "estimated_trainable_tokens": 201462484,
+ "rows_dropped_by_flag": 21001,
+ "rows_unrenderable": 4371,
+ "rows_over_max_seq_len": 13,
+ "duplicate_rendered_rows": 13270,
+ "purity_violations": 0,
+ "assertion_failures": 0
+}

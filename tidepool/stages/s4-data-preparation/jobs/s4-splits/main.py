@@ -390,6 +390,10 @@ for ci, (label, hf_id, config, split, adapt, role, ns) in enumerate(TRAIN):
     recs = []
     n_rows = 0
     n_contam = n_mismatch = n_suspect = n_contra = n_refusal = n_parsefail = n_nonident = 0
+    # Broader variants of the three quantities whose s4.2 definition was narrower.
+    # The narrow one is what the assertion reproduces; the broad one is what gets
+    # reported, because it is the more useful measurement.
+    n_target_present = n_mismatch_any = n_contra_rows = 0
     contam_by = collections.Counter()
     contam_ids, mismatch_ids, suspect_ids, contra_ids, parsefail_ids = [], [], [], [], []
     shapes = collections.Counter()
@@ -428,29 +432,49 @@ for ci, (label, hf_id, config, split, adapt, role, ns) in enumerate(TRAIN):
                 if len(shape_samples) < 5:
                     shape_samples.append(sh)
 
-        declared = {t.get("name") for t in tools if t.get("name")}
-        bad = [c.get("name") for c in calls
-               if c.get("name") and declared and c.get("name") not in declared]
+        # Some corpora declare tool names without a parseable schema object, so the
+        # declared set is the union of the adapter's name list and the names on the
+        # parsed tools. Reading only the parsed tools undercounts ToolACE, whose
+        # non-JSON schema forms yield names but no schema objects. s4.2 also placed
+        # no truthiness check on the call's own name, so a nameless call counted as
+        # naming an absent tool; the stricter reading is kept beside it as
+        # n_mismatch_any rather than replacing it.
+        declared = set(rec.get("declared_names") or [])
+        declared.update(t.get("name") for t in tools)
+        bad = [c.get("name") for c in calls if declared and c.get("name") not in declared]
+        named_bad = [n for n in bad if n]
         if bad:
             n_mismatch += 1
             flags |= FLAG_MISMATCH
             if len(mismatch_ids) < 20000:
                 mismatch_ids.append(rid)
-        n_nonident += sum(1 for c in calls if c.get("name")
-                          and not adapters._IDENT.match(str(c["name"])))
+        if named_bad:
+            n_mismatch_any += 1
+        # s4.2 read the identifier verdict off the adapter field, which only the
+        # ToolACE adapter sets, so every other corpus scored 0 by construction.
+        n_nonident += sum(1 for c in calls if c.get("name_is_identifier") is False)
 
         if rec.get("refusal"):
             n_refusal += 1
             if rec.get("target") and rec["target"] in declared:
-                n_suspect += 1
-                flags |= FLAG_SUSPECT
-                if len(suspect_ids) < 20000:
-                    suspect_ids.append(rid)
+                n_target_present += 1
+                # A refusal is only *suspect* when the tool it names could plausibly
+                # have been called: s4.2 drew that line at two or fewer required
+                # arguments, and the 1,942 in the trainable-volume table is that
+                # gated count. The ungated count is reported as target_present_on_refusal.
+                tgt = next((t for t in tools if t.get("name") == rec["target"]), None)
+                if tgt is not None and len(tgt.get("required") or []) <= 2:
+                    n_suspect += 1
+                    flags |= FLAG_SUSPECT
+                    if len(suspect_ids) < 20000:
+                        suspect_ids.append(rid)
 
         nq = normalize(prompt)
         ph = h64(nq)
         if nq:
-            query_labels[ph].add("refusal" if rec.get("refusal") else "call" if calls else "other")
+            # Two labels, as in s4.2: every non-refusal row is "call". A three-way
+            # domain would make the test stricter and stop it reproducing.
+            query_labels[ph].add("refusal" if rec.get("refusal") else "call")
             if len(query_rows[ph]) < 4:
                 query_rows[ph].append(rid)
 
@@ -489,12 +513,29 @@ for ci, (label, hf_id, config, split, adapt, role, ns) in enumerate(TRAIN):
                 policy_hist[str(ex["heldout_policy"])[:180]] += 1
             license_hist[str(ex.get("source_license"))] += 1
 
-    # Same-query label contradictions (the APIGen over-refusal test).
+    # Same-query label contradictions (the APIGen over-refusal test). s4.2 ran this
+    # on APIGen alone and counted queries; both are kept so the count reproduces, and
+    # the row count and the other corpora are recorded as new measurements.
     for qh, kinds in query_labels.items():
-        if "refusal" in kinds and "call" in kinds:
-            n_contra += len(query_rows[qh])
+        if len(kinds) > 1:
+            n_contra += 1
+            n_contra_rows += len(query_rows[qh])
             if len(contra_ids) < 20000:
                 contra_ids.extend(query_rows[qh])
+
+    # The contradiction verdict is only knowable once the whole corpus has been read,
+    # and recs were built row by row before that, so the bit is stamped on here. Code
+    # rows carry their flags in code_pending instead, and get the same treatment.
+    contra_set = set(contra_ids)
+    if contra_set:
+        if label == "codefeedback":
+            for i, t in enumerate(code_pending):
+                if t[0] in contra_set:
+                    code_pending[i] = (t[0], t[1], t[2], t[3] | FLAG_CONTRA) + t[4:]
+        else:
+            for i, t in enumerate(recs):
+                if t[0] in contra_set:
+                    recs[i] = (t[0], t[1], t[2], t[3], t[4] | FLAG_CONTRA)
 
     if label != "codefeedback":
         rows_by_label[label] = recs
@@ -506,10 +547,13 @@ for ci, (label, hf_id, config, split, adapt, role, ns) in enumerate(TRAIN):
         "contaminated_rate": round(n_contam / max(1, n_rows), 5),
         "contaminated_by_benchmark": dict(contam_by.most_common()),
         "tool_name_mismatch_rows": n_mismatch,
+        "tool_name_mismatch_rows_named_only": n_mismatch_any,
         "calls_with_non_identifier_names": n_nonident,
         "refusal_rows": n_refusal,
         "suspect_over_refusals": n_suspect,
+        "target_present_on_refusal": n_target_present,
         "label_contradictions_same_query": n_contra,
+        "label_contradiction_rows": n_contra_rows,
         "adapter_parse_failures": n_parsefail,
         "distinct_prompts": len(query_labels),
         "tokens_per_prompt": pctiles(tok_prompt),
@@ -645,25 +689,56 @@ for ns, groups in sorted(ns_groups.items()):
 
 # ------------------------------------------------ assignment, leakage, dup audit
 
+# Pass one: the group-disjoint assignment, and what it does to prompts and triples.
 prompt_splits = collections.defaultdict(set)
 triple_splits = collections.defaultdict(set)
 triple_count = collections.Counter()
-per_label_split = {}
+for label, recs in rows_by_label.items():
+    ns = NS[label]
+    for rid, gk, ph, th, flags in recs:
+        dst = split_of[(ns, gk)]
+        prompt_splits[ph].add(dst)
+        triple_splits[th].add(dst)
+        triple_count[th] += 1
+
+# Group disjointness is not prompt disjointness. The same question recurs against a
+# different toolset, which is a different group and a legitimately different training
+# example, so it can land on both sides of the line. That is fine for train and not
+# fine for a held-out set: a model that memorized the question in train would score
+# on it in test without having learned the schema. So held-out purity is enforced on
+# top of the group split — any prompt that straddles keeps only its train rows, and
+# its val and test rows are marked `drop`. The rows are not moved into train, which
+# would import held-out-shaped examples into the training mix; they are set aside.
+# Prompts straddling only val and test are demoted to val, so the two stay disjoint.
+straddling = {ph for ph, v in prompt_splits.items() if len(v) > 1}
+straddle_with_train = {ph for ph in straddling if "train" in prompt_splits[ph]}
+
+per_label_split, per_label_split_raw = {}, {}
+enforce = collections.Counter()
 gz_path = os.path.join(OUT, "splits.jsonl.gz")
 with gzip.open(gz_path, "wt") as fh:
     for label, recs in rows_by_label.items():
         ns = NS[label]
-        c = collections.Counter()
+        c, c0 = collections.Counter(), collections.Counter()
         for rid, gk, ph, th, flags in recs:
-            dst = split_of[(ns, gk)]
+            raw = split_of[(ns, gk)]
+            dst = raw
+            if raw != "train" and ph in straddling:
+                if ph in straddle_with_train:
+                    dst = "drop"
+                    enforce["dropped_straddling_heldout_rows"] += 1
+                elif raw == "test":
+                    dst = "val"
+                    enforce["test_rows_demoted_to_val"] += 1
+            c0[raw] += 1
             c[dst] += 1
-            prompt_splits[ph].add(dst)
-            triple_splits[th].add(dst)
-            triple_count[th] += 1
             fh.write(json.dumps({"c": label, "ns": ns, "i": rid,
-                                 "g": "%016x" % h64(ns, gk), "s": dst, "f": flags},
+                                 "g": "%016x" % h64(ns, gk), "s": dst, "s0": raw,
+                                 "f": flags},
                                 separators=(",", ":")) + "\n")
         per_label_split[label] = dict(c)
+        per_label_split_raw[label] = dict(c0)
+log("held-out purity: %s" % json.dumps(dict(enforce)))
 try:
     lab.save_artifact(gz_path)
 except Exception as exc:
@@ -703,15 +778,63 @@ for label, recs in rows_by_label.items():
     }
 dump("duplication.json", duplication)
 
+final_by_split = collections.Counter()
+for d in per_label_split.values():
+    final_by_split.update(d)
+raw_by_split = collections.Counter()
+for d in per_label_split_raw.values():
+    raw_by_split.update(d)
+
 leakage = {
-    "prompts_appearing_in_more_than_one_split": straddle_prompts,
-    "triples_appearing_in_more_than_one_split": straddle_triples,
-    "prompt_leak_rate": round(straddle_prompts / max(1, len(prompt_splits)), 6),
+    "before_enforcement": {
+        "prompts_appearing_in_more_than_one_split": straddle_prompts,
+        "triples_appearing_in_more_than_one_split": straddle_triples,
+        "prompt_leak_rate": round(straddle_prompts / max(1, len(prompt_splits)), 6),
+        "rows_by_split": dict(raw_by_split),
+    },
+    "enforcement": dict(enforce),
+    "after_enforcement": {
+        "rows_by_split": dict(final_by_split),
+        "prompts_shared_between_train_and_heldout": 0,
+        "prompts_shared_between_val_and_test": 0,
+    },
     "note": ("A group-disjoint split can still straddle on prompts when the same prompt "
-             "carries two different group keys. Counted here rather than assumed zero."),
+             "carries two different group keys, which is legitimate inside train and not "
+             "legitimate across the held-out line. Counted here rather than assumed zero, "
+             "then enforced: a straddling prompt keeps its train rows and its held-out "
+             "rows are set aside as `drop`, and one straddling only val and test is "
+             "demoted to val. The two zeros above are what the enforcement guarantees "
+             "by construction and are re-checked below."),
 }
+
+# Re-check the guarantee rather than asserting it, since a bug in the pass above
+# would otherwise be invisible.
+recheck = collections.defaultdict(set)
+for label, recs in rows_by_label.items():
+    ns = NS[label]
+    for rid, gk, ph, th, flags in recs:
+        raw = split_of[(ns, gk)]
+        dst = raw
+        if raw != "train" and ph in straddling:
+            dst = "drop" if ph in straddle_with_train else ("val" if raw == "test" else raw)
+        if dst != "drop":
+            recheck[ph].add(dst)
+leakage["after_enforcement"]["prompts_shared_between_train_and_heldout"] = sum(
+    1 for v in recheck.values() if "train" in v and (v & {"val", "test"}))
+leakage["after_enforcement"]["prompts_shared_between_val_and_test"] = sum(
+    1 for v in recheck.values() if {"val", "test"} <= v)
+if (leakage["after_enforcement"]["prompts_shared_between_train_and_heldout"]
+        or leakage["after_enforcement"]["prompts_shared_between_val_and_test"]):
+    fails_purity = True
+else:
+    fails_purity = False
+log("purity re-check: %s" % json.dumps(leakage["after_enforcement"]))
 dump("leakage_audit.json", leakage)
-dump("split_summary.json", {"namespaces": ns_report, "per_corpus": per_label_split,
+dump("split_summary.json", {"namespaces": ns_report,
+                            "per_corpus": per_label_split,
+                            "per_corpus_before_enforcement": per_label_split_raw,
+                            "rows_by_split": dict(final_by_split),
+                            "rows_by_split_before_enforcement": dict(raw_by_split),
                             "params": {"test_frac": TEST_FRAC, "val_frac": VAL_FRAC,
                                        "collapse_frac": COLLAPSE_FRAC, "salt": SALT,
                                        "seed": SEED}})
@@ -737,6 +860,13 @@ for label, want in S42.items():
             continue
         if field == "n_groups":
             g = len(set(r[1] for r in rows_by_label.get(label, [])))
+        if field == "label_contradictions_same_query" and label != "apigen":
+            # s4.2 ran the same-query test on APIGen alone, so its recorded zero
+            # everywhere else is an absence of measurement and not a measured zero.
+            # Asserting against it would only assert that s4.3 also declined to look.
+            checks.append({"corpus": label, "field": field, "s42": w, "s43": g,
+                           "status": "NEW", "reason": "s4.2 ran this test on apigen only"})
+            continue
         if field == "adapter_parse_failures" and label == "hermes_glaive":
             checks.append({"corpus": label, "field": field, "s42": w, "s43": g,
                            "status": "REPORTED", "reason": "recovery pass may change this"})
@@ -747,6 +877,9 @@ for label, want in S42.items():
         if not ok and hard:
             fails.append("%s.%s: s4.2=%s s4.3=%s" % (label, field, w, g))
 
+if fails_purity:
+    fails.append("held-out purity re-check failed: %s"
+                 % json.dumps(leakage["after_enforcement"]))
 dump("assertions.json", {"hard_fields": list(HARD), "failures": fails, "checks": checks})
 log("assertions: %d checks, %d hard failures" % (len(checks), len(fails)))
 
@@ -824,6 +957,7 @@ score = {
     "rows_train": sum(v.get("train", 0) for v in per_label_split.values()),
     "rows_val": sum(v.get("val", 0) for v in per_label_split.values()),
     "rows_test": sum(v.get("test", 0) for v in per_label_split.values()),
+    "rows_dropped_for_heldout_purity": enforce.get("dropped_straddling_heldout_rows", 0),
     "prompts_straddling_splits": straddle_prompts,
     "triples_straddling_splits": straddle_triples,
     "duplicate_triple_rows": duplication["duplicate_triple_rows"],
@@ -843,5 +977,8 @@ if fails:
     log("HARD ASSERTION FAILURE: " + "; ".join(fails[:10]))
     raise RuntimeError("s4.2 counts did not reproduce: " + "; ".join(fails[:10]))
 
-lab.finish(message="s4.3 splits over %d rows in %d namespaces, %d prompts straddling a split"
-                   % (total_rows, len(ns_report), straddle_prompts), score=score)
+lab.finish(message="s4.3 splits over %d rows in %d namespaces: %d train / %d val / %d test, "
+                   "%d held-out rows set aside so no prompt crosses the line"
+                   % (total_rows, len(ns_report), score["rows_train"], score["rows_val"],
+                      score["rows_test"], score["rows_dropped_for_heldout_purity"]),
+           score=score)
