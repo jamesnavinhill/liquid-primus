@@ -18,6 +18,14 @@
 >   Agents" (Zamanifar et al., Jun 2026). Kept in `research/`: relevant to agentic memory
 >   scoring/routing. The two LFM papers are `2511.23404` (LFM2 tech report) and
 >   `2607.15232` (in-place tokenizer expansion, LFM2-8B-A1B→LFM2.5-8B-A1B).
+>
+> **Ops note (2026-08-25):** first `.env` (5 API keys) was accidentally committed in the
+> root commit; history was rewritten with git-filter-repo, old objects purged locally
+> (reflog expire + `gc --prune=now`), and the remote `main` force-updated. Commit SHAs
+> therefore differ from anything seen on 8/24-8/25. All 5 keys (Firecrawl, Tavily, Brave,
+> Exa, HuggingFace) are to be treated as COMPROMISED and rotated; `.env.example` is the
+> new template. The repo has two remotes configured (`origin` + `jamesnavinhill`) pointing
+> at the same private repo.
 > - The `Trelis/Function_Calling_Extended` dataset is 59 paid rows; the real tool-calling
 >   SFT set is `Salesforce/xlam-function-calling-60k`.
 > - `m-a-p/CodeFeedback-Filtered-Instruction` verified real (Apache-2.0).
