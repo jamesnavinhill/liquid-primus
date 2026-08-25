@@ -919,6 +919,44 @@ B5 stays what the plan made it, with the caveat carried into its summary.
 The four queue commands are written out in `runs/s5.2-baselines.md`, ready to fire, and none of
 them may run until a build reports `verified: true`.
 
+## The guardrail gap is in the data, not the checkpoint (s5.2)
+
+B1's flag rate of 0.0074 against a pre-registered 0.70 is the largest headroom in the matrix, so
+the question is which sweep arm closes it. Measured on the rendered corpus the sweep will train
+on, the answer is none of them.
+
+| | rendered val | rendered train |
+| --- | ---: | ---: |
+| rows | 12,439 | 494,341 |
+| rows containing a tool-result turn | 164 (1.32%) | 5,221 (1.06%) |
+| ...whose assistant text carries doubt or failure language | 2 | 75 (0.015%) |
+
+The 75 are a keyword net rather than a finding: read individually they are an email-validation
+tool reporting a suspicious domain, a transaction hash handed back, a travel itinerary. The number
+of training rows that show the model a broken tool return and an assistant saying so is, as far as
+this measurement reaches, zero. The corpus teaches calling tools at length and almost never teaches
+what to do with what comes back, which explains B1's 0.0074 without reference to the checkpoint at
+all.
+
+Three parts of the `s3.2` matrix rest on the opposite assumption. `C4` and `C5` are both listed as
+moving guardrail deltas, and neither can teach a behaviour absent from the mix; they protect one
+that is already there, which is what `C5` was always most useful for. And the stop/go gate into
+`D`, "no guardrail worse than −3.0", cannot fail at a flag rate of 0.0074, while the question the
+project actually pre-registered, whether the rate reaches 0.70, is not in the gate at all.
+
+**Decision.** `s5.3` gains a data component before its arms are frozen: a purpose-built training
+set for unreliable tool returns, generated as a job, on scenarios disjoint from the 434 probe items
+and decontaminated against them on the same 13-gram rule the corpora were cleaned with. The
+criteria stay as pre-registered and the arms stay as designed. Two conditions travel with it, both
+for the paper rather than a footnote. The probes stop being a measure of untaught behaviour, which
+is what specializing a model means and is not contamination while the items stay disjoint, but the
+write-up must not imply a capability appeared on its own. And the risk inverts to false alarms: the
+cheap way to reach 0.70 is to complain about everything, the 0.15 false-flag ceiling is what
+forbids it, and 30 clean control items cannot bound a rate at 0.15 usefully. The control arm needs
+enlarging by hand, on the same scenario set, before any arm trained on the new supervision is
+scored. Taken autonomously and recorded here; the full measurement is in
+`runs/s5.2-baselines.md`.
+
 ## Immediate next actions
 
 1. Read `905755d3` in this order: whether `job artifacts` **lists** the tarball, which now
@@ -944,6 +982,10 @@ them may run until a build reports `verified: true`.
 6. Carry the 64.0M-token arm budget into `s5.3` as an explicit parameter rather than a habit, and
    pin the compute source at `resources` level for tasks asking for a 48 GB card, on the evidence
    recorded for the build task and not beyond it.
-7. Before `s5.3`, re-read what B1's guardrail numbers imply for the sweep. The flag rate is the
-   axis with the most headroom in the whole matrix, and the arm design was written when that
-   headroom was a guess.
+7. Before `s5.3`'s arms are frozen, build the two things the guardrail measurement above
+   requires: a decontaminated training set for unreliable tool returns, and an enlarged clean
+   control arm to hold the false-flag ceiling honest once the model has been taught to flag.
+   Both are generation jobs and neither needs a GPU slot of the size the sweep does.
+8. Re-word the stop/go gate into `D` so it tests the criterion the project pre-registered. As
+   written it guards against a guardrail regression that a flag rate of 0.0074 makes impossible,
+   and says nothing about reaching 0.70.

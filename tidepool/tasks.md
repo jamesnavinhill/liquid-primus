@@ -41,7 +41,7 @@ Active stage: s5
 ## s5 - Experimentation
 - [x] s5.1 Smoke tests / toy runs  — both paths clean; L40S throughput measured at 3,994 tok/s and the C sweep resized to fit
 - [~] s5.2 Baselines  — harness verified; reference row B1 is complete at full counts on all four components (tool calling 0.6700 native / 0.5355 ours, structured output 0.1355, instruction following 0.8170, and a guardrail flag rate of 0.0074 with zero false alarms on the clean control arm), reads behind the 1B incumbent on tool calling, and sits at the floor on the safety axis; the competitor row B4 that carries the operative threshold is running, the 4-bit serving path compiled for the first time and then lost the compile to a check of my own that read the server's log too early, so attempt 5 is running with the binaries saved before they are judged and a throughput floor in place of that check, the harness has gained a score-only replay mode that recovers B1's lost per-item detail without regenerating, and the three GGUF rows plus B6 wait on a free GPU slot
-- [ ] s5.3 Broad sweep
+- [ ] s5.3 Broad sweep  — before the arms are frozen it gains a data component: the rendered corpus was measured and only 1.06% of 494,341 training rows contain a tool result at all, with effectively none showing a broken return being flagged, so the pre-registered 0.70 flag rate is unreachable by any arm as designed and the stop/go gate that guards against a guardrail regression cannot fail at a rate of 0.0074
 - [ ] s5.4 Direction decision with researcher  (checkpoint)
 - [ ] s5.5 Detailed runs
 - [ ] s5.6 Final tuning + ensembling
