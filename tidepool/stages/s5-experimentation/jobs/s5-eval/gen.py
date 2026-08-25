@@ -36,8 +36,13 @@ class Runner:
         return self.tok(prompts, return_tensors="pt", padding=True,
                         add_special_tokens=False)
 
-    def generate(self, prompts, max_new_tokens=384, batch_size=16, tag=""):
-        """Greedy completions, returned in the caller's order."""
+    def generate(self, prompts, max_new_tokens=384, batch_size=16, tag="", ids=None):
+        """Greedy completions, returned in the caller's order.
+
+        `ids` is accepted and ignored. It exists because the score-only replay runner
+        joins saved completions to items by id, and the component functions call one
+        generate() for every backend.
+        """
         order = sorted(range(len(prompts)), key=lambda i: len(prompts[i]))
         out = [None] * len(prompts)
         eos = self.tok.eos_token_id
@@ -49,12 +54,14 @@ class Runner:
             enc = {k: v.to(self.model.device) for k, v in enc.items()}
             t0 = time.time()
             with torch.no_grad():
-                ids = self.model.generate(**enc, max_new_tokens=max_new_tokens,
-                                          do_sample=False, num_beams=1,
-                                          eos_token_id=eos, pad_token_id=pad,
-                                          use_cache=True)
+                # Named out_ids, not ids: `ids` is now a parameter of this method and
+                # shadowing it here would make the next reader of this loop wrong.
+                out_ids = self.model.generate(**enc, max_new_tokens=max_new_tokens,
+                                              do_sample=False, num_beams=1,
+                                              eos_token_id=eos, pad_token_id=pad,
+                                              use_cache=True)
             self.gen_seconds += time.time() - t0
-            new = ids[:, enc["input_ids"].shape[1]:]
+            new = out_ids[:, enc["input_ids"].shape[1]:]
             self.gen_tokens += int((new != pad).sum().item())
             for j, i in enumerate(idx):
                 row = new[j]

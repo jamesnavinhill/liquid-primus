@@ -44,13 +44,42 @@ parameters:
   limit_ifeval: -1
   limit_probes: -1
   profile: ""
+  # ---- score-only replay. Non-empty = read every component's completions from this storage
+  # directory instead of generating them: no weights, no GPU, no tokens. It exists because
+  # scoring is deterministic CPU work over saved text, so a grader fix after eight sweep arms
+  # costs one CPU pass rather than eight GPU passes, and because anything a run computed but
+  # did not print comes back without paying for generation twice. The prompts are re-rendered
+  # and checked against each recorded prompt hash, so a moved chat template shows up as an
+  # assertion failure rather than as a quietly incomparable number.
+  rescore_object: ""
+  # ---- the 4-bit serving path. backend=gguf switches every row below to llama.cpp; the
+  # scoring, prompting and item selection are unchanged, which is what makes a Q4 row
+  # comparable to the FP row above it.
+  backend: hf
+  # The stored serving path built once by s5-llama-build at a pinned tag. A Q4 number taken
+  # against an unpinned backend is not comparable to the next one.
+  llama_object: ""
+  gguf_repo: ""
+  # Required explicitly: these repos publish a dozen quantizations and picking one by pattern
+  # is a choice a run should not make for itself.
+  gguf_file: ""
+  # The full-precision repo the GGUF was quantized from. It renders the prompts, so a Q4 row
+  # and its FP reference see the same bytes. Empty falls back to base_model.
+  tokenizer_repo: LiquidAI/LFM2.5-1.2B-Instruct
+  gguf_parallel: 8
+  gguf_ctx_per_slot: 8192
+  gguf_port: 8080
   batch_size: 16
   max_new_bfcl: 320
   max_new_ifstruct: 768
   max_new_ifeval: 768
   max_new_probes: 320
-# A full pass is ~1.5 h of task time on top of a setup that installs torch, so the ceiling is
-# set for the largest run this task will ever do. A screened run finishes in well under half an
-# hour and is billed for what it uses; a ceiling that cuts a full baseline off at 90 minutes
-# would throw away the whole pass.
-minutes_requested: 240
+# The ceiling is set for the slowest run this task will ever do, because a job cut off at the
+# ceiling throws away the whole pass while still being billed for it. A full pass on the 1.2B
+# checkpoint measures ~1.5 h of task time. The competitor baseline is four times slower per
+# token at the same batch size on the same card, which puts its full pass near 5 h, so the
+# ceiling is 7 h. Batch size stays at 16 for every row rather than being raised for the slow
+# one: a couple of GPU-hours is cheaper than a baseline row that was served differently from
+# the reference it is compared against. Screened runs finish in well under half an hour and are
+# billed for what they use.
+minutes_requested: 420

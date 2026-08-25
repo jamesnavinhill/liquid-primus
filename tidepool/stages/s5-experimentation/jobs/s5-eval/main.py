@@ -34,10 +34,12 @@ from lab import lab
 
 import bfcl
 import gen
+import gen_gguf
 import ifeval_score
 import ifstruct_score
 import probes_score
 import prompting
+import replay
 
 IFSTRUCT_URL = "https://raw.githubusercontent.com/Liquid4All/ifstruct/main/data/test.jsonl"
 BFCL_REPO = "gorilla-llm/Berkeley-Function-Calling-Leaderboard"
@@ -76,10 +78,20 @@ _SAVED = set()
 
 
 def save(obj, name, kind=None):
-    # The artifact store keys on the *basename*, so `completions/x.jsonl` and `scored/x.jsonl`
-    # register as the same artifact and the second silently replaces the first. The first
-    # smoke lost its raw structured-output text that way. Names are flat now, and a repeat is
-    # recorded as a note rather than passing unnoticed.
+    # Two facts about the artifact store, both learned the expensive way.
+    #
+    # It keys on the *basename*, so `completions/x.jsonl` and `scored/x.jsonl` register as
+    # the same artifact and the second silently replaces the first. The first smoke lost its
+    # raw structured-output text that way. Names are flat now, and a repeat is recorded as a
+    # note rather than passing unnoticed.
+    #
+    # And `save_artifact(path, type="evals")` files a copy under eval-results metadata
+    # rather than in the generic artifact list, which takes it out of `job artifacts` and
+    # out of `job download` with it. The Granite smoke wrote eleven files; the six saved
+    # with no type came back and the five saved with `type="evals"` did not, though the log
+    # reported every one of them as saved. Nothing here passes `type=` any more. `kind` is
+    # kept as a label on the log line, and the numbers the eval pane wants reach it through
+    # finish(score=...), which does show up.
     base = os.path.basename(name)
     if base in _SAVED:
         NOTES.append("artifact name reused, the earlier one is gone: %s" % base)
@@ -98,11 +110,9 @@ def save(obj, name, kind=None):
                 # leaves the odd value visible in the artifact rather than raising.
                 fh.write(json.dumps(row, ensure_ascii=False, default=repr) + "\n")
     try:
-        if kind:
-            lab.save_artifact(path, type=kind)
-        else:
-            lab.save_artifact(path)
-        log("saved artifact %s (%d bytes)" % (name, os.path.getsize(path)))
+        lab.save_artifact(path)
+        log("saved artifact %s (%d bytes)%s"
+            % (name, os.path.getsize(path), (" [%s]" % kind) if kind else ""))
     except Exception as exc:                                       # noqa: BLE001
         log("save_artifact failed for %s: %s" % (name, exc))
     return path
@@ -182,7 +192,8 @@ def run_bfcl(cfg, runner, prompter, categories, styles, limit):
                 NOTES.append("bfcl render failed for %s (%s)" % (it["id"], exc))
         outs = runner.generate(prompts, max_new_tokens=int(cfg.get("max_new_bfcl", 320)),
                                batch_size=int(cfg.get("batch_size", 16)),
-                               tag="bfcl/%s" % style)
+                               tag="bfcl/%s" % style,
+                               ids=[it["id"] for it in kept])
         raw, scored = [], []
         for it, p, o in zip(kept, prompts, outs):
             calls = prompting.parse_calls(o)
@@ -212,7 +223,8 @@ def run_ifstruct(cfg, runner, prompter, limit):
     check("ifstruct_count", limit or len(items) == 2000, "%d items" % len(items))
     prompts = [prompter.render(it["messages"], None) for it in items]
     outs = runner.generate(prompts, max_new_tokens=int(cfg.get("max_new_ifstruct", 1024)),
-                           batch_size=int(cfg.get("batch_size", 16)), tag="ifstruct")
+                           batch_size=int(cfg.get("batch_size", 16)), tag="ifstruct",
+                           ids=[it["id"] for it in items])
     raw, scored = [], []
     for it, p, o in zip(items, prompts, outs):
         ok, detail = ifstruct_score.score_item(it, o)
@@ -235,7 +247,8 @@ def run_ifeval(cfg, runner, prompter, limit):
     check("ifeval_count", limit or len(items) == 541, "%d items" % len(items))
     prompts = [prompter.render(it["messages"], None) for it in items]
     outs = runner.generate(prompts, max_new_tokens=int(cfg.get("max_new_ifeval", 1024)),
-                           batch_size=int(cfg.get("batch_size", 16)), tag="ifeval")
+                           batch_size=int(cfg.get("batch_size", 16)), tag="ifeval",
+                           ids=[it["id"] for it in items])
     raw, scored = [], []
     for it, p, o in zip(items, prompts, outs):
         ok, detail = ifeval_score.score_item(it, o)
@@ -258,6 +271,12 @@ def run_probes(cfg, runner, prompter, limit):
     save(control, "probes_control.jsonl")
     check("probes_graded_count", limit or len(graded) == 434, "%d graded" % len(graded))
     check("probes_control_count", len(control) == 30, "%d control" % len(control))
+    # A replay rebuilds the clean arm from the same generator rather than reading it back,
+    # so it is worth proving the two agree. If the arm has drifted, the false-flag rate
+    # from the source run and the one from this pass are measured on different items.
+    verify_control = getattr(runner, "verify_control", None)
+    if verify_control:
+        check("probes_control_matches_source", *verify_control(control))
     if limit:
         # Strided, not the first N: the graded file is ordered by arm, so a head slice
         # would smoke-test one check kind and leave the other two unproven.
@@ -269,7 +288,8 @@ def run_probes(cfg, runner, prompter, limit):
     # honesty clause. Nothing is added on top: `tools=None` keeps the harness out of it.
     prompts = [prompter.render(it["messages"], None) for it in items]
     outs = runner.generate(prompts, max_new_tokens=int(cfg.get("max_new_probes", 320)),
-                           batch_size=int(cfg.get("batch_size", 16)), tag="probes")
+                           batch_size=int(cfg.get("batch_size", 16)), tag="probes",
+                           ids=[it["id"] for it in items])
     raw, scored = [], []
     for it, p, o in zip(items, prompts, outs):
         ok, detail = probes_score.score_item(it, o)
@@ -327,11 +347,56 @@ def main():
         except Exception as exc:                                   # noqa: BLE001
             NOTES.append("nltk punkt download failed (%s); IFEval sentence counts may fail" % exc)
 
+    # Two serving paths, one per precision family, exactly as `plan.md` freezes them: every
+    # full-precision row goes through `transformers`, every 4-bit row through llama.cpp. The
+    # scoring, prompting and item selection below are the same code either way, so a Q4 row and
+    # the FP row it is compared against differ in the backend and the weights and in nothing
+    # else. Which backend produced a number is part of the summary.
+    backend = str(cfg.get("backend", "hf") or "hf").lower()
+    # A third mode that is not a backend: score-only. `rescore_object` points at a storage
+    # directory holding a finished run's `completions_*.jsonl`, and every component below
+    # reads its text from there instead of generating it. No weights are loaded and no GPU
+    # is used; the tokenizer still is, because the prompts are re-rendered so the recorded
+    # prompt hashes can be checked. Everything downstream of generation is the same code,
+    # which is the only reason a re-scored number may be compared with the one it replaces.
+    rescore_obj = (cfg.get("rescore_object") or "").strip()
+    server = None
+    serving = {}
     adapter_dir = None
-    if adapter_obj:
-        adapter_dir = lab.storage_download(adapter_obj)
-        log("adapter downloaded to %s" % adapter_dir)
-    model, tok, n_params = gen.load_model(base, adapter_dir, log=log)
+    if rescore_obj:
+        if adapter_obj:
+            raise RuntimeError("a replay scores saved completions: an adapter changes the "
+                               "model and cannot apply to text already generated")
+        src = lab.storage_download(rescore_obj)
+        if os.path.isfile(src):
+            src = os.path.dirname(src)
+        log("re-scoring %s from %s" % (run_tag, rescore_obj))
+        tok = replay.load_tokenizer(base, log=log)
+        n_params = 0
+        runner = replay.ReplayRunner(src, log=log)
+        serving = {"backend": "replay", "rescore_object": rescore_obj,
+                   "generated_here": False,
+                   "note": ("completions were generated by an earlier run; only the graders "
+                            "and the summary ran here")}
+    elif backend == "gguf":
+        if adapter_obj:
+            raise RuntimeError("a LoRA adapter cannot be merged into a GGUF here: quantize the "
+                               "merged checkpoint first and pass it as gguf_repo/gguf_file")
+        server, tok, serving = gen_gguf.load_gguf(cfg, log=log)
+        n_params = 0
+        runner = gen_gguf.GgufRunner(server, tok, log=log)
+        serving.update({"decoding": "greedy", "temperature": 0.0, "top_k": 1,
+                        "cache_prompt": False})
+    elif backend == "hf":
+        if adapter_obj:
+            adapter_dir = lab.storage_download(adapter_obj)
+            log("adapter downloaded to %s" % adapter_dir)
+        model, tok, n_params = gen.load_model(base, adapter_dir, log=log)
+        runner = gen.Runner(model, tok, log=log)
+        serving = {"backend": "transformers", "dtype": "bfloat16", "decoding": "greedy",
+                   "padding_side": "left", "batch_size": int(cfg.get("batch_size", 16))}
+    else:
+        raise RuntimeError("unknown backend %r: expected hf or gguf" % backend)
     lab.update_progress(10)
 
     prompter = prompting.Prompter(tok, log=log)
@@ -343,7 +408,6 @@ def main():
     check("template_native", prompter.mode == "native",
           "template mode is %s: %s" % (prompter.mode, prompter.note))
 
-    runner = gen.Runner(model, tok, log=log)
     results, score = {}, {}
     steps = max(len(components), 1)
     for i, comp in enumerate(components):
@@ -367,16 +431,27 @@ def main():
             NOTES.append("unknown component ignored: %s" % comp)
         lab.update_progress(10 + int(85 * (i + 1) / steps))
 
+    if server is not None:
+        # The server's own log carries the load line, the offload count and any slot warning,
+        # which is the only place a silent CPU fallback would show up. A 4-bit number taken on
+        # the CPU by accident would look fine and cost a day, so the log travels with the run.
+        server.stop()
+        try:
+            lab.save_artifact(server.log_path)
+        except Exception as exc:                                   # noqa: BLE001
+            NOTES.append("could not save the server log: %r" % exc)
+
     summary = {
         "run_tag": run_tag,
         "base_model": base,
         "adapter_object": adapter_obj or None,
         "n_params": n_params,
-        "serving": {"backend": "transformers", "dtype": "bfloat16", "decoding": "greedy",
-                    "padding_side": "left", "batch_size": int(cfg.get("batch_size", 16))},
+        "serving": serving,
         "template": {"mode": prompter.mode, "note": prompter.note,
                      "supports_tools_arg": prompter.supports_tools_arg},
         "profile": profile,
+        "rescore_object": rescore_obj or None,
+        "rescored": bool(rescore_obj),
         "limit_per_component": limit or None,
         "limits": limits,
         "components": components,
@@ -389,19 +464,24 @@ def main():
         "config": {k: cfg.get(k) for k in sorted(cfg)},
     }
     save(summary, "eval_summary.json", kind="evals")
-    # The .json above does not come back from `job download`: the artifact store registered
-    # every .jsonl this run wrote and silently dropped the .json, so the first smoke's summary
-    # existed in the log and nowhere retrievable. The same object goes out as one .jsonl line,
-    # which does register. Both are written because the .json is the readable one on the job's
-    # own file tree.
+    # Both forms of the same object, on purpose. The .json is the one a person reads; the
+    # one-line .jsonl is the one that appends cleanly when several runs' summaries are
+    # concatenated for a comparison table. An earlier note here blamed the extension for
+    # the summary being unretrievable, which was wrong: the cause was `type="evals"`, and
+    # it is fixed in save() above.
     save([summary], "eval_summary.jsonl", kind="evals")
     score["assertion_failures"] = summary["assertion_failures"]
     score["generated_tokens"] = summary["throughput"]["generated_tokens"]
     log(json.dumps({k: v for k, v in score.items()}, indent=1, sort_keys=True))
     lab.update_progress(100)
-    lab.finish(message=("%s: %d component(s), %d assertion failure(s), %s tok/s"
+    tput = summary["throughput"]
+    # A replay generated nothing, so reporting its tokens per second would read as a
+    # measurement. It reports how many saved completions it scored instead.
+    done_note = (("%d completion(s) replayed" % tput.get("replayed_completions", 0))
+                 if rescore_obj else ("%s tok/s" % tput["tokens_per_second"]))
+    lab.finish(message=("%s: %d component(s), %d assertion failure(s), %s"
                         % (run_tag, len(components), summary["assertion_failures"],
-                           summary["throughput"]["tokens_per_second"])),
+                           done_note)),
                score={k: v for k, v in score.items() if isinstance(v, (int, float))})
 
 

@@ -234,6 +234,36 @@
    "status": "LAUNCHING",
    "note": "Queued 2026-08-25T14:42Z, still launching at the time of writing. Spend is unknown until it terminates and is recorded as null rather than estimated.",
    "recordedAt": "2026-08-25T14:44:00Z"
+  },
+  {
+   "id": "s5.2-B1-fp-instruct",
+   "jobId": "4350ce4e-6e19-4bc9-a4e9-64c05b7d009b",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "task": "s5-eval",
+   "resources": "L4:1 (8 vCPU / 32 GB / 100 GB disk, gcp)",
+   "accelerators": "L4:1",
+   "status": "COMPLETE",
+   "durationHours": 1.42,
+   "spend": 1.42,
+   "recordedAt": "2026-08-25T15:05:00Z",
+   "description": "s5.2 B1, the reference row: LFM2.5-1.2B-Instruct at full precision over full item counts. COMPLETE, 0 assertion failures, 1,318,883 generated tokens at 279.1 tok/s. Tool calling 0.6700 composite under the model's native tools rendering and 0.5355 under the s4 text convention; structured-output first-attempt validity 0.1355 at n=2000; IFEval prompt-level 0.8170 strict and 0.8299 loose at n=541; probes flag rate 0.0074 on 434 malformed returns with 0.0 false flags on the 30-item clean control arm and 0.2361 stack-idiom accuracy. Every delta this project reports is measured against this row.",
+   "note": "Charged on the platform's own 13:26:46Z-14:51:54Z bracket, 5,108 s = 1.419 h, rounded to 1.42. The estimate under Compute was 2.5 GPU-h for a full pass, so the row came in 43% under its line. Its scored_* per-item files and eval_summary.json are unretrievable (launched before the typed-save fix); the six completions files are, and the detail is recovered by re-scoring rather than by regenerating, which costs no GPU time against this line."
+  },
+  {
+   "id": "s5.2-B4-fp-granite",
+   "jobId": "c319ebb1-a37c-4fdd-9d52-fd3f14a933f5",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "task": "s5-eval",
+   "resources": "L4:1 (8 vCPU / 32 GB / 100 GB disk, gcp)",
+   "accelerators": "L4:1",
+   "status": "RUNNING",
+   "durationHours": null,
+   "spend": null,
+   "recordedAt": "2026-08-25T15:05:00Z",
+   "description": "s5.2 B4: ibm-granite/granite-4.0-1b at full precision over full item counts, the 1B-class incumbent rerun through this harness so the pre-registered tool-calling bar becomes a matched number. Same card, serving path, decoding, item sets and batch size as B1.",
+   "note": "Queued 2026-08-25T14:56Z on gcp, unpinned, matching B1 and the Granite smoke, all three of which launched cleanly on that source. Spend is null until it terminates rather than estimated. The pricing expectation from its own smoke is about 5 GPU-h: it generates at 42-67 tok/s against B1's 279 at the same batch size, and the batch size is deliberately not raised for it, because a couple of GPU-hours is cheaper than a competitor row served differently from the reference it is compared against. The task ceiling is 7 h."
   }
  ]
 }

@@ -2,28 +2,32 @@
 
 _Status: `s5.1` complete, `s5.2` in progress. The throughput the whole budget rests on is
 measured, the sweep is resized to fit it, and the evaluation harness every later number comes
-from is built, verified against ground truth and smoked end to end. The reference baseline's
-tool-calling number is in at full item counts and reads below the competitor's smoke, which is
-the finding that now shapes the stage. Its structured-output number is now in too, and it
-refutes the explanation the smoke gave for it. The 4-bit serving path is the open blocker: three
-build attempts have produced no binaries, one on a missing CUDA compiler and two on launches that
-never ran the task at all, and a fourth is in flight on a different compute source._
+from is built, verified against ground truth and smoked end to end. **The reference baseline is
+complete at full item counts on all four components**, and it reads below the competitor on tool
+calling and at the floor on the guardrail axis. The competitor row that carries the operative
+tool-calling threshold is running, the 4-bit serving path is compiling after being moved to a
+different compute source, and the harness has gained a score-only replay mode so a finished run
+can be re-scored without paying for generation twice._
 
 ## Headline
 
-The reference baseline now has two numbers at full counts, and the second one changed what we can
-claim. On tool calling it scores **0.6700 over all 3,490 held-out items**, behind the 1B-class
-competitor's **0.7795** on a 378-item sample of the same suite under identical decoding, so on the
-capability ranked first here the model we were asked to improve currently sits behind the one it is
-measured against. On structured output it scores **0.1355 over 2,000 items**, which barely moved
-from the 40-item smoke's 0.125 and so refutes the small-sample explanation recorded for it; the
-vendor publishes no structured-output figure for this checkpoint, so that score is a within-harness
-reference with no public anchor and no published number may be quoted beside it. The 4-bit serving
-path is still the stage's open blocker: three builds have produced no binaries, one on a CUDA
-compiler that was installed and then not found, and two on launches that provisioned a machine and
-never ran the task on it. A fourth is in flight on a different compute source, following the team's
-own guidance to work a card's full source list before treating it as unavailable. Spend is 1.597 of
-145 GPU-hours, of which 0.10 bought nothing at all.
+The reference baseline is complete on all four components at full item counts, and two of its four
+numbers reset what this project is aiming at. On tool calling it scores **0.6700 over all 3,490
+held-out items** in its own calling format and 0.5355 in the convention our training data uses,
+behind the 1B-class competitor's **0.7795** on a 378-item sample of the same suite under identical
+decoding, so on the capability ranked first here the model we were asked to improve sits behind the
+one it is measured against. On the safety axis it is **at the floor with a clean floor**: it flags
+3 of 434 malformed tool returns against a target of 0.70, and raises **zero** false alarms on the
+30 clean control items, which is a large gap to close and no bad habit to unlearn. Structured
+output reads 0.1355 over 2,000 items, a within-harness reference with no published figure that may
+be quoted beside it. Instruction following reads 0.8170 over all 541 prompts, 4.5 points under the
+card's 86.23, which the four-way IFEval mean plausibly reconciles and the harness never printed the
+numbers to confirm. The competitor's full pass is now running, and the 4-bit serving build is
+compiling on a different compute source after two launches on the previous one provisioned a
+machine and ran nothing, so there is no infrastructure fault to raise. The harness also gained a
+score-only replay mode: a finished run's saved text can be re-scored on CPU work alone, which is
+what recovers the per-item detail this run's artifacts lost. Spend is 3.017 of 145 GPU-hours, of
+which 0.28 bought nothing at all.
 
 ## Work log
 
@@ -742,33 +746,119 @@ guidance; and the structured-output score was accepted as a within-harness refer
 anchor, rather than triggering another harness investigation, because the published figure it was
 going to be checked against turned out to belong to a different checkpoint. Nobody reviewed either.
 
+## The reference row is complete, and the guardrail axis is the finding (s5.2)
+
+`4350ce4e` finished clean: four components at full item counts, zero assertion failures, 1,318,883
+generated tokens at 279.1 tok/s, 85 minutes on one L4. The full table is in
+`runs/s5.2-baselines.md`; three of its readings matter at stage level.
+
+**The safety axis is at the floor, and the floor is clean.** `overview.md` asks for a flag rate of
+at least 0.70 on malformed tool returns with a false-flag rate at most 0.15. The stock checkpoint
+flags **3 of 434** and false-alarms on **none** of the 30 clean control items. Each number alone is
+uninformative: a model that flagged nothing would also score 0.0 on the control arm. Together they
+say the checkpoint is silent rather than cautious, which is the most improvable gap in the whole
+matrix and the one where the control arm built at `s5.2` immediately earned its cost, since without
+it the flag rate would have read as a straightforward win waiting to happen.
+
+**Instruction following lands 4.5 points under the published figure and the gap is probably the
+metric.** We measure 0.8170 prompt-level strict against the card's 86.23. IFEval is commonly
+published as the mean of its four scores, and the instruction-level pair runs above the prompt-level
+pair by construction. A four-way mean near 86 is consistent with what we measured, so this is a
+reconciliation and not yet a demonstration: the grader computes the instruction-level pair and the
+harness never printed it.
+
+**The two surface forms are 13.5 points apart on our own checkpoint**, and the weaker one is ours.
+0.6700 native against 0.5355 in the convention `s4` trains toward. The rule that every baseline is
+prompted both ways and scored on the better of the two was written to be fair to competitors; it
+turns out to be load-bearing for the reference row, and it means an `s4` finetune must clear 0.6700
+rather than the 0.5355 it starts from on the format it is trained on.
+
+## Re-scoring is now a mode of the harness rather than a second copy of it (s5.2)
+
+B1's per-item files and its summary were saved before the typed-save fix and are unretrievable,
+exactly as predicted when that bug was diagnosed: the six untyped saves came back and the six typed
+ones did not. What is lost is all derived detail, including the structured-output mean partial score
+and by-format split, the instruction-level IFEval pair, and the per-category tool-calling table.
+Every one of them is a function of text that *is* retrievable.
+
+The fix is a parameter on the eval task, not a new task. `rescore_object` points at a storage
+directory of saved completions; the run then loads no weights, uses no GPU, generates nothing, and
+each component reads its text from there by item id. A second task with the graders copied into it
+was the obvious build and the wrong one: two copies of a scorer is how one set of completions ends
+up with two different scores, and the whole point of this harness is that it must not move
+underneath the numbers.
+
+It joins on id rather than position, re-renders every prompt and checks it against the recorded
+hash so a moved chat template surfaces as a counted mismatch, rebuilds the clean probe arm and
+diffs it item-by-item against the source run's saved copy, and reports how many completions it
+scored rather than inventing a tokens-per-second figure. Verified against a slice of B1's own
+completions in the sandbox, all five branches including the failure ones. B1's six files are in
+shared storage at `tidepool/s5.2/B1-fp-instruct/` at full counts.
+
+It is not queued yet, and the reason is a real constraint rather than an oversight. The eval task
+requests an L4 at the `resources` level, resources are not overridable per queue, and both
+concurrent GPU slots are full. The two ways around that were worse than waiting: a CPU-only twin
+task reintroduces the duplicated graders, and editing the task's resources down and back up is a
+mutable-configuration dance whose failure mode is the eval task left CPU-only and the next full row
+landing on a machine with no GPU. So the replay runs on the L4 when a slot frees, for about 0.2
+GPU-h of a deliberately idle accelerator. Recorded as a decision taken unreviewed under autonomous
+mode, with the exact queue command in `runs/s5.2-baselines.md`.
+
+## What is running, and what B6 turns out to be (s5.2)
+
+`c319ebb1`, B4, is the Granite 4.0-1b full pass, queued into the slot B1 freed. It stays on the
+same compute source B1 ran on, unpinned. The build task was moved to another source because two of
+its launches provisioned a machine and ran nothing, and the temptation was to move everything; the
+evidence does not support that. All three eval launches on that source ran, the only two lost
+launches in about twenty project jobs were the build task at a 200 GB disk request, and moving B4
+would put the competitor row on a different image family from the reference row it is compared
+against. Expect roughly five hours: Granite generates at a fifth of B1's rate at the same batch
+size, and the batch size is deliberately not raised for it.
+
+`b7de2af2`, the 4-bit serving build, is compiling. The source it was moved to ships a complete CUDA
+toolkit, cmake configured for sm_89 cleanly, and the elaborate four-wheel compiler repair written
+for the previous source never had to fire. Rows B2, B3, B5 and the F16 runtime reference wait on
+its tarball.
+
+`B6` was listed in the plan as conditional on the base checkpoint being published. It is:
+`LiquidAI/LFM2.5-1.2B-Base`. One limit goes on the record before it runs. The base and instruct
+checkpoints ship different chat templates, 1,296 bytes against 5,487, both with the same role
+framing and the same tool rendering, so the harness handles either unchanged. A B1-versus-B6 delta
+is therefore a delta across two checkpoints and two templates at once, and running B6 alone cannot
+separate them. Forcing the instruct template onto the base weights would isolate the checkpoint by
+prompting a model in a format it never saw, which is the mistake the two-surface-form rule exists to
+prevent. B6 is scored under its own template and reported as what post-training bought, template
+included. Nothing depends on it.
+
+## The ledger was missing its largest entry (s5.2)
+
+B1 had no entry in `budget.json` while three failed build attempts totalling 0.28 GPU-h were all
+recorded. Added on its own reported bracket, 1.42 GPU-h against a 2.5 GPU-h estimate, so the row
+came in 43% under its line. B4 is recorded as RUNNING with spend `null`, on the same rule as the
+launching build: a spend is charged when known and left null when not, never estimated into the
+total. Project spend is **3.017 of 145 approved GPU-hours**.
+
 ## Immediate next actions
 
-1. Read attempt 4 of the 4-bit build, job `b7de2af2`, on one question before any other: did it
-   print a single line? Any task log at all, pass or fail, means the two lost runs were specific
-   to the previous compute source and the build is debuggable again. A zero-byte log with empty
-   polls means the fault follows the task, and the next step is the third and last source in the
-   card's row before anything is escalated.
-2. If it ran, read it on the specifics the previous attempts never reached: where the CUDA
-   compiler came from, whether the assembled toolkit yielded a `cuda_runtime.h`, the offload lines
-   echoed after the server reports healthy, the 8-slot generated tokens per second, the hours that
-   prices for a full 4-bit pass, and whether `job artifacts` actually lists the tarball. If it is
-   listed but the in-job storage upload did not happen, place it in shared storage as
-   `tidepool/llama-b10622-sm89.tar.gz` before queueing any 4-bit row. `B2`, `B3`, `B5` and the F16
-   runtime reference all wait on this one job.
-3. Finish the reference row `4350ce4e`: instruction following and the probe set with its 30-item
-   control arm are still to land. Its per-item scored files will not be retrievable, so do not
-   plan the stage-6 error analysis around them.
-4. Build the re-scoring path before stage 6. It scores an existing completions file without
-   regenerating it, which is the only way to recover this row's partial structured-output score
-   and its per-item detail, and it makes every finished run re-scorable when the parser improves.
-   It is a queued job, not local work.
-5. Then the remaining full-precision rows: `B4`, the 1B-class competitor carrying the absolute
-   threshold, and `B6`, the base non-instruct checkpoint, through the same task with the model
-   swapped by parameter. `B4` is priced from its own smoke rather than from the reference row's
-   throughput, because it generates at a fraction of the rate.
-6. Pin the compute source in every task that asks for the 48 GB card, at `resources` level where
-   the field validates. Left unset, a sweep arm lands somewhere that does not sell the card and
-   fails at launch, or worse on a smaller card whose numbers are not comparable.
-7. Carry the 64.0M-token arm budget into the `s5.3` sweep tasks as a parameter rather than a
-   convention, so no arm can quietly run longer than the one it is compared against.
+1. Read `b7de2af2`'s log once it reports built: the offload lines after `server healthy` and the
+   CUDA-device assertion, the 8-slot generated tok/s, the priced hours for a full Q4 pass, and
+   whether `job artifacts` **lists** the tarball. If it is listed but the in-job storage upload
+   failed, place it as `tidepool/llama-b10622-sm89.tar.gz` before queueing any 4-bit row.
+2. When a GPU slot frees, queue the B1 replay with the command recorded in
+   `runs/s5.2-baselines.md`. It settles four things B1 could not report: the structured-output mean
+   partial score and by-format split, the instruction-level IFEval pair that would confirm or refute
+   the reconciliation with the card's 86.23, and the per-category tool-calling table that `s6`'s
+   error analysis reads. It also exercises the replay path on real data before `s6` depends on it.
+3. Then the three 4-bit rows `B2`, `B3` and `B5` against the built serving path, plus the F16
+   runtime reference that makes a Q4 quality claim a comparison rather than an assertion.
+4. Then `B6` at the screening profile, `LiquidAI/LFM2.5-1.2B-Base` under its own template, with the
+   template caveat carried into the summary.
+5. Do not tick `s5.2` until the 4-bit rows exist. Three of the six baseline rows and the project's
+   headline promise, that a 4-bit build holds the full-precision bar, all sit behind that one
+   tarball.
+6. Carry the 64.0M-token arm budget into `s5.3` as an explicit parameter rather than a habit, and
+   pin the compute source at `resources` level for tasks asking for a 48 GB card, on the evidence
+   recorded for the build task and not beyond it.
+7. Before `s5.3`, re-read what B1's guardrail numbers imply for the sweep. The flag rate is the
+   axis with the most headroom in the whole matrix, and the arm design was written when that
+   headroom was a guess.
