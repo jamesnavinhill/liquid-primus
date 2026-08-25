@@ -887,6 +887,38 @@ asserted on it. It reports rather than decides.
   build script and its config, this stage's record and run log, the corrected ledger and the task
   list.
 
+## One of the three 4-bit rows is not the comparison it appears to be (s5.2)
+
+With the build compiling, the CPU-only work worth doing was pinning exactly which file each 4-bit
+row loads and which repository renders its prompts. All three publish a dozen quantizations, and
+the harness refuses to pick one by pattern at run time.
+
+| Row | What it loads | Prompts rendered by |
+| --- | ------------- | ------------------- |
+| B2 | the vendor's quantization-aware `QAD-Q4_0` | `LiquidAI/LFM2.5-1.2B-Instruct` |
+| B3 | unsloth's `UD-Q4_K_XL`, the best cheap community quant | `LiquidAI/LFM2.5-1.2B-Instruct` |
+| B5 | Nova's function-calling fine-tune at `Q4_K_M` | `NovachronoAI/LFM2.5-1.2B-Nova-Function-Calling` |
+| runtime ref | the same weights at `BF16`, unquantized | `LiquidAI/LFM2.5-1.2B-Instruct` |
+
+Two of those were decisions. The Nova repository publishes no `Q4_0`, so B5 is a K-quant, which
+leaves B2-against-B3 as the matched pair the plan wanted and B5 as a third point. The runtime
+reference is taken at bf16 rather than f16 because B1 was served bf16, and holding the dtype fixed
+makes the serving runtime the only thing that moved between them.
+
+The finding is about B5. The Nova checkpoint ships its own chat template, a third of the size of
+Liquid's, and it renders tool contracts as a plain `List of tools: [...]` line inside the system
+prompt with none of the framing LFM2.5 uses and no declared convention for the call itself. So a
+B5-against-B1 gap contains a different fine-tune, a third tool surface form and 4-bit
+quantization, all at once, and it cannot be read as a verdict on a competitor's 4-bit calling
+quality. The harness's existing policy, scoring every baseline under both its own rendering and
+ours and taking the better, handles the prompting half. Separating the fine-tune from the
+quantization needs a full-precision Nova row, about 1.4 GPU-hours, which the plan does not call
+for and nothing downstream needs; recorded as an option for `s6`'s error analysis and not queued.
+B5 stays what the plan made it, with the caveat carried into its summary.
+
+The four queue commands are written out in `runs/s5.2-baselines.md`, ready to fire, and none of
+them may run until a build reports `verified: true`.
+
 ## Immediate next actions
 
 1. Read `905755d3` in this order: whether `job artifacts` **lists** the tarball, which now
@@ -900,8 +932,10 @@ asserted on it. It reports rather than decides.
    partial score and by-format split, the instruction-level IFEval pair that would confirm or refute
    the reconciliation with the card's 86.23, and the per-category tool-calling table that `s6`'s
    error analysis reads. It also exercises the replay path on real data before `s6` depends on it.
-3. Then the three 4-bit rows `B2`, `B3` and `B5` against the built serving path, plus the F16
-   runtime reference that makes a Q4 quality claim a comparison rather than an assertion.
+3. Then the three 4-bit rows `B2`, `B3` and `B5` against the built serving path, plus the bf16
+   runtime reference that makes a Q4 quality claim a comparison rather than an assertion. The
+   commands are written out and the files are pinned; they go two at a time behind whichever of
+   the build and B4 finishes first.
 4. Then `B6` at the screening profile, `LiquidAI/LFM2.5-1.2B-Base` under its own template, with the
    template caveat carried into the summary.
 5. Do not tick `s5.2` until the 4-bit rows exist. Three of the six baseline rows and the project's
