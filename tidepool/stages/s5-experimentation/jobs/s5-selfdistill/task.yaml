@@ -8,19 +8,32 @@ resources:
   cpus: 8
   memory: 48
   disk_space: 200
-  accelerators: "L4:1"
+  # Inference of a 1.2B model in bf16 needs nothing like 48GB, and the card is chosen on
+  # throughput rather than capacity: the L40S finishes the buffer in well under an hour where
+  # the L4 the smoke ran on would take a little over one, and GPU-hours are what the ledger
+  # counts. L40S sources, in order: AWS (g6e), Nebius, RunPod.
+  accelerators: "L40S:1"
+  compute_provider: aws
 envs:
   HF_TOKEN: "{{secret._HF_TOKEN}}"
 parameters:
   base_model: LiquidAI/LFM2.5-1.2B-Instruct
   pool_object: tidepool/s4.4/prompt_pool.jsonl.gz
-  # s5.1 smoke: 64 prompts, enough to prove the sampling, the template, the generation and
-  # the artifact round trip. The full buffer is generated once the smoke passes.
-  smoke: true
-  n_prompts: 64
+  # The s5.1 smoke (66aca6c7) proved the sampling, the template, the generation and the
+  # artifact round trip on 64 prompts: 64/64 completions, 0 empty, byte-identical across two
+  # runs, which is the determinism check that lets the buffer be frozen. This is the run at
+  # size. The hash-rank sample is a pure function of the pool and the salt, so these 8,000
+  # prompts are a strict superset of the smoke's 64 and the salt is deliberately unchanged.
+  smoke: false
+  n_prompts: 8000
   max_new_tokens: 320
-  batch_size: 16
+  batch_size: 48
   max_prompt_tokens: 1024
   sample_salt: tidepool-replay-v1
-  run_tag: s5.1-selfdistill-smoke
-minutes_requested: 45
+  run_tag: s5.3-selfdistill-full
+  # Where the sweep reads it from. C5a and C5b load replay from shared storage, not from a
+  # job artifact, so a run that generates the buffer and fails to place it has produced
+  # nothing the arms can use, and says so as an assertion failure.
+  dest_prefix: tidepool/s5.3/replay
+  c5b_dose_tokens: 3200000
+minutes_requested: 120

@@ -48,6 +48,7 @@ BATCH = int(C("batch_size", 16))
 MAX_PROMPT_TOK = int(C("max_prompt_tokens", 1024))
 SMOKE = bool(C("smoke", False))
 RUN_TAG = C("run_tag", "s5.1-selfdistill-smoke")
+DEST = C("dest_prefix", "")
 
 OUT = "out"
 os.makedirs(OUT, exist_ok=True)
@@ -69,6 +70,29 @@ def dump(name, obj):
     except Exception as exc:
         log("save_artifact failed for %s: %s" % (name, exc))
     return p
+
+
+def place(path, dest):
+    """Put a file in shared storage if this SDK can, and say so either way."""
+    up = None
+    for name in ("storage_upload", "upload_storage", "storage_put"):
+        up = getattr(lab, name, None)
+        if callable(up):
+            break
+        up = None
+    if up is None:
+        log("no storage upload in this SDK; %s stays on the job record for outside placement"
+            % os.path.basename(path))
+        return False
+    obj = "%s/%s" % (dest.rstrip("/"), os.path.basename(path))
+    for args, kwargs in (((path, obj), {}), ((path,), {"dest": dest}), ((path,), {})):
+        try:
+            up(*args, **kwargs)
+            log("placed %s in shared storage" % obj)
+            return True
+        except Exception as exc:
+            log("upload shape %r failed: %s" % (kwargs or args, exc))
+    return False
 
 
 # ------------------------------------------------------- 1. a reproducible prompt sample
@@ -132,9 +156,22 @@ if not texts:
 
 # ------------------------------------------------------------------ 2. greedy generation
 
-path = os.path.join(OUT, "replay.jsonl")
-n_out, n_tok, empty = 0, 0, 0
-with open(path, "w") as fh:
+# The sweep's sampler reads every source through one code path: it keys rows by `role`, sizes
+# each role by the `n_tok` field, and opens a source by filename suffix. A replay file that
+# omits `n_tok` indexes as zero tokens and the replay dose silently becomes nothing, so the
+# count is written here, with the same tokenizer and the same template the training run uses.
+path = os.path.join(OUT, "replay.jsonl.gz")
+
+
+def row_tokens(msgs):
+    try:
+        return len(tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=False))
+    except Exception:
+        return len(tok("\n".join(m.get("content") or "" for m in msgs)).input_ids)
+
+
+n_out, n_tok, empty, train_tok = 0, 0, 0, 0
+with gzip.open(path, "wt") as fh:
     for i in range(0, len(texts), BATCH):
         chunk, meta = texts[i:i + BATCH], keep[i:i + BATCH]
         b = tok(chunk, return_tensors="pt", padding=True, add_special_tokens=False).to(dev)
@@ -149,10 +186,13 @@ with open(path, "w") as fh:
                 empty += 1
                 continue
             msgs = [m for m in r["messages"] if m["role"] in ("system", "user")]
+            full = msgs + [{"role": "assistant", "content": txt}]
+            nt = row_tokens(full)
+            train_tok += nt
             fh.write(json.dumps({
                 "c": r.get("c"), "i": r.get("i"), "g": r.get("g"), "role": "replay",
                 "source": "self_distilled_greedy", "base_model": BASE,
-                "messages": msgs + [{"role": "assistant", "content": txt}],
+                "n_tok": nt, "messages": full,
             }, ensure_ascii=False) + "\n")
             n_out += 1
             n_tok += int((g != tok.pad_token_id).sum())
@@ -174,8 +214,25 @@ if empty > 0.2 * max(1, len(texts)):
     fails.append("%d of %d generations came back empty, which is too many to treat as noise"
                  % (empty, len(texts)))
 
+# The dose the sweep will ask for. `C5b` replays 5% of a 64.0M-token budget, so a buffer
+# under 3.2M training tokens is not an error, it just means the sampler repeats rows; the
+# ratio is reported so the repeat count is a number in the record rather than a surprise.
+C5B_DOSE = int(C("c5b_dose_tokens", 3_200_000))
+passes = C5B_DOSE / max(1.0, float(train_tok))
+if not SMOKE and passes > 2.0:
+    fails.append("the buffer holds %.2fM training tokens, so C5b's %.2fM-token dose would "
+                 "replay it %.1f times over and the arm would measure memorization of a "
+                 "small set as much as replay" % (train_tok / 1e6, C5B_DOSE / 1e6, passes))
+
+placed = place(path, DEST) if DEST else False
+if not SMOKE and DEST and not placed:
+    fails.append("the buffer was generated but could not be placed at %s, and the sweep "
+                 "loads replay from shared storage rather than from a job artifact" % DEST)
+
 tps = n_tok / max(1e-6, time.time() - t_start)
 score = {"completions": n_out, "empty": empty, "completion_tokens": int(n_tok),
+         "training_tokens": int(train_tok),
+         "c5b_replay_passes": round(passes, 2), "placed_in_storage": placed,
          "completion_tokens_per_second": round(tps, 1),
          "pool_rows": n_rows, "sampled": len(picked), "usable": len(texts),
          "projected_hours_per_100k": round(100000.0 * (n_tok / max(1, n_out))

@@ -1478,3 +1478,33 @@ thin.
   already published. The corpus arm now gets its own `depth_clean_corpus` bucket. Nine checks,
   all passing, and the default stays empty so a re-run of an already-measured row is
   byte-comparable to what it produced before.
+- 2026-08-25 · mirror · Pushed commit `ed31483` to `github.com/jamesnavinhill/liquid-primus`: the
+  eval-harness change, its additivity test, and the updated task list. The clone still held a copy
+  of the paper and note corpora from an earlier sync, and those were removed rather than pushed,
+  keeping the repository to code and written record as it has been on every push.
+- 2026-08-25 · s5.3 · Sized the replay generation run and fixed the thing that would have made
+  it useless. The sweep's sampler reads every source through one code path: it keys rows by
+  `role`, sizes each role from an `n_tok` field, and opens a file by suffix. The replay writer
+  emitted neither `n_tok` nor gzip, so the buffer would have indexed as **zero tokens** and both
+  replay arms would have trained the reference recipe under a `C5` label while reporting a
+  replay fraction. The writer now counts tokens with the training tokenizer and the training
+  template, writes `replay.jsonl.gz`, and places it in shared storage at
+  `tidepool/s5.3/replay`, since the arms load replay from storage rather than from a job
+  artifact. A run that generates the buffer and cannot place it now fails loudly.
+- 2026-08-25 · s5.3 · The run at size is 8,000 prompts, and the hash-rank sample keeps the same
+  salt as the `s5.1` smoke, so the set is a strict superset of the 64 prompts already generated
+  twice with byte-identical output. On the smoke's 245 completion tokens per prompt the buffer
+  lands near 2.0M completion tokens and roughly twice that in training tokens, against `C5b`'s
+  3.2M-token dose, which is a little under one pass. The run asserts on that ratio: a buffer
+  small enough for `C5b` to replay it more than twice over would measure memorization of a small
+  set as much as it measures replay. The card is an L40S rather than the smoke's L4, chosen on
+  throughput, and it is pinned to aws per the provider note of 2026-08-23.
+- 2026-08-25 · s5.2 · Noted a cost worth naming: the competitor row `B4` is running on an **L4**,
+  where the rest of `s5.2` runs on L40S, and Granite 4.0's hybrid layers get no optimized path in
+  transformers. It generates at 75 tok/s against B3's 1,743, so a row that takes B3 about an hour
+  will take B4 something like seven, and it has held a GPU slot since 14:58Z. Decided to let it
+  finish rather than restart it on a faster card: the tool-calling composite it already produced
+  is the operative external threshold for the whole project, its remaining three components are
+  the axes the project's other goals are measured on, and a restart trades a certain 2.2 spent
+  GPU-hours for an uncertain speedup. Recorded as an unreviewed autonomous decision. Any later
+  competitor row on a non-Liquid architecture gets pinned to a 48GB card up front.
