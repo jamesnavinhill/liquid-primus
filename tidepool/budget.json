@@ -289,13 +289,13 @@
    "task": "s5-eval",
    "resources": "L4:1 (gcp, unpinned)",
    "accelerators": "L4:1",
-   "status": "RUNNING",
-   "durationHours": null,
-   "spend": null,
+   "status": "FAILED_EMPTY",
+   "durationHours": 0.085,
+   "spend": 0.085,
    "estimateHours": 1.71,
    "recordedAt": "2026-08-25T16:05:00Z",
    "description": "s5.2 B2, the first 4-bit row: LiquidAI's quantization-aware LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf served through the b10622 sm_89 build, prompts rendered by LiquidAI/LFM2.5-1.2B-Instruct, full item counts. The matched half of the B2-against-B3 pair the plan asked for, and the row that decides whether the project's headline promise (a 4-bit build holds the full-precision bar) survives contact with a measurement.",
-   "note": "Estimate 1.71 h, quoted by the build job itself from its own 8-slot measurement of 196 generated tok/s against B1's scored token count, so it is a measured price rather than a guess. L4 rather than a larger card because the row is compared directly against B1, which ran on an L4: the provider steering note (updated 2026-08-23T22:48Z) makes card substitution the exception when a number will be compared against one already measured on specific hardware, and holding the card fixed is what keeps the 4-bit-versus-full-precision gap attributable to the quantization."
+   "note": "Estimate 1.71 h, quoted by the build job itself from its own 8-slot measurement of 196 generated tok/s against B1's scored token count, so it is a measured price rather than a guess. L4 rather than a larger card because the row is compared directly against B1, which ran on an L4: the provider steering note (updated 2026-08-23T22:48Z) makes card substitution the exception when a number will be compared against one already measured on specific hardware, and holding the card fixed is what keeps the 4-bit-versus-full-precision gap attributable to the quantization. OUTCOME: the cluster started in us-central1-a and the remote command never ran. COMPLETE with progress 0, no artifacts, no logs, provider_empty_jobs_polls 15, 5 min 6 s wall clock. Same signature as 4-bit build attempts 2 and 3, both gcp. Charged at 0.085 h for the provisioned time. Relaunched as c4091ac9 on aws."
   },
   {
    "id": "s5.3-tooldata",
@@ -305,14 +305,46 @@
    "task": "s5-tooldata",
    "resources": "CPU only (8 vCPU / 48 GB / 100 GB disk, gcp)",
    "accelerators": null,
-   "status": "RUNNING",
-   "durationHours": null,
+   "status": "COMPLETE",
+   "durationHours": 0.102,
    "spend": 0.0,
    "estimateHours": 0.0,
    "recordedAt": "2026-08-25T16:05:00Z",
    "description": "s5.3 guardrail supervision: a decontaminated training set for unreliable tool returns, defective rows paired 1:1 with their own intact counterparts, plus an enlarged clean_corpus control arm drawn from the held-out split. The data component the s5.2 corpus measurement forced.",
-   "note": "No GPU and no charge against the ledger. Holds no accelerator slot, so it runs alongside B4 and B2 rather than behind them."
+   "note": "No GPU and no charge against the ledger. Holds no accelerator slot, so it runs alongside B4 and B2 rather than behind them. OUTCOME: ran to completion in 6 min 8 s and wrote no rows, failing six of nine gates. Two real bugs in the safety machinery: the request-surface decontamination rule dropped 2166 of 2166 rows because the probe system preamble was written at s4 to match the corpus's rendering convention, and the no-fabrication check matched single-digit payload leaves as substrings of prose, dropping 1371 more. Both fixed against the held-out split and requeued as f11afe02. No charge: CPU only."
+  },
+  {
+   "id": "s5.2-B2-q4-vendor-qad-relaunch",
+   "jobId": "c4091ac9-a484-4ec9-8182-baf73744b006",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "task": "s5-eval",
+   "resources": "L4:1 (aws, pinned)",
+   "accelerators": "L4:1",
+   "status": "RUNNING",
+   "durationHours": null,
+   "spend": null,
+   "estimateHours": 1.71,
+   "recordedAt": "2026-08-25T16:40:00Z",
+   "description": "s5.2 B2, relaunched after efa9719d provisioned a machine and ran nothing. Same row: LiquidAI's quantization-aware LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf served through the b10622 sm_89 build, prompts rendered by LiquidAI/LFM2.5-1.2B-Instruct.",
+   "note": "Two changes from the lost launch. Pinned to aws, the first entry in the provider note's L4 row (note updated 2026-08-23T22:48Z), on the same L4:1 card B1 ran on, so the note's comparison exception does not apply and the host image is the only difference greedy decoding cannot see. And all five item-count overrides are passed explicitly: profile is a label in s5-eval/main.py:327-338, and the lost launch ran with limit_per_component at the task default of 40 against B1's 6,466 while recording profile: full."
+  },
+  {
+   "id": "s5.3-tooldata-attempt2",
+   "jobId": "f11afe02-ad68-4b93-9e0f-a8c7d4bf8bdc",
+   "experiment": "tidepool",
+   "substage": "s5.3",
+   "task": "s5-tooldata",
+   "resources": "CPU only (8 vCPU / 48 GB / 100 GB disk, gcp)",
+   "accelerators": null,
+   "status": "RUNNING",
+   "durationHours": null,
+   "spend": 0.0,
+   "estimateHours": 0.0,
+   "recordedAt": "2026-08-25T16:40:00Z",
+   "description": "s5.3 guardrail supervision, attempt 2. Three fixes over attempt 1: the request-surface decontamination rule runs over the probe questions rather than the system contract, with a boilerplate df filter and a new exact check on the values the probes forbid; the no-fabrication test matches whole token runs and only identifying values; and mode assignment falls through the rotation when a transform does not apply, so the 494 sources whose payloads echo no call argument get a different defect rather than being discarded.",
+   "note": "No GPU and no charge. A 23-check fixture over the real probe bank covers every fix, and the corrected decontamination rule was measured against the held-out split before requeueing: 0 of 156 candidate rows flagged on question overlap, 13 flagged by the two tighter nets."
   }
  ],
- "total_spent": 3.786
+ "total_spent": 3.871
 }

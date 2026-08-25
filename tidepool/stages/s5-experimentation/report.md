@@ -6,8 +6,10 @@ from is built, verified against ground truth and smoked end to end. **The refere
 complete at full item counts on all four components**, and it reads below the competitor on tool
 calling and at the floor on the guardrail axis. The competitor row that carries the operative
 tool-calling threshold is running, the **4-bit serving path is built,
-verified and priced**, the first 4-bit row is running on it, and the guardrail supervision the
-corpus measurement forced is generating on a CPU box beside them._
+verified and priced**, and the guardrail supervision the corpus measurement forced has had its
+first run fail loudly and its causes fixed. The first 4-bit row lost a launch to a cloud that
+provisioned a machine and ran nothing, and is relaunched; the guardrail generator failed six of
+its own gates, wrote nothing, and is requeued after two real fixes._
 
 ## Headline
 
@@ -27,7 +29,15 @@ the fifth attempt and 51% under its estimate: `llama.cpp` b10622 compiled for th
 architecture in 1,039 seconds, the binaries are in shared storage, the runtime enumerates the card,
 and it served the vendor's quantization-aware 4-bit build at **196 generated tokens per second over
 8 concurrent slots** with two identical requests returning identical output. A full 4-bit pass is
-priced at 1.71 hours from that measurement, and the first of the three 4-bit rows is running on it.
+priced at 1.71 hours from that measurement. Two runs since then came back empty and both told us
+something. The first 4-bit row provisioned a machine that never executed the command, so it is
+relaunched on the cloud the provider note names first for this card; reading its job record also
+caught that the recorded queue commands for all three 4-bit rows would have run 40 items per
+component while labelling themselves full passes. And the guardrail data generator ran to
+completion, wrote nothing, and failed six of nine gates: its contamination filter discarded 100%
+of rows because the probe preamble was deliberately written to match the corpus's formatting, and
+its no-fabrication check was matching single digits inside prose. Both are fixed against measured
+held-out data and requeued.
 Alongside them, on a CPU box that holds no accelerator slot, the guardrail training set is
 generating: defective tool returns built by the vendored probe transforms, paired one-for-one with
 their own intact counterparts, with two defect kinds held out of training and the taught phrasings
@@ -1148,3 +1158,111 @@ follow, and editing an evaluation harness in the middle of a baseline matrix is 
 `B1` scored by one set of graders and `B5` by another. The patch waits for `s5.2` to close, at
 which point all six baseline rows share identical graders and the arm is added once, before
 `s5.3`'s arms are scored.
+
+- 2026-08-25 · mirror · Pushed to `github.com/jamesnavinhill/liquid-primus` under `tidepool/`,
+  commit `994e9c0`: the whole `s5-tooldata` job (the generator, the corpus-adapted defect
+  taxonomy, the split target pools and its config), the amended stop/go gate in `plan.md`, this
+  stage's record with the build's verification table, the corrected ledger and the task list. The
+  three `s5-sft-l40s` source files, which earlier mirror commits had missed, went with it.
+
+## The guardrail generator failed six of its own gates, and both causes were real (s5.3)
+
+`a42a6c21` ran the tool-data generator end to end in six minutes, wrote no training rows, and
+failed six of its nine gates. The gates are the point: a version of this that had quietly
+emitted two thousand plausible rows would have gone into the sweep and surfaced as an
+unexplained result at `s6`. Two bugs, both in the safety machinery rather than the generation.
+
+**Every row was thrown away as contaminated.** `decontamination: kept 0 of 2166,
+{"request_gram_collision": 2166}`. A rule that fires on 100% of candidates is measuring
+something other than contamination. It was: the request surface is the system contract plus the
+user turns, and the probe set's system preamble was written at `s4` *to match the corpus's own
+rendering convention*, so that the probes would sit in distribution. The colliding 13-gram,
+recovered by re-running the rule locally against the held-out split, is
+`a function calling assistant you are given a set of tools inside tools` — the preamble itself,
+carried by 270 of the 434 probe items and by every corpus row that renders a tool call. The
+rule read a deliberate match as leakage.
+
+What identifies a probe item is its question, so the request rule now runs over the user turns
+alone, and drops any gram carried by more than half the probe items. Measured over the 156
+held-out rows that carry a tool return:
+
+| | rows flagged | of 156 |
+| --- | ---: | ---: |
+| old rule (system + user, any shared gram) | 156 | 100.0% |
+| new rule (questions only, boilerplate dropped) | 0 | 0.0% |
+| whole-row overlap fraction over 0.30 | 0 | 0.0% |
+| carries a value a probe forbids an answer to quote | 13 | 8.3% |
+
+Provenance, because the table matters: those four counts were measured in the orchestration
+sandbox against a downloaded copy of the held-out split, as a diagnosis of a failing rule. They
+carry no job id and none of them is a citable result. The citable version is `f11afe02`'s own
+decontamination counters over the training split, and if they disagree with this table the job
+is right. What the local measurement was for was deciding whether to requeue at all.
+
+Zero on the question rule is the correct answer, not a weakened one: no held-out corpus row
+asks a probe's hand-written question. The payload and the schema are still covered twice over.
+The overlap fraction runs to 0.15 at its worst against a 0.30 limit, so the fraction net has
+room to catch a near-duplicate without firing on shared boilerplate. And a new exact check on
+the 22 values the probes forbid an answer to quote drops 13 rows that genuinely echo one. The
+df filter removed nothing on this data (no gram reaches df 217); it stays as a cheap guard, and
+the fix that mattered was dropping the system turn.
+
+**63% of targets were recorded as quoting a value the broken response no longer carries.**
+`target_leaked_value: 1371` of 2,166, and the gate failed on any count at all. The check
+derives its forbidden list from the intact payload's leaves and tests each as a case-folded
+substring of the target text. Two things were wrong with that. Small values are not evidence:
+a leaf `0` or `1` or `ok` says nothing about whether a model read the payload, and testing `0`
+as a substring of English matches the array index in *"the value at result.0.value"*. And the
+test was a substring rather than a token match, so `ok` matched `broken`. The fix filters the
+forbidden list to identifying values (four characters of mixed content, or three digits) and
+matches on whole token runs under the same normalization the gram hashing uses. The
+`silently_truncated` wording no longer quotes the probe fixture's *1 of 47* either, which was
+factually wrong about a corpus payload as well as colliding.
+
+The gate itself was also wrong, in a smaller way. Leaking rows are *dropped*, so the written
+set is clean whatever the count, and failing the run on any count at all confuses a coincidence
+with a defect. It now fails above a 10% rate, which is what a template systematically
+interpolating payload values looks like, and a separate assertion checks that no surviving
+target quotes a forbidden value. Over all 210 scenario × mode × depth cells of the probe bank,
+that assertion holds at zero.
+
+**One more finding, not a bug.** `skipped_wrong_entity: 494` against 83 kept: a response is
+only detectably about the wrong entity when it echoes something the call asked for, and 86% of
+corpus tool returns echo nothing. Because the mode was assigned by hash *before* the transform
+was attempted, those 494 sources were discarded rather than given a different defect. Mode
+assignment now walks the rotation from the hashed starting point, so a source that cannot carry
+`wrong_entity` carries the next mode that applies. On a 210-source fixture whose payloads echo
+no argument at all, every source now gets a mode and six families are represented.
+
+A 23-check fixture over the real probe bank covers all of it: the length rule, the token-run
+matcher, the forbidden-list filter, the old and new request rules against a corpus-shaped row,
+the rotation, and the zero-leak assertion. Requeued as `f11afe02`.
+
+### What the corpus can actually supply
+
+Worth recording before the sweep is sized. The harvest found 5,734 tool-result turns in
+494,341 training rows, of which 4,031 carry a JSON object body with a quotable headline value
+and a real assistant reply. At one defective row and one clean counterpart per source, the
+ceiling is about 4,000 pairs, not the 24,000 the parameter allows. Two corpora supply them,
+not the three that carry tool turns. If 4,000 pairs proves too thin, the next source is the
+validation split, which is a decision for the sweep and not for the generator.
+
+## B2 provisioned a machine and ran nothing, and the queue commands under-ran the counts (s5.2)
+
+Reported as running in the previous note; it was not. `efa9719d` came back `COMPLETE` with
+`progress: 0`, no artifacts and no logs, after five minutes and six seconds, with
+`provider_empty_jobs_polls: 15` in its job record. The cluster started and the remote command
+never executed. The run log already carries the same signature twice, on 4-bit build attempts
+2 and 3, both on gcp. Relaunched as `c4091ac9`, pinned to aws — the first entry in the provider
+note's L4 row (note updated 2026-08-23), on the same `L4:1` card B1 ran on, so the note's
+comparison exception does not apply.
+
+Reading that job record turned up a second problem, which would have been the more expensive
+one. The queue commands written into `runs/s5.2-baselines.md` for B2, B3, B5 and the bf16
+runtime reference passed `-p profile=full` and no limit overrides. In `s5-eval/main.py:327-338`
+`profile` is a label written into the summary; the counts come from `limit_per_component` and
+the four per-component overrides, and the task default is 40 with every override at `-1`. All
+four rows would have run 40 items per component against B1's 6,466 and reported themselves as
+full passes. The relaunch passes all five counts explicitly, the recorded commands are
+corrected, and the run log now says why in the place someone would copy them from. B1's own
+full pass used `-p limit_per_component=0`, so nothing already recorded is affected.

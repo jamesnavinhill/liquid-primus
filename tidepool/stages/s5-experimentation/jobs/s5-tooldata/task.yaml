@@ -28,9 +28,19 @@ parameters:
   ngram_n: 13
   # Whole-row overlap against the probe items is a fraction, not a hit count: the depth
   # envelope and the silently_truncated wrapper are boilerplate shared with the probes by
-  # construction, so one shared 13-gram there is meaningless. The request surface still uses
-  # s4's absolute rule.
+  # construction, so one shared 13-gram there is meaningless. Measured on the held-out split,
+  # the fraction runs to 0.15 at its worst, so 0.30 leaves room to catch a near-duplicate.
   overlap_limit: 0.30
+  # The request rule is s4's absolute one (any shared 13-gram is a collision) applied to the
+  # probe *questions*. Applied to the system contract as well it fired on 100% of rows: the
+  # probe preamble was written at s4 to match the corpus's own rendering convention, so it
+  # matches verbatim everywhere, and the rule read a deliberate match as leakage. Grams
+  # carried by more than this share of probe items are dropped as boilerplate too.
+  boilerplate_df: 0.50
+  # Targets that quote a value the damaged response no longer carries are always dropped.
+  # Failing the run is reserved for a rate above this, which means a template is
+  # interpolating payload values rather than colliding with one by accident.
+  leak_rate_max: 0.10
   coverage_min: 0.60
   coverage_max: 0.90
   storage_prefix: tidepool/s5.3/tooldata

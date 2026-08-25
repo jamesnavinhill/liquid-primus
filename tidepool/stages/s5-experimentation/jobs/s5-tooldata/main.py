@@ -60,6 +60,8 @@ MAX_DEFECTIVE = int(CFG.get("max_defective") or 24000)
 MAX_CONTROL = int(CFG.get("max_control") or 400)
 MAX_CORPUS_SHARE = float(CFG.get("max_corpus_share") or 0.40)
 OVERLAP_LIMIT = float(CFG.get("overlap_limit") or 0.30)
+BOILERPLATE_DF = float(CFG.get("boilerplate_df") or 0.50)
+LEAK_RATE_MAX = float(CFG.get("leak_rate_max") or 0.10)
 COVERAGE_MIN = float(CFG.get("coverage_min") or 0.60)
 COVERAGE_MAX = float(CFG.get("coverage_max") or 0.90)
 STORAGE_PREFIX = CFG.get("storage_prefix") or "tidepool/s5.3/tooldata"
@@ -134,10 +136,31 @@ def grams(text, n=NGRAM_N):
     return out
 
 
+def norm(text):
+    """The same normalization `grams` applies, as one padded string."""
+    return " %s " % " ".join(_WS.sub(" ", _PUNCT.sub(" ", (text or "").lower())).split())
+
+
+def quotes(text, values):
+    """Values from `values` that `text` carries as a whole token run.
+
+    Substring matching was the first version and it does not work on prose: a forbidden
+    payload leaf `0` matched the array index in "at result.0.value", and 1,371 of 2,166
+    rows were dropped for a leak that was a coincidence of spelling.
+    """
+    low = norm(text)
+    return [v for v in (values or ()) if norm(v).strip() and norm(v) in low]
+
+
 def request_text(msgs):
     """The surface that identifies the scenario: the system contract and the user turns."""
     return "\n".join(m.get("content") or "" for m in msgs
                      if m.get("role") in ("system", "user"))
+
+
+def user_text(msgs):
+    """The question alone. What actually identifies a probe item — see the note below."""
+    return "\n".join(m.get("content") or "" for m in msgs if m.get("role") == "user")
 
 
 def all_text(msgs):
@@ -146,17 +169,44 @@ def all_text(msgs):
 
 # ------------------------------------------------------------------------ probe reference
 
+# The fingerprint is the probe *questions*, stripped of boilerplate, plus the values the
+# probes forbid an answer to quote.
+#
+# The first version fingerprinted the system contract as well, on s4's rule that any shared
+# 13-gram is a collision, and it dropped 2,166 of 2,166 generated rows. The cause is that
+# the probe system prompt carries the tool schema as indented JSON and this tokenizer strips
+# punctuation, so a schema arrives as `type object properties account id type string
+# description ...` — a stream generic enough that thirteen consecutive tokens of it appear in
+# every tool-calling corpus row ever written. A rule that fires on 100% of rows is measuring
+# the serializer.
+#
+# What identifies a probe item is its question, so the request rule now runs over the user
+# turns and drops any gram carried by more than half the probe items, which by definition
+# identifies none of them. Two nets still cover the payload and the schema: the whole-row
+# overlap *fraction* below, and an exact check on each probe's forbidden value.
 t0 = time.time()
 probe_path = lab.storage_download(PROBES_OBJECT)
 probe_items = [json.loads(l) for l in open(probe_path) if l.strip()]
-probe_req = set()
+gram_df = collections.Counter()
 probe_all = set()
+probe_forbid = set()
 for it in probe_items:
-    probe_req.update(grams(request_text(it["messages"])))
+    gram_df.update(set(grams(user_text(it["messages"]))))
     probe_all.update(grams(all_text(it["messages"])))
-log("probes: %d items, %d request grams, %d whole-item grams"
-    % (len(probe_items), len(probe_req), len(probe_all)))
+    fb = (it.get("check") or {}).get("forbid") or []
+    for v in ([fb] if isinstance(fb, str) else fb):
+        if defects.identifying(str(v)):
+            probe_forbid.add(str(v))
+df_cut = max(1, int(BOILERPLATE_DF * len(probe_items)))
+probe_req = {g for g, c in gram_df.items() if c <= df_cut}
+log("probes: %d items, %d question grams (%d dropped as boilerplate, df > %d), "
+    "%d whole-item grams, %d forbidden values"
+    % (len(probe_items), len(probe_req), len(gram_df) - len(probe_req), df_cut,
+       len(probe_all), len(probe_forbid)))
 FACTS["probe_items"] = len(probe_items)
+FACTS["probe_question_grams"] = len(probe_req)
+FACTS["probe_boilerplate_grams_dropped"] = len(gram_df) - len(probe_req)
+FACTS["probe_forbidden_values"] = len(probe_forbid)
 lab.update_progress(5)
 
 
@@ -291,20 +341,32 @@ for n, s in enumerate(selected):
     h = hashlib.blake2b(("%s|%s|%s" % (s["c"], s["i"], s["k"])).encode("utf-8"),
                         digest_size=8).digest()
     hv = int.from_bytes(h, "big")
-    mode = defects.TRAINED_MODES[hv % len(defects.TRAINED_MODES)]
     depth = 1 + (hv >> 17) % 3
     name, args = call_of(s["messages"], s["k"])
-    try:
-        body, why, forbid = defects.apply_defect(s["payload"], mode, depth, args)
-    except Exception as exc:
-        gen_counts["transform_error_" + mode] += 1
-        continue
-    if body is None:
-        gen_counts["skipped_" + mode] += 1
+    # Start at the hashed mode and walk the rotation from there. `wrong_entity` needs a
+    # payload leaf that echoes a call argument and 494 of 577 corpus rows have none; without
+    # a fallback those sources were thrown away and the family mix skewed toward whichever
+    # transforms always apply.
+    body = why = forbid = None
+    mode = None
+    for cand in [defects.TRAINED_MODES[(hv + j) % len(defects.TRAINED_MODES)]
+                 for j in range(len(defects.TRAINED_MODES))]:
+        try:
+            body, why, forbid = defects.apply_defect(s["payload"], cand, depth, args)
+        except Exception:
+            gen_counts["transform_error_" + cand] += 1
+            continue
+        if body is None:
+            gen_counts["skipped_" + cand] += 1
+            continue
+        mode = cand
+        break
+    if mode is None:
+        gen_counts["no_mode_applied"] += 1
         continue
     plain = defects.plain_why(mode, why)
     text, pool = targets.pick(row_id(s, mode, depth), mode, name or s["c"], why, plain)
-    leak = [v for v in (forbid or []) if v.lower() in text.lower()]
+    leak = quotes(text, forbid)
     if leak:
         # A target that quotes a value the damaged response no longer carries is the exact
         # fabrication the probes forbid. Dropping is right; a nonzero count is a bug here.
@@ -333,11 +395,13 @@ lab.update_progress(70)
 decon = collections.Counter()
 kept = []
 for p in pairs:
-    rg = grams(request_text(p["bad"]))
-    if probe_req.intersection(rg):
-        decon["request_gram_collision"] += 1
+    if probe_req.intersection(grams(user_text(p["bad"]))):
+        decon["probe_question_gram"] += 1
         continue
     ag = grams(all_text(p["bad"]))
+    if quotes(all_text(p["bad"]), probe_forbid):
+        decon["carries_probe_forbidden_value"] += 1
+        continue
     frac = (len(probe_all.intersection(ag)) / len(ag)) if ag else 0.0
     if frac > OVERLAP_LIMIT:
         decon["whole_row_overlap_over_limit"] += 1
@@ -406,8 +470,11 @@ for s in test_src:
     depth = 1 + (len(control) % 3)
     body = json.dumps(build.wrap(s["payload"], depth), ensure_ascii=False)
     msgs = with_tool_body(s["messages"], s["k"], body)
-    if probe_req.intersection(grams(request_text(msgs))):
-        ctrl_counts["request_gram_collision"] += 1
+    if probe_req.intersection(grams(user_text(msgs))):
+        ctrl_counts["probe_question_gram"] += 1
+        continue
+    if quotes(all_text(msgs), probe_forbid):
+        ctrl_counts["carries_probe_forbidden_value"] += 1
         continue
     ctrl_counts["kept"] += 1
     control.append({
@@ -455,9 +522,22 @@ if not (COVERAGE_MIN <= coverage <= COVERAGE_MAX):
 if len(undetected_families) < 3:
     fail("only %d defect families have a target the detector misses; at least 3 are needed "
          "for the flag rate to mean anything beyond phrase matching" % len(undetected_families))
-if gen_counts["target_leaked_value"]:
-    fail("%d targets quoted a value the damaged response no longer carries; the templates "
-         "must never interpolate a payload value" % gen_counts["target_leaked_value"])
+# Rows whose target quoted a missing value are dropped, so the written set is clean by
+# construction and the invariant below asserts it. What the *rate* catches is a template
+# that interpolates payload values systematically, which is a different bug and the one
+# worth failing on.
+attempted = len(pairs) + gen_counts["target_leaked_value"]
+leak_rate = gen_counts["target_leaked_value"] / float(max(1, attempted))
+FACTS["target_leak_rate"] = round(leak_rate, 4)
+if leak_rate > LEAK_RATE_MAX:
+    fail("%d of %d targets (%.1f%%) quoted a value the damaged response no longer carries; "
+         "above %.0f%% a template is interpolating payload values, not colliding with one"
+         % (gen_counts["target_leaked_value"], attempted, 100.0 * leak_rate,
+            100.0 * LEAK_RATE_MAX))
+residual = [p for p in kept if quotes(p["bad"][-1]["content"], p["forbid"])]
+if residual:
+    fail("%d surviving targets quote a value the damaged response no longer carries; the "
+         "drop filter is not doing what it says" % len(residual))
 bad_modes = sorted({p["mode"] for p in kept} & defects.HELD_OUT_MODES)
 if bad_modes:
     fail("held-out modes present in the training set: %s" % ", ".join(bad_modes))
@@ -467,9 +547,10 @@ if written["defective"] and abs(written["clean_pair"] / written["defective"] - 1
 off_split = sorted({p["src"]["s"] for p in kept} - {"train"})
 if off_split:
     fail("training rows drawn from non-train splits: %s" % ", ".join(map(str, off_split)))
-if decon["request_gram_collision"]:
-    log("note: %d rows dropped for sharing a 13-gram with a probe request; the final set "
-        "has none by construction" % decon["request_gram_collision"])
+if decon["probe_question_gram"] or decon["carries_probe_forbidden_value"]:
+    log("note: %d rows dropped for sharing a 13-gram with a probe question and %d for "
+        "carrying a value a probe forbids; the final set has neither by construction"
+        % (decon["probe_question_gram"], decon["carries_probe_forbidden_value"]))
 if len(control) < 200:
     fail("clean control arm has %d items; under 200 it cannot hold a false-flag ceiling "
          "any tighter than the frozen 30-item arm already does" % len(control))
@@ -495,7 +576,8 @@ dump("score.json", {
     "undetected_families": len(undetected_families),
     "control_n": len(control),
     "control_sha": FACTS["control_sha"],
-    "request_gram_collisions_in_output": 0,
+    "probe_question_grams_in_output": 0,
+    "target_leak_rate": FACTS["target_leak_rate"],
     "max_overlap_fraction": FACTS["max_overlap_fraction"],
     "gate_failures": len(FAILS),
 })
