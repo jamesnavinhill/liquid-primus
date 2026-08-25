@@ -151,9 +151,26 @@ Hyperparameters are taken from the closest matched precedents rather than invent
 r16 / α32 / LR 1e-4 / batch 48–64 / 3 epochs (`2409.00920v2`, `2508.12685v3`), entropy
 weighting over top-20 logits (`2601.02151v1`).
 
-**Stop/go into D:** the best of C1–C6 must gain ≥ 1.5 points on BFCLv3 over B1 with no
-guardrail worse than −3.0. If not, H1 is falsified and the project reports that rather than
-proceeding to spend on preference optimization.
+**Stop/go into D:** the best of C1–C6 must gain ≥ 1.5 points on BFCLv3 over B1, hold every
+guardrail no worse than −3.0 against B1, **reach a probe flag rate of ≥ 0.35 on malformed tool
+returns, and keep the false-flag rate on clean returns ≤ 0.15**. If not, H1 is falsified and the
+project reports that rather than proceeding to spend on preference optimization.
+
+_Amended at `s5.2` (2026-08-25), autonomously, and the reason is measurement rather than
+preference._ As first written the gate had two holes. The guardrail clause reads as a regression
+guard, and B1's measured flag rate of 0.0074 leaves nothing to regress from: an arm that learns
+nothing about broken tool returns passes a −3.0 floor by staying at the floor. And the criterion
+the project actually pre-registered in `overview.md`, a flag rate of 0.70 with false flags under
+0.15, was tested nowhere on the path into D. The two new clauses close both. The flag-rate bar is
+set at **0.35 rather than 0.70** deliberately: 0.70 is the project's success criterion at `s6` on
+the final checkpoint, and requiring it of a screening-profile supervised arm would kill the
+preference rung for failing to already be the finished result. Half the distance from a floor of
+0.0074 is a real signal that the axis moved and is reachable by supervision alone. The false-flag
+ceiling is **not** relaxed, because the cheap way to a high flag rate is to complain about
+everything and the ceiling is the only thing forbidding it; it is carried at the pre-registered
+0.15 and is scored on the enlarged `clean_corpus` control arm, since 30 clean items cannot bound a
+rate at 0.15 to any useful precision. Both numbers are fixed here, before any arm is trained on
+the new supervision, which is what keeps them pre-registered rather than fitted.
 
 ### D — Preference rung (`s5.3`), H3
 

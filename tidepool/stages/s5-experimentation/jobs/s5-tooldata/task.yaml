@@ -1,0 +1,38 @@
+name: s5-tooldata
+run: python main.py
+setup: |
+  pip install -q --upgrade "transformers>=4.45" numpy
+resources:
+  cpus: 8
+  memory: 48
+  disk_space: 100
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  HF_HUB_ENABLE_HF_TRANSFER: "0"
+  TOKENIZERS_PARALLELISM: "true"
+parameters:
+  train_object: tidepool/s4.4/train.jsonl.gz
+  test_object: tidepool/s4.4/test.jsonl.gz
+  probes_object: tidepool/s4.4/probes/probes.jsonl
+  tokenizer_id: LiquidAI/LFM2.5-1.2B-Instruct
+  # 24,000 defective rows paired 1:1 with their own intact counterparts. Sized against the
+  # 5,221 corpus rows that carry a tool-result turn at all: at one source per row, 24,000 is
+  # above the ceiling, so the run will report how many sources actually exist and take them
+  # all rather than silently truncating.
+  max_defective: 24000
+  max_control: 400
+  # No single corpus may supply more than this share of the sources. Only three corpora carry
+  # tool-result turns (hermes_glaive 3,748, hermes_fc 772, toolace 701), so the cap is what
+  # stops the guardrail being learned in hermes_glaive's response dialect alone.
+  max_corpus_share: 0.40
+  ngram_n: 13
+  # Whole-row overlap against the probe items is a fraction, not a hit count: the depth
+  # envelope and the silently_truncated wrapper are boilerplate shared with the probes by
+  # construction, so one shared 13-gram there is meaningless. The request surface still uses
+  # s4's absolute rule.
+  overlap_limit: 0.30
+  coverage_min: 0.60
+  coverage_max: 0.90
+  storage_prefix: tidepool/s5.3/tooldata
+  seed: 20260825
+minutes_requested: 90

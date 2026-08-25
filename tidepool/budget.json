@@ -273,14 +273,46 @@
    "task": "s5-llama-build",
    "resources": "L4:1 (8 vCPU / 32 GB / 200 GB disk, aws)",
    "accelerators": "L4:1",
-   "status": "RUNNING",
-   "durationHours": null,
-   "spend": null,
+   "status": "COMPLETE",
+   "durationHours": 0.369,
+   "spend": 0.369,
    "estimateHours": 0.75,
    "recordedAt": "2026-08-25T15:22:00Z",
    "description": "s5.2 4-bit serving path, attempt 5, same aws L4 source as attempt 4. Three changes, all progress-bearing rather than a repeat: the binaries are packed, saved and pushed to shared storage immediately after the compile so a failed verification cannot discard 17 minutes of compiling; the CUDA check is backend enumeration plus driver, linker and CMake-cache evidence in place of a read of the running server's log; and a 150 generated-tok/s floor over 8 slots is asserted after the batched measurement, which is what actually protects the hours this job quotes for a full 4-bit pass. Unblocks B2, B3, B5 and the F16 runtime reference.",
-   "note": "Estimate 0.75 h: 0.40 h of setup and compile as measured on attempt 4, plus the verification, pricing and packing steps it never reached."
+   "note": "Estimate 0.75 h: 0.40 h of setup and compile as measured on attempt 4, plus the verification, pricing and packing steps it never reached. Actual 0.369 h, 51% under the line: the compile came in at 1039 s and the verification, pricing and packing steps together cost under three minutes. Every one of the three changes held."
+  },
+  {
+   "id": "s5.2-B2-q4-vendor-qad",
+   "jobId": "efa9719d-5b74-4742-b99f-d1503a878770",
+   "experiment": "tidepool",
+   "substage": "s5.2",
+   "task": "s5-eval",
+   "resources": "L4:1 (gcp, unpinned)",
+   "accelerators": "L4:1",
+   "status": "RUNNING",
+   "durationHours": null,
+   "spend": null,
+   "estimateHours": 1.71,
+   "recordedAt": "2026-08-25T16:05:00Z",
+   "description": "s5.2 B2, the first 4-bit row: LiquidAI's quantization-aware LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf served through the b10622 sm_89 build, prompts rendered by LiquidAI/LFM2.5-1.2B-Instruct, full item counts. The matched half of the B2-against-B3 pair the plan asked for, and the row that decides whether the project's headline promise (a 4-bit build holds the full-precision bar) survives contact with a measurement.",
+   "note": "Estimate 1.71 h, quoted by the build job itself from its own 8-slot measurement of 196 generated tok/s against B1's scored token count, so it is a measured price rather than a guess. L4 rather than a larger card because the row is compared directly against B1, which ran on an L4: the provider steering note (updated 2026-08-23T22:48Z) makes card substitution the exception when a number will be compared against one already measured on specific hardware, and holding the card fixed is what keeps the 4-bit-versus-full-precision gap attributable to the quantization."
+  },
+  {
+   "id": "s5.3-tooldata",
+   "jobId": "a42a6c21-19b0-42d3-a289-80d4418574a6",
+   "experiment": "tidepool",
+   "substage": "s5.3",
+   "task": "s5-tooldata",
+   "resources": "CPU only (8 vCPU / 48 GB / 100 GB disk, gcp)",
+   "accelerators": null,
+   "status": "RUNNING",
+   "durationHours": null,
+   "spend": 0.0,
+   "estimateHours": 0.0,
+   "recordedAt": "2026-08-25T16:05:00Z",
+   "description": "s5.3 guardrail supervision: a decontaminated training set for unreliable tool returns, defective rows paired 1:1 with their own intact counterparts, plus an enlarged clean_corpus control arm drawn from the held-out split. The data component the s5.2 corpus measurement forced.",
+   "note": "No GPU and no charge against the ledger. Holds no accelerator slot, so it runs alongside B4 and B2 rather than behind them."
   }
  ],
- "total_spent": 3.417
+ "total_spent": 3.786
 }

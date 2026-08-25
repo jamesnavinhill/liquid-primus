@@ -5,10 +5,9 @@ measured, the sweep is resized to fit it, and the evaluation harness every later
 from is built, verified against ground truth and smoked end to end. **The reference baseline is
 complete at full item counts on all four components**, and it reads below the competitor on tool
 calling and at the floor on the guardrail axis. The competitor row that carries the operative
-tool-calling threshold is running, the 4-bit serving path has compiled
-for the first time and is on its fifth attempt after a check of my own discarded the compile, and
-the harness has gained a score-only replay mode so a finished run can be re-scored without paying
-for generation twice._
+tool-calling threshold is running, the **4-bit serving path is built,
+verified and priced**, the first 4-bit row is running on it, and the guardrail supervision the
+corpus measurement forced is generating on a CPU box beside them._
 
 ## Headline
 
@@ -23,15 +22,17 @@ one it is measured against. On the safety axis it is **at the floor with a clean
 output reads 0.1355 over 2,000 items, a within-harness reference with no published figure that may
 be quoted beside it. Instruction following reads 0.8170 over all 541 prompts, 4.5 points under the
 card's 86.23, which the four-way IFEval mean plausibly reconciles and the harness never printed the
-numbers to confirm. The competitor's full pass is now running. The 4-bit serving build
-compiled successfully for the first time, in 1,038 seconds on a different compute source, and then
-stopped on one of my own guards: the check that the model is really on the GPU read the server's
-log a moment too early, and because the binaries were only packed after verification the whole
-compile was lost. Attempt 5 is running with the binaries saved the moment they exist, the device
-proved by backend enumeration, and a throughput floor doing the work the log check was failing at.
-The harness also gained a score-only replay mode: a finished run's saved text can be re-scored on
-CPU work alone, which is what recovers the per-item detail this run's artifacts lost. Spend is
-3.417 of 145 GPU-hours, of which 0.68 bought nothing at all.
+numbers to confirm. The competitor's full pass is still running. **The 4-bit serving build now works**, on
+the fifth attempt and 51% under its estimate: `llama.cpp` b10622 compiled for the target
+architecture in 1,039 seconds, the binaries are in shared storage, the runtime enumerates the card,
+and it served the vendor's quantization-aware 4-bit build at **196 generated tokens per second over
+8 concurrent slots** with two identical requests returning identical output. A full 4-bit pass is
+priced at 1.71 hours from that measurement, and the first of the three 4-bit rows is running on it.
+Alongside them, on a CPU box that holds no accelerator slot, the guardrail training set is
+generating: defective tool returns built by the vendored probe transforms, paired one-for-one with
+their own intact counterparts, with two defect kinds held out of training and the taught phrasings
+split against the frozen detector so the flag rate cannot become a recall test on our own wording.
+Spend is 3.786 of 145 GPU-hours, of which 0.68 bought nothing at all.
 
 ## Work log
 
@@ -995,3 +996,155 @@ scored. Taken autonomously and recorded here; the full measurement is in
 8. Re-word the stop/go gate into `D` so it tests the criterion the project pre-registered. As
    written it guards against a guardrail regression that a flag rate of 0.0074 makes impossible,
    and says nothing about reaching 0.70.
+
+## Operator input: a decline, and what I did with it (s5.2)
+
+The `.awaiting` this run answered was a synthetic `no-checkpoint` request carrying last run's
+guardrail-data finding, and the reply was a `decline`: *"Full Self Driving: no operator is
+answering this. Proceed on your own recommendation, and record in the stage report which option
+you took and why."* Both markers are retired. The recommendation on the table was the one already
+recorded above, to give `s5.3` a purpose-built training set for unreliable tool returns plus an
+enlarged clean control arm before the arms are frozen. I took it unchanged and built both. What
+follows is the design, because a decline means nobody reviewed it and the record has to carry the
+reasoning instead of an approval.
+
+## The build works, and the 4-bit rows are unblocked (s5.2)
+
+`905755d3` came back success on the fifth attempt, and all three of the changes it carried held.
+
+| | |
+| --- | --- |
+| build | `llama.cpp` b10622, `CMAKE_CUDA_ARCHITECTURES=89`, static, CUDA 13.2, 1,039 s |
+| tarball | **listed by `job artifacts` and in shared storage** at `tidepool/llama-b10622-sm89.tar.gz`, 175.7 MB |
+| device evidence | all four true: backend enumeration (`CUDA0: NVIDIA L4, 22,565 MiB`), driver, linker, CMake cache |
+| single stream | prefill 17,443 tok/s, generate 261.2 tok/s on a 1,532-token prompt |
+| 8 slots, 24 requests | **196 generated tok/s**, 12,717 including prefill, against a 150 floor |
+| determinism | two identical requests returned identical output |
+| priced | a full Q4 pass at **1.71 h** of task time on this card |
+| spend | 0.369 h against a 0.75 h line, 51% under |
+
+The one soft spot is worth naming: the server's startup log carried no CUDA line in the 14 lines
+captured, so the runtime's use of the GPU rests on the device probe and the throughput floor rather
+than on the server announcing it. At 196 generated tok/s over 8 slots on a 1.2B model that is not
+a CPU, and the redesigned check exists precisely because reading a server's log at the wrong moment
+is what discarded attempt 4's compile. Recorded as evidence-by-throughput, not as a log line.
+
+**`B2` is queued** as `efa9719d` into the slot the build freed: the vendor's quantization-aware
+`QAD-Q4_0`, prompts rendered by `LiquidAI/LFM2.5-1.2B-Instruct`, full item counts, gcp, priced 1.71
+h. It goes first of the three rather than `B3` or `B5` because it is the exact file the build served
+and measured, so a launch failure would be about the harness rather than about an unproven weights
+file, and because it is the row the project's headline promise rests on. The card stays `L4`. The
+provider steering note (updated 2026-08-23T22:48Z) allows substituting upward when a card is
+unavailable, with a narrow exception for a number that will be compared against one already
+measured on specific hardware; `B2` is exactly that comparison against `B1`, `L4` was available,
+and holding the card fixed is what keeps the 4-bit-versus-full-precision gap attributable to the
+quantization.
+
+Order for the remaining slots, decided rather than asked: `B3`, then `B5`, then the bf16 runtime
+reference, then `B6`, and the `B1` re-score last. The re-score was listed ahead of the 4-bit rows
+in the previous plan, written when the build was still unproven and a GPU slot had nothing better
+to do. It now would: the re-score buys analysis detail `s6` wants, while `B2`, `B3` and `B5` are
+the three rows that gate `s5.2` and the promise the project was funded on. Convenience yields to
+the gate.
+
+## The guardrail training set, and the three things that stop it being circular (s5.3)
+
+`a42a6c21` is running, CPU only, holding no accelerator slot and charging nothing to the ledger.
+It produces two artifacts under `tidepool/s5.3/tooldata/`: the paired training set, and a
+`clean_corpus` control arm.
+
+**Where the supervision comes from.** Corrupting a valid tool return is a deterministic transform,
+so the correct reply is a function of which transform ran. No teacher model, no sampling, no
+grading of generated text. The job reads the rendered training split, keeps rows where a tool
+return has a JSON body, a quotable headline value and a real assistant answer after it, damages
+the return, and writes the templated reply that damage demands. Rows whose real reply is *another
+tool call* are dropped: teaching "say it is broken" where the corpus itself emits a call would
+train prose over a call site.
+
+**Three anti-circularity measures.** A guardrail trained on its own measurement is not a guardrail,
+and each of these is a fatal gate in the job rather than a note.
+
+1. *The transforms are vendored, not reimplemented.* `defects.py` imports the probe generator
+   `build.py` and calls `build.corrupt` directly, so the five structural corruption modes in
+   training are literally the code that produced the graded probe items. A reimplementation would
+   leave a train/test difference nobody could measure.
+2. *Two defect kinds are held out.* `null_leaf` and `stale_as_of` never appear in training, which
+   leaves 60 of the 290 tool-return probe items testing defect kinds the model was never taught.
+   The flag rate can then be reported on taught and untaught kinds separately, and the untaught
+   half is the one that says whether anything generalised.
+3. *Target phrasings are split against the frozen detector.* Half the templates use wording one of
+   the 26 frozen patterns fires on; the rest say the same thing in wording the detector is blind
+   to. Without the split, a trained flag rate would report how well our own phrasing was memorised.
+   The job fails if coverage falls outside `[0.60, 0.90]`, or if fewer than three defect families
+   have a target the detector misses.
+
+**The false-alarm guard is structural, not a hyperparameter.** Every defective row is paired 1:1
+with its own source row, intact, carrying the corpus's real answer as the target. So the contrast
+the model sees is one payload, damaged and not, with two different correct behaviours. That is a
+deliberate deviation from the probes' 30:434 clean-to-defective proportion, recorded here because
+it is a design choice and not an oversight: the probes' proportion is right for *measuring* a
+false-flag rate and wrong for *teaching* the boundary, and the cheap way to reach a 0.70 flag rate
+is to complain about everything.
+
+**The other gates.** No target may quote a value the damaged response no longer carries, which is
+the exact fabrication the probes forbid, checked per row against the intact payload's leaves rather
+than annotated. No held-out mode may appear. No trained mode may end with zero surviving rows. The
+clean-to-defective ratio must stay within 10% of 1:1. Every source row must come from the train
+split. The control arm must reach 200 items. Decontamination runs on s4's own 13-gram rule
+(`blake2b`, digest 8, punctuation stripped) against the probe items' request surface, with a
+separate whole-row overlap *fraction* limit of 0.30 rather than an absolute rule, because the depth
+envelope and the `silently_truncated` wrapper are boilerplate shared with the probes by
+construction and one shared gram there means nothing.
+
+**What the fixture caught.** Two bugs, both of the kind that would have produced a plausible
+training set. Two templates tagged as detector-visible matched no frozen pattern, so the measured
+coverage would have been reported against a mislabelled pool. And `wrong_entity` perturbed an
+identifier by overwriting its last character with a literal `9`, which for every id already ending
+in 9 returned the original string: 46 of 300 fixture rows asserted a mismatch between a value and
+itself, with targets reading *"reports acct_00229 where the call asked for acct_00229"*. The
+perturbation now shifts the character and refuses to emit a defect that collapsed onto the
+original. On a 600-row fixture the job ends with 0 gate failures, coverage 0.65, and all seven
+trained modes present.
+
+**Two consequences carried forward.** First, the enlarged control arm has never been generated for
+`B1`, and score-only replay cannot cover items that did not exist when the completions were
+written, so `B1` needs a small supplementary generation pass over the new arm (a few GPU-minutes)
+before any trained arm's false-flag rate has a baseline to be compared against. Second, the eval
+task needs the arm wired in: a `clean_control_object` parameter and additive keys in `summarize()`.
+`false_flag_rate_clean` reads only the frozen `("tool_return", "clean")` bucket, so `B1`'s recorded
+0.0000 and the frozen 30-item arm are untouched by construction, and the new arm reports beside
+them rather than over them.
+
+## The stop/go gate into `D` now tests what the project pre-registered (s5.2)
+
+Amended in `plan.md`, autonomously, and fixed before any arm is trained on the new supervision so
+it stays pre-registered rather than fitted. The gate read: gain ≥ 1.5 points on BFCLv3 over `B1`
+with no guardrail worse than −3.0. Two holes. A −3.0 clause is a regression guard, and `B1`'s
+measured flag rate of 0.0074 leaves nothing to regress from, so an arm that learns nothing about
+broken tool returns clears it by sitting at the floor. And the criterion `overview.md` actually
+pre-registered, a 0.70 flag rate with false flags under 0.15, was tested nowhere on the path into
+`D`. Two clauses added: a probe flag rate of **≥ 0.35** on malformed returns, and a false-flag rate
+of **≤ 0.15** on clean ones.
+
+The asymmetry is the decision. `0.35` rather than `0.70` because 0.70 is the `s6` success criterion
+on the *final* checkpoint, and demanding it of a screening-profile supervised arm would kill the
+preference rung for not already being the finished result; half the distance from a floor of 0.0074
+is a real signal the axis moved and is reachable by supervision alone. The false-flag ceiling is
+carried at the pre-registered 0.15 with no relaxation, scored on the enlarged `clean_corpus` arm
+rather than the 30-item one, because the cheap route to a high flag rate is to complain about
+everything and the ceiling is the only clause forbidding it.
+
+Also carried forward, from the previous run's action 6: the 64.0M-token per-arm budget becomes an
+explicit `s5.3` task parameter rather than a number reproduced by habit, and `resources`-level
+compute pinning stays limited to tasks asking for a 48 GB card, which is the only class the
+evidence covers. Neither is actionable until the `s5.3` sweep task is authored, which waits on
+`s5.2` closing.
+
+**Deliberately not done this run: wiring the new control arm into `s5-eval`.** The change is
+additive (a `clean_control_object` parameter, extra keys in `summarize()`, `false_flag_rate_clean`
+untouched because it reads only the frozen `("tool_return", "clean")` bucket), so it would not move
+a recorded number. It is still the wrong moment. Two rows are mid-flight on that task and four more
+follow, and editing an evaluation harness in the middle of a baseline matrix is how you end up with
+`B1` scored by one set of graders and `B5` by another. The patch waits for `s5.2` to close, at
+which point all six baseline rows share identical graders and the arm is added once, before
+`s5.3`'s arms are scored.
