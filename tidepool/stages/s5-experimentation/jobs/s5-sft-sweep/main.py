@@ -82,7 +82,8 @@ if PACK_CHILD:
         an arm-specific prefix, which is safe to run concurrently."""
 
         _warned = set()
-        _must_raise = ("storage_upload", "storage_download", "get_config", "init")
+        _must_raise = ("storage_upload", "upload_storage", "storage_put",
+                       "storage_download", "get_config", "init")
 
         def __getattr__(self, name):
             if name in _SupervisedLab._must_raise:

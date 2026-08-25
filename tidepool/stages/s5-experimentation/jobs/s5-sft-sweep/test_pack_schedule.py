@@ -1,0 +1,204 @@
+"""End-to-end checks on the supervisor's scheduling, run here in about ten seconds.
+
+Everything else about packing is checked statically, but the part that decides *when* a child
+starts cannot be: it is a loop over live processes, and the failures it can have — an arm that
+never starts, an arm that starts before its input exists, a failed producer whose consumers
+run anyway on a stale file — all look like a normal exit code from the outside. The first pack
+to exercise this code would otherwise be a fourteen-hour job with four arms riding on it.
+
+So the supervisor is run for real, as a subprocess, against arm scripts that sleep for
+fractions of a second and a stand-in for the job API that records what it was asked to do.
+No GPU, no model, no network: the scheduling is the only thing under test, and it is the only
+thing that is not covered elsewhere.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+FAKE_LAB = '''
+import json, os, shutil
+
+class _Lab(object):
+    def __init__(self):
+        self.rec = os.environ["FAKE_LAB_RECORD"]
+    def _put(self, kind, **kw):
+        kw["kind"] = kind
+        with open(self.rec, "a") as fh:
+            fh.write(json.dumps(kw, default=str) + "\\n")
+    def init(self): self._put("init")
+    def get_config(self): return json.loads(os.environ["FAKE_LAB_CFG"])
+    def log(self, m): self._put("log", m=m)
+    def update_progress(self, p): self._put("progress", p=p)
+    def save_artifact(self, p): self._put("artifact", p=os.path.basename(p))
+    def storage_download(self, obj):
+        d = os.path.join(os.environ["FAKE_LAB_STORE"], obj.replace("/", "__"))
+        open(d, "w").write("corpus for " + obj)
+        return d
+    def storage_upload(self, path, obj):
+        shutil.copy(path, os.path.join(os.environ["FAKE_LAB_STORE"], obj.replace("/", "__")))
+        self._put("upload", obj=obj)
+    def finish(self, message=None, score=None): self._put("finish", message=message, score=score)
+    def error(self, message=None): self._put("error", message=message)
+
+lab = _Lab()
+'''
+
+# An arm: sleeps, optionally writes the file it promised, optionally fails. It also records
+# the shared-input map it was handed, which is how "did T2 see GEN's output" is checked.
+ARM_SCRIPT = '''
+import json, os, sys, time
+arm = os.environ["TIDEPOOL_PACK_ARM"]
+out = os.environ["TIDEPOOL_PACK_OUT"]
+spec = json.loads(os.environ.get("ARM_SPEC") or "{}").get(arm, {})
+print("step 1/2", flush=True)
+with open(os.path.join(out, "saw.json"), "w") as fh:
+    json.dump({"local": json.loads(os.environ["TIDEPOOL_PACK_LOCAL"]),
+               "started_at": time.time(),
+               "memfrac": float(os.environ["TIDEPOOL_PACK_MEMFRAC"])}, fh)
+time.sleep(float(spec.get("sleep", 0.2)))
+if spec.get("produce"):
+    with open(os.path.join(out, spec["produce"]), "w") as fh:
+        fh.write("x" * 4096)
+print("step 2/2", flush=True)
+if spec.get("rc"):
+    sys.exit(int(spec["rc"]))
+json.dump({"tokens_per_second": 100.0, "peak_gpu_reserved_gb": 1.0,
+           "card_total_gb": 47.7}, open(os.path.join(out, "score.json"), "w"))
+'''
+
+
+def run(cfg, specs, arms_scripts=("main.py",)):
+    d = tempfile.mkdtemp(prefix="packtest-")
+    try:
+        os.makedirs(os.path.join(d, "lab"))
+        open(os.path.join(d, "lab", "__init__.py"), "w").write(FAKE_LAB)
+        store = os.path.join(d, "store")
+        os.makedirs(store)
+        shutil.copy(os.path.join(HERE, "pack.py"), d)
+        for name in arms_scripts:
+            open(os.path.join(d, name), "w").write(ARM_SCRIPT)
+        rec = os.path.join(d, "record.jsonl")
+        env = dict(os.environ)
+        env.update({"FAKE_LAB_RECORD": rec, "FAKE_LAB_CFG": json.dumps(cfg),
+                    "FAKE_LAB_STORE": store, "ARM_SPEC": json.dumps(specs),
+                    "PYTHONPATH": d})
+        p = subprocess.run([sys.executable, "-u", "pack.py"], cwd=d, env=env,
+                           capture_output=True, text=True, timeout=180)
+        events = [json.loads(l) for l in open(rec)] if os.path.exists(rec) else []
+        summary = os.path.join(d, "out", "pack_summary.json")
+        return {"rc": p.returncode, "events": events, "dir": d, "stdout": p.stdout,
+                "summary": json.load(open(summary)) if os.path.exists(summary) else None,
+                "store": sorted(os.listdir(store))}
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+BASE = {"base_model": "", "poll_seconds": 0.1, "stagger_seconds": 0,
+        "shutdown_grace_seconds": 2, "stall_minutes": 60, "card_gb": 47.7,
+        "train_object": "corpus/train.jsonl.gz"}
+
+fails = []
+
+
+def check(name, cond, detail=""):
+    if not cond:
+        fails.append("%s: %s" % (name, detail or "did not hold"))
+
+
+# 1. A producer hands its file to the arm waiting on it, without a round trip through storage.
+r = run(dict(BASE, arms="GEN,T1,T2", pack_gb="12,10,10",
+             pack_after="T2=GEN", pack_provides="GEN=replay_object:replay.bin",
+             replay_object="tidepool/s5.3/replay/replay.jsonl.gz"),
+        {"GEN": {"sleep": 1.0, "produce": "replay.bin"}, "T1": {"sleep": 2.0},
+         "T2": {"sleep": 0.2}})
+s = r["summary"]
+check("handover", s and not s["failed"], "pack reported %s" % (s and s["failed"]))
+check("handover", s and s["never_started"] == {}, "arms were skipped: %s"
+      % (s and s["never_started"]))
+saw = [e for e in r["events"] if e["kind"] == "upload"]
+check("handover", any(e["obj"] == "tidepool/s5.3/replay/replay.jsonl.gz" for e in saw),
+      "the supervisor never uploaded the produced object; got %s" % saw)
+check("handover", "tidepool__s5.3__replay__replay.jsonl.gz" in r["store"],
+      "the produced object is not in storage: %s" % r["store"])
+# The consumer must have been handed the producer's own file, not a download.
+log = r["stdout"]
+check("handover", "is produced inside this pack, so it is not fetched" in log,
+      "the supervisor fetched an object one of its own arms produces")
+check("handover", "it stands in for tidepool/s5.3/replay/replay.jsonl.gz" in log,
+      "the produced file was never registered for the waiting arm")
+
+# 2. A producer that fails must not let its consumers run on nothing.
+r = run(dict(BASE, arms="GEN,T1,T2", pack_gb="12,10,10",
+             pack_after="T2=GEN", pack_provides="GEN=replay_object:replay.bin",
+             replay_object="tidepool/s5.3/replay/replay.jsonl.gz"),
+        {"GEN": {"sleep": 0.3, "rc": 3}, "T1": {"sleep": 1.0}, "T2": {}})
+s = r["summary"]
+check("failed producer", s is not None, "no pack summary was written")
+check("failed producer", s and "T2" in (s["never_started"] or {}),
+      "T2 ran even though GEN failed: %s" % (s and s["never_started"]))
+check("failed producer", s and "T1" in s["results"],
+      "T1 was collateral damage from GEN's failure: %s" % (s and s["failed"]))
+check("failed producer", any(e["kind"] == "error" for e in r["events"]),
+      "a pack with a failed arm reported success")
+
+# 3. A producer that exits clean but writes nothing is the same case, and must be caught.
+r = run(dict(BASE, arms="GEN,T2", pack_gb="12,10",
+             pack_after="T2=GEN", pack_provides="GEN=replay_object:replay.bin",
+             replay_object="obj/replay.gz"),
+        {"GEN": {"sleep": 0.3}, "T2": {}})
+s = r["summary"]
+check("empty producer", s and "T2" in (s["never_started"] or {}),
+      "T2 ran on a file that was never written: %s" % (s and s["never_started"]))
+
+# 4. The ceiling is checked against the pack's worst moment. GEN+T1 and T1+T2 each fit; the
+#    flat sum of all three does not, and rejecting on the flat sum would be the bug.
+r = run(dict(BASE, arms="GEN,T1,T2", pack_gb="18,18,18", pack_headroom=0.9,
+             pack_after="T2=GEN", pack_provides="GEN=replay_object:r.bin",
+             replay_object="obj/r.gz"),
+        {"GEN": {"sleep": 0.3, "produce": "r.bin"}, "T1": {"sleep": 0.5}, "T2": {}})
+check("peak sizing", r["summary"] is not None,
+      "the supervisor rejected a pack that fits at every instant (rc=%s)" % r["rc"])
+check("peak sizing", r["summary"] and r["summary"]["peak_concurrent_demand_gb"] == 36.0,
+      "peak demand came out %s, expected 36.0"
+      % (r["summary"] or {}).get("peak_concurrent_demand_gb"))
+
+# 5. A pack that genuinely does not fit is refused before anything is spawned.
+r = run(dict(BASE, arms="A,B,C", pack_gb="20,20,20", pack_headroom=0.9), {})
+check("overcommit", r["rc"] == 2, "an over-committed pack was allowed to start (rc=%s)" % r["rc"])
+check("overcommit", any(e["kind"] == "error" and "peaks at" in (e.get("message") or "")
+                        for e in r["events"]),
+      "no error explained the refusal: %s" % [e for e in r["events"] if e["kind"] == "error"])
+
+# 6. Per-arm scripts, and a script that is not there is refused rather than discovered late.
+r = run(dict(BASE, arms="A,B", pack_gb="10,10", pack_scripts="B=generate.py"),
+        {"A": {}, "B": {}}, arms_scripts=("main.py", "generate.py"))
+check("scripts", r["summary"] and r["summary"]["per_arm_script"]["B"] == "generate.py",
+      "pack_scripts was not honoured: %s" % (r["summary"] or {}).get("per_arm_script"))
+r = run(dict(BASE, arms="A,B", pack_gb="10,10", pack_scripts="B=absent.py"), {})
+check("scripts", r["rc"] == 2, "an arm pointing at a missing script was allowed to start")
+
+# 7. Malformed wiring is refused, not silently ignored.
+for bad, why in (
+    ({"pack_after": "T2=NOPE"}, "a dependency on an arm that is not in the pack"),
+    ({"pack_after": "A=A"}, "an arm waiting on itself"),
+    ({"pack_provides": "A=nokey"}, "a provides clause with no filename"),
+    ({"pack_gb": "10"}, "a ceiling list shorter than the arm list"),
+):
+    cfg = dict(BASE, arms="A,B", pack_gb="10,10")
+    cfg.update(bad)
+    r = run(cfg, {})
+    check("validation", r["rc"] == 2, "%s was accepted" % why)
+
+if fails:
+    print("FAIL")
+    for f in fails:
+        print("  - " + f)
+    sys.exit(1)
+print("pack scheduling holds: handover, failed producer, empty producer, peak sizing, "
+      "overcommit, per-arm scripts, 4 validation cases")

@@ -13,9 +13,14 @@ rows and 4.35M tokens in shared storage with a 138-item clean control arm. One s
 retired as unrunnable and replaced. `s5.3` is now under way, and **the sweep has been rebuilt to
 pack several arms onto one card** rather than running one arm per GPU: an L40S is 48 GB and a 1.2B
 model with a rank-16 adapter uses a fraction of it, so the account's two-GPU cap limits how many
-cards are up and not how much work runs on them. A supervisor now spawns one isolated child
-process per arm with a hard memory ceiling apiece, and a four-arm packed trial is measuring the
-per-arm footprint that sizes the real packs._
+cards are up and not how much work runs on them. A supervisor spawns one isolated child
+process per arm with a hard memory ceiling apiece, and the four-arm trial that measured it came
+back in nine minutes: **three arms sharing a card produce 1.51x the aggregate throughput of one
+arm alone**, a packed arm sees a token count identical to the same arm run solo, and the one arm
+that failed did so inside its own ceiling with 9.4 GB still free and its three siblings untouched.
+The supervisor now schedules as well as isolates, so **the entire rest of the sweep is one job on
+one card**: the replay buffer is generated as an arm of the pack and handed to the two arms that
+consume it, with no second job and no round trip through storage._
 
 ## Headline
 

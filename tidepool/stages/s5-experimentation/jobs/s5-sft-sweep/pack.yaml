@@ -31,6 +31,24 @@ parameters:
   # parameter, several times what a rank-16 adapter needs -- so an even split would starve it
   # while the LoRA arms sat under ceilings they never approach.
   pack_weights: ""
+  # Preferred over pack_weights: each arm's ceiling in gigabytes, parallel to `arms`. Absolute
+  # is the right unit here because it is the unit the measurements arrive in (a LoRA r16 arm
+  # holds 7.5 GB as the driver sees it, the entropy-weighted arm 11.4, a full-parameter arm
+  # about 22) and because relative shares divide the card between arms that never coexist.
+  pack_gb: ""
+  # The card the ceilings are measured against. An L40S reports 47.7 GB decimal.
+  card_gb: 47.7
+  # `arm=script.py`. An arm does not have to be a trainer: the replay generator runs as one.
+  pack_scripts: ""
+  # `arm=other_arm`. Holds an arm back until the other has exited clean. One level deep.
+  pack_after: ""
+  # `arm=config_key:filename`. When that arm finishes, out/<arm>/<filename> becomes the local
+  # stand-in for the object config_key names, and the supervisor uploads it there once. It is
+  # how a buffer generated on this card reaches the arms consuming it without a round trip,
+  # while still landing in shared storage for every later stage.
+  pack_provides: ""
+  # How often the supervisor looks at its children. Only lowered by the scheduling tests.
+  poll_seconds: 5
   # Every child peaks its memory while loading the same base model. Starting them together
   # stacks load peaks the steady state would never reach, so they are spaced out.
   stagger_seconds: 45
@@ -68,6 +86,16 @@ parameters:
   min_priority_share: 0.5
   seed: 17
   arm: C1
+  # Read by replay.py when the pack carries a self-distillation arm; ignored by every other
+  # arm. Defaults match the s5-selfdistill task these were validated on.
+  pool_object: tidepool/s4.4/prompt_pool.jsonl.gz
+  dest_prefix: tidepool/s5.3/replay
+  n_prompts: 8000
+  max_new_tokens: 320
+  batch_size: 48
+  max_prompt_tokens: 1024
+  sample_salt: tidepool-replay-v1
+  c5b_dose_tokens: 3200000
   smoke: false
   smoke_rows: 512
   max_steps: 0

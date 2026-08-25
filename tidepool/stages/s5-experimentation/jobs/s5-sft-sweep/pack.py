@@ -22,6 +22,13 @@ cannot cost the others:
               to SIGKILL after a grace period, so a cancelled job does not leave orphaned
               trainers holding the card.
 
+Not every child is a trainer, and not every child can start at the same time. `pack_scripts`
+lets an arm run a different program, and `pack_after` holds an arm back until another arm has
+finished successfully -- which is how a buffer that one arm generates becomes the input of
+another arm on the same card, with no round trip through shared storage and no second job.
+`pack_provides` names the file that hands over: the supervisor registers it as the shared
+input its dependants were going to download, and uploads it once on their behalf.
+
 Staggered starts matter more than they look. Every child loads the same base model and peaks
 its memory during load; starting four at the same instant stacks four load peaks that the
 steady-state footprint would never reach. `stagger_seconds` spaces them out.
@@ -33,6 +40,7 @@ than asserted: C1 ran solo before packing existed, so any packed arm can be comp
 it on tokens seen, priority share and rows-in-order.
 """
 
+import itertools
 import json
 import os
 import re
@@ -56,10 +64,12 @@ def C(k, default):
 ARMS = [a.strip() for a in str(C("arms", "")).split(",") if a.strip()]
 HEADROOM = float(C("pack_headroom", 0.92))
 WEIGHTS_RAW = str(C("pack_weights", ""))
+GB_RAW = str(C("pack_gb", ""))
+CARD_GB = float(C("card_gb", 47.7))
 STAGGER = float(C("stagger_seconds", 45))
 GRACE = float(C("shutdown_grace_seconds", 30))
 STALL = float(C("stall_minutes", 45)) * 60.0
-POLL = 5.0
+POLL = float(C("poll_seconds", 5.0))
 
 if not ARMS:
     lab.error(message="pack.py needs an `arms` list, e.g. arms=C2p,C4,C6")
@@ -74,18 +84,132 @@ N = len(ARMS)
 # needs several times what a rank-16 adapter does, so splitting the card evenly would starve
 # it while leaving the LoRA arms holding ceilings they never approach. `pack_weights` is a
 # comma-separated list parallel to `arms`; an empty list means equal shares.
-if WEIGHTS_RAW.strip():
-    W = [float(x) for x in WEIGHTS_RAW.split(",") if x.strip()]
-    if len(W) != N:
-        lab.error(message="pack_weights has %d entries for %d arms" % (len(W), N))
+#
+# `pack_gb` states each arm's ceiling in gigabytes directly and is preferred, because that is
+# the unit the measurements come in and the unit the failures come in. Relative weights have a
+# flaw that only shows up once arms can wait on each other: they divide the card between every
+# arm listed, including arms that never coexist, so an arm that runs after another still pays
+# for it. `pack_weights` remains for even splits.
+if GB_RAW.strip():
+    G = [float(x) for x in GB_RAW.split(",") if x.strip()]
+    if len(G) != N:
+        lab.error(message="pack_gb has %d entries for %d arms" % (len(G), N))
         raise SystemExit(2)
-    if min(W) <= 0:
-        lab.error(message="pack_weights must all be positive, got %r" % (W,))
+    if min(G) <= 0:
+        lab.error(message="pack_gb must all be positive, got %r" % (G,))
         raise SystemExit(2)
+    W = G
+    GB = dict(zip(ARMS, G))
+    MEMFRAC = {a: round(min(0.98, GB[a] / CARD_GB), 4) for a in ARMS}
 else:
-    W = [1.0] * N
-TOTAL_W = sum(W)
-MEMFRAC = {a: round(HEADROOM * w / TOTAL_W, 4) for a, w in zip(ARMS, W)}
+    if WEIGHTS_RAW.strip():
+        W = [float(x) for x in WEIGHTS_RAW.split(",") if x.strip()]
+        if len(W) != N:
+            lab.error(message="pack_weights has %d entries for %d arms" % (len(W), N))
+            raise SystemExit(2)
+        if min(W) <= 0:
+            lab.error(message="pack_weights must all be positive, got %r" % (W,))
+            raise SystemExit(2)
+    else:
+        W = [1.0] * N
+    TOTAL_W = sum(W)
+    MEMFRAC = {a: round(HEADROOM * w / TOTAL_W, 4) for a, w in zip(ARMS, W)}
+    GB = {a: round(CARD_GB * MEMFRAC[a], 2) for a in ARMS}
+
+
+def _kv(raw, what):
+    """Parse an `arm=value,arm=value` parameter, rejecting names that are not arms."""
+    out = {}
+    for item in str(raw).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            lab.error(message="%s wants `arm=value` items, got %r" % (what, item))
+            raise SystemExit(2)
+        k, v = item.split("=", 1)
+        k, v = k.strip(), v.strip()
+        if k not in ARMS:
+            lab.error(message="%s names %r, which is not one of arms=%s"
+                              % (what, k, ",".join(ARMS)))
+            raise SystemExit(2)
+        out[k] = v
+    return out
+
+
+# An arm is a program, not necessarily a trainer. The default is the sweep's own main.py.
+SCRIPTS = {a: "main.py" for a in ARMS}
+SCRIPTS.update(_kv(C("pack_scripts", ""), "pack_scripts"))
+for a in ARMS:
+    if not os.path.exists(SCRIPTS[a]):
+        lab.error(message="arm %s runs %s, which is not in the task directory"
+                          % (a, SCRIPTS[a]))
+        raise SystemExit(2)
+
+# `pack_after` is deliberately one level deep. Deeper chains would need a real scheduler, and
+# a real scheduler inside a supervisor whose whole value is that it is simple to reason about
+# is a bad trade; two waves cover producer-then-consumer, which is the case that exists.
+AFTER = _kv(C("pack_after", ""), "pack_after")
+for a, dep in AFTER.items():
+    if dep not in ARMS:
+        lab.error(message="%s waits on %r, which is not one of arms=%s"
+                          % (a, dep, ",".join(ARMS)))
+        raise SystemExit(2)
+    if dep == a:
+        lab.error(message="%s cannot wait on itself" % a)
+        raise SystemExit(2)
+    if dep in AFTER:
+        lab.error(message="pack_after is one level deep: %s waits on %s, which itself waits "
+                          "on %s" % (a, dep, AFTER[dep]))
+        raise SystemExit(2)
+
+# `arm=config_key:filename`. When the arm exits clean, out/<arm>/<filename> becomes the local
+# stand-in for whatever object CFG[config_key] names, and is uploaded there once.
+PROVIDES = {}
+for a, spec in _kv(C("pack_provides", ""), "pack_provides").items():
+    if ":" not in spec:
+        lab.error(message="pack_provides wants `arm=config_key:filename`, got %r" % spec)
+        raise SystemExit(2)
+    key, fname = spec.split(":", 1)
+    key, fname = key.strip(), fname.strip()
+    if not CFG.get(key):
+        lab.error(message="%s says it provides %s, but %s is not set in this pack's config, "
+                          "so nothing would know to look for it" % (a, key, key))
+        raise SystemExit(2)
+    PROVIDES[a] = (key, fname)
+
+
+# The ceiling has to hold at the pack's worst moment, not on average and not on the flat sum
+# of every arm listed. Once arms can wait on each other the flat sum is simply wrong: a
+# producer's memory is gone by the time its consumers hold any, so charging the card for both
+# at once refuses packs that fit at every instant they actually exist.
+#
+# The peak is therefore the largest set of arms that can be alive together. With one level of
+# dependency the reachable states are enumerable: a state is a choice of which producers have
+# already finished, and in that state the card holds the unfinished no-dependency arms plus
+# the consumers those finished producers released. There are a handful of producers, so this
+# is a handful of sums.
+PRODUCERS = sorted(set(AFTER.values()))
+NODEP = [a for a in ARMS if a not in AFTER]
+PEAK_GB, PEAK_SET = 0.0, tuple(ARMS)
+if len(PRODUCERS) > 12:
+    # Not a case that exists, but a combinatorial blowup in a sizing check is a worse failure
+    # than an over-conservative number, so fall back to charging for everything at once.
+    PEAK_GB, PEAK_SET = sum(GB.values()), tuple(ARMS)
+else:
+    for r in range(len(PRODUCERS) + 1):
+        for finished in itertools.combinations(PRODUCERS, r):
+            live = [a for a in NODEP if a not in finished]
+            live += [a for a in ARMS if AFTER.get(a) in finished]
+            tot = sum(GB[a] for a in live)
+            if tot > PEAK_GB:
+                PEAK_GB, PEAK_SET = tot, tuple(live)
+LIMIT_GB = CARD_GB * HEADROOM
+if PEAK_GB > LIMIT_GB + 1e-6:
+    lab.error(message="this pack peaks at %.1f GB (%s running together) against a %.1f GB "
+                      "limit (%.1f GB card at headroom %.2f); lower pack_gb or drop an arm"
+                      % (PEAK_GB, "+".join(PEAK_SET), LIMIT_GB, CARD_GB, HEADROOM))
+    raise SystemExit(2)
 
 # The child's whole configuration travels on the environment. A child never calls the job
 # API, so it cannot ask for its own config; passing the supervisor's verbatim is what keeps a
@@ -99,9 +223,17 @@ def log(msg):
 
 
 log("packing %d arms onto one GPU: %s" % (N, ", ".join(ARMS)))
-log("per-arm memory ceilings (headroom %.2f, stagger %.0fs): %s"
-    % (HEADROOM, STAGGER,
-       ", ".join("%s %.1f%%" % (a, 100 * MEMFRAC[a]) for a in ARMS)))
+log("per-arm memory ceilings on a %.1f GB card (headroom %.2f, stagger %.0fs): %s"
+    % (CARD_GB, HEADROOM, STAGGER,
+       ", ".join("%s %.1f GB" % (a, GB[a]) for a in ARMS)))
+log("peak concurrent demand %.1f GB of a %.1f GB limit, set by %s running together"
+    % (PEAK_GB, LIMIT_GB, " + ".join(PEAK_SET)))
+if AFTER:
+    log("held until their inputs exist: %s"
+        % ", ".join("%s after %s" % (a, AFTER[a]) for a in sorted(AFTER)))
+for a in sorted(SCRIPTS):
+    if SCRIPTS[a] != "main.py":
+        log("%s runs %s rather than the sweep trainer" % (a, SCRIPTS[a]))
 
 children = {}          # arm -> Popen
 started = {}           # arm -> monotonic start
@@ -114,9 +246,15 @@ logs = {}              # arm -> open file handle
 # transfer and the disk by the pack size and give four processes four chances to fail on the
 # network; the supervisor fetches each object once and hands the paths down.
 LOCAL = {}
-for key in ("train_object", "val_object", "guardrail_object", "replay_object"):
+# An object one of these arms is about to generate must not be fetched: it does not exist yet,
+# and the whole reason it is in this pack is so that it never has to make the round trip.
+PROVIDED_OBJS = {CFG.get(k) for k, _ in PROVIDES.values() if CFG.get(k)}
+for key in ("train_object", "val_object", "guardrail_object", "replay_object", "pool_object"):
     obj = CFG.get(key)
     if not obj or obj in LOCAL:
+        continue
+    if obj in PROVIDED_OBJS:
+        log("%s is produced inside this pack, so it is not fetched" % obj)
         continue
     t = time.time()
     LOCAL[obj] = lab.storage_download(obj)
@@ -159,11 +297,12 @@ def spawn(arm):
     env["WANDB_RUN_GROUP"] = str(C("run_tag", "s5.3-pack"))
     fh = open(os.path.join(adir, "console.log"), "w")
     logs[arm] = fh
-    p = subprocess.Popen([sys.executable, "-u", "main.py"], env=env,
+    p = subprocess.Popen([sys.executable, "-u", SCRIPTS[arm]], env=env,
                          stdout=fh, stderr=subprocess.STDOUT)
     children[arm] = p
     started[arm] = time.time()
-    log("started %s (pid %d)" % (arm, p.pid))
+    log("started %s (pid %d, %s, ceiling %.1f GB)"
+        % (arm, p.pid, SCRIPTS[arm], GB[arm]))
 
 
 _shutting_down = {"v": False}
@@ -199,14 +338,18 @@ signal.signal(signal.SIGTERM, shutdown)
 signal.signal(signal.SIGINT, shutdown)
 
 t0 = time.time()
-for i, arm in enumerate(ARMS):
+FIRST = [a for a in ARMS if a not in AFTER]
+for i, arm in enumerate(FIRST):
     spawn(arm)
-    if i < N - 1 and STAGGER > 0:
+    if i < len(FIRST) - 1 and STAGGER > 0:
         time.sleep(STAGGER)
 
-log("all %d arms started; supervising" % N)
+log("%d of %d arms started; supervising" % (len(FIRST), N))
 
-STEP_RE = re.compile(r"step (\d+)/(\d+)")
+# Trainers count steps, the generator counts completions. Both are the arm's own honest
+# statement of where it is, and a pack that reads only one of them shows a generator arm at
+# zero for its whole run and then jumping to done.
+STEP_RE = re.compile(r"(?:step|generated) (\d+)/(\d+)")
 
 
 def progress_fraction():
@@ -256,10 +399,62 @@ last_report = 0.0
 # indexing, the validation pass), and killing a slow arm is worse than waiting for it.
 grew = {a: (time.time(), console_size(a)) for a in ARMS}
 stalled = set()
+skipped = {}
+
+
+def release(arm):
+    """An arm finished. Publish whatever it was carrying and start whatever was waiting.
+
+    Handing a file over inside the pack is the point: the buffer arm writes it to its own
+    directory, the supervisor registers that path as the object its dependants would have
+    downloaded, and they read it off local disk. The upload still happens, once, from here --
+    so the buffer lands in shared storage for every later stage exactly as it would have if
+    it had been its own job, without any arm waiting on the round trip."""
+    if arm in PROVIDES:
+        key, fname = PROVIDES[arm]
+        obj, src = CFG.get(key), os.path.join(OUT, arm, fname)
+        if done.get(arm) == 0 and os.path.exists(src) and os.path.getsize(src) > 128:
+            LOCAL[obj] = os.path.abspath(src)
+            log("%s produced %s (%.0f MB); it stands in for %s for the arms waiting on it"
+                % (arm, fname, os.path.getsize(src) / 1e6, obj))
+            up = getattr(lab, "storage_upload", None)
+            if callable(up):
+                try:
+                    up(src, obj)
+                    log("placed %s in shared storage" % obj)
+                except Exception as exc:
+                    # Not fatal to the pack. The dependants read the local copy either way;
+                    # what is lost is the copy later stages would load, and saying so here
+                    # means it is noticed now rather than at the next stage.
+                    log("could not place %s in shared storage (%s); the waiting arms still "
+                        "have it locally, but later jobs will not find it there" % (obj, exc))
+            else:
+                log("this SDK has no storage upload, so %s stays on the job record" % obj)
+        else:
+            log("%s did not produce a usable %s, so anything waiting on it cannot run"
+                % (arm, fname))
+    waiting = [a for a in ARMS if AFTER.get(a) == arm and a not in children and a not in done]
+    for i, w in enumerate(waiting):
+        if done.get(arm) != 0:
+            why = "%s exited rc=%s" % (arm, done.get(arm))
+        elif arm in PROVIDES and CFG.get(PROVIDES[arm][0]) not in LOCAL:
+            why = "%s finished but produced no %s" % (arm, PROVIDES[arm][1])
+        else:
+            why = None
+        if why:
+            log("not starting %s: %s" % (w, why))
+            done[w] = 97
+            skipped[w] = why
+            continue
+        if i and STAGGER > 0:
+            time.sleep(STAGGER)
+        spawn(w)
+        grew[w] = (time.time(), console_size(w))
+
 while len(done) < N:
     time.sleep(POLL)
     now = time.time()
-    for arm, p in children.items():
+    for arm, p in list(children.items()):
         if arm in done or p.poll() is not None:
             continue
         sz = console_size(arm)
@@ -275,12 +470,14 @@ while len(done) < N:
                 p.terminate()
             except Exception:
                 pass
-    for arm, p in children.items():
+    exited = []
+    for arm, p in list(children.items()):
         if arm in done:
             continue
         rc = p.poll()
         if rc is not None:
             done[arm] = rc
+            exited.append(arm)
             mins = (time.time() - started[arm]) / 60.0
             log("%s exited rc=%d after %.1f min (%d of %d done)"
                 % (arm, rc, mins, len(done), N))
@@ -302,6 +499,8 @@ while len(done) < N:
                     log("---- end %s ----" % arm)
                 except Exception as exc:
                     log("could not read %s's console: %s" % (arm, exc))
+    for arm in exited:
+        release(arm)
     if time.time() - last_report > 60:
         last_report = time.time()
         frac, live = progress_fraction()
@@ -327,8 +526,13 @@ for arm in ARMS:
     else:
         missing.append("%s (no score.json; rc=%s)" % (arm, done.get(arm)))
     if done.get(arm) != 0:
-        failed.append("%s rc=%s%s" % (arm, done.get(arm),
-                                      " (killed after stalling)" if arm in stalled else ""))
+        if arm in skipped:
+            why = " (never started: %s)" % skipped[arm]
+        elif arm in stalled:
+            why = " (killed after stalling)"
+        else:
+            why = ""
+        failed.append("%s rc=%s%s" % (arm, done.get(arm), why))
 
 # Every child artifact goes up under an <arm>__ prefix so one job's artifact namespace holds
 # N arms without collision and each file still says which arm produced it.
@@ -361,7 +565,14 @@ summary = {
     "arms": ARMS,
     "pack_size": N,
     "pack_weights": dict(zip(ARMS, W)),
+    "per_arm_ceiling_gb": GB,
     "per_arm_memory_fraction": MEMFRAC,
+    "per_arm_script": {a: SCRIPTS[a] for a in ARMS},
+    "waits_on": AFTER,
+    "provides": {a: "%s:%s" % v for a, v in PROVIDES.items()},
+    "card_gb": CARD_GB,
+    "peak_concurrent_demand_gb": round(PEAK_GB, 2),
+    "peak_set_by": list(PEAK_SET),
     "exit_codes": done,
     "wall_clock_hours": round((time.time() - t0) / 3600.0, 3),
     "gpu_hours_billed": round((time.time() - t0) / 3600.0, 3),
@@ -369,6 +580,7 @@ summary = {
     "results": results,
     "failed": failed,
     "stalled": sorted(stalled),
+    "never_started": skipped,
     "missing_scores": missing,
     "artifacts_uploaded": uploaded,
 }
