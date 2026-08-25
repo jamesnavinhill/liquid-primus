@@ -11,6 +11,9 @@ resources:
   # L40S 48GB is the card the plan's compute budget is written against, so the throughput
   # figure the sweep is priced from has to be measured on it and not scaled from another card.
   accelerators: "L40S:1"
+  # Pinned rather than left to the default, which does not sell L40S at any count. The card's
+  # source row is AWS g6e, then Nebius, then RunPod. Belongs under resources, not at top level.
+  compute_provider: aws
 envs:
   HF_TOKEN: "{{secret._HF_TOKEN}}"
   WANDB_API_KEY: "{{secret._WANDB_API_KEY}}"

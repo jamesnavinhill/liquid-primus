@@ -54,10 +54,15 @@ actually use. Spend so far is 0.35 of 145 GPU-hours.
   is proven, so every later run in this stage will land its numbers where the ranked dashboard
   reads them.
 - 2026-08-25 · s5.1 · Queued a calibration run of the same supervised code on an L40S,
-  `be8dcfde`, at 60 steps over 1,024 rows. The plan's whole 145 GPU-hour budget rests on an
+  at 60 steps over 1,024 rows. The plan's whole 145 GPU-hour budget rests on an
   assumed 6,000 tokens per second on that card, and the L4 measurement suggests the assumption
   is optimistic. One short job replaces the assumption with a measurement, which is cheaper
   than discovering it eight arms into the sweep.
+- 2026-08-25 · s5.1 · The calibration run was refused at launch, at no compute cost, because
+  the provider jobs go to by default does not sell the card the plan's budget is written
+  against. Re-queued against the first source the hardware guidance lists for that card, and
+  now provisioning as `68635a5d`. Every run in the sweep inherits the same default and will
+  need the same pinning.
 
 ## s5.1 What the smoke runs are for
 
@@ -131,6 +136,22 @@ than one, so a single provider being out of capacity does not park the run. T4 i
 the note for exactly the reason that matters here: it is the only allowed card without bf16.
 Nothing in this stage needs more than 24 GB yet; a 1.2B model in bf16 with LoRA and gradient
 checkpointing at a 2,048-token window fits with room to spare.
+
+### The card the plan is priced against is not sold where jobs land by default
+
+The calibration run was refused at launch, four seconds in and at no compute cost, because the
+provider a job goes to when nothing pins it does not sell the 48GB card the whole budget is
+written against. It sells the 24GB card the smokes have been running on, and a set of larger
+ones the hardware guidance excludes.
+
+The fix is one flag: the guidance lists each card's own sources in try order, and the 48GB card
+has three, none of them the default. Re-queued against the first of them and now provisioning.
+Worth recording rather than quietly correcting, for two reasons. Every run in the `C` sweep
+inherits the same default, so a card that has to be pinned once has to be pinned every time,
+and a sweep that silently lands on the smaller card would produce numbers that look like the
+plan's and are not. And it is the second time in this stage that a launch has failed on
+something the plan could not have known: a real card row, like a real SDK signature, is
+learned by trying it.
 
 ## s5.1 What the smoke established
 
@@ -253,10 +274,14 @@ checkpoint with a measured number in hand.
 
 ## Immediate next actions
 
-1. Confirm both attempt-2 smokes finish clean and land their score dicts, which is what makes
-   the ranked dashboard usable for `s5.3` and `s5.4`.
-2. Run the supervised smoke once on an L40S to measure the card the sweep will actually use,
-   replacing the plan's assumed 6,000 tok/s with an observed figure.
+1. The supervised smoke has landed clean with its score dict on the record. Confirm the replay
+   smoke does the same, which is what makes the ranked dashboard usable for `s5.3` and `s5.4`.
+2. Read the L40S calibration run, now provisioning, and replace the plan's assumed 6,000 tok/s
+   with its observed figure.
 3. Re-price the `C` supervised sweep against that measurement before queueing any baseline,
    and if it does not fit its 38 GPU-hour line, bring the options to `s5.4` rather than
    quietly shortening the arms.
+4. Pin the provider in every sweep task that asks for the 48GB card. The stored calibration
+   task now carries `resources.compute_provider`, which is where the field validates; at the
+   top level it is rejected. Left unset, a sweep arm lands on a provider that does not sell
+   the card and fails at launch, or worse, on a smaller card whose numbers are not comparable.

@@ -110,6 +110,17 @@
    "durationHours": 0.121,
    "spend": 0.121,
    "note": "Supervised smoke, attempt 2. Score dict landed; 5 artifacts verified. 30 steps, val loss 1.3223 -> 0.4771, 1398.3 tok/s, template native."
+  },
+  {
+   "id": "s5.1-cal-l40s-attempt1",
+   "substage": "s5.1",
+   "jobId": "be8dcfde-54b9-472b-9624-a7ab8e4c3159",
+   "task": "s5-sft-l40s",
+   "accelerators": "L40S:1",
+   "status": "FAILED",
+   "durationHours": 0.0,
+   "spend": 0.0,
+   "note": "Refused at launch after 4s: the default provider does not sell this card. No instance was created, so nothing is charged. Recorded so the attempt is not invisible."
   }
  ]
 }
