@@ -35,6 +35,7 @@ it on tokens seen, priority share and rows-in-order.
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -164,6 +165,39 @@ for i, arm in enumerate(ARMS):
 
 log("all %d arms started; supervising" % N)
 
+STEP_RE = re.compile(r"step (\d+)/(\d+)")
+
+
+def progress_fraction():
+    """Mean training progress across the pack, read from the children's own step lines.
+
+    A pack runs for hours and the arms finish minutes apart, so reporting the fraction of
+    arms that have exited would sit at zero for most of the run and then jump. Each child
+    already prints `step i/n`; the last such line in its console is its true position. A
+    child that has exited counts as complete whatever its console last said, so a crash
+    cannot hold the bar down."""
+    fracs, live = [], []
+    for arm in ARMS:
+        if arm in done:
+            fracs.append(1.0)
+            continue
+        cur, tot = 0, 0
+        try:
+            with open(os.path.join(OUT, arm, "console.log")) as fh:
+                tail = fh.readlines()[-400:]
+            for line in reversed(tail):
+                m = STEP_RE.search(line)
+                if m:
+                    cur, tot = int(m.group(1)), int(m.group(2))
+                    break
+        except Exception:
+            pass
+        fracs.append(cur / tot if tot else 0.0)
+        if tot:
+            live.append("%s %d/%d" % (arm, cur, tot))
+    return (sum(fracs) / len(fracs) if fracs else 0.0), live
+
+
 done = {}
 last_report = 0.0
 while len(done) < N:
@@ -181,10 +215,12 @@ while len(done) < N:
                 logs[arm].flush()
             except Exception:
                 pass
-    # progress is the mean of the arms' own step fractions, read from their consoles
     if time.time() - last_report > 60:
         last_report = time.time()
-        lab.update_progress(min(95, int(95.0 * len(done) / N) or 5))
+        frac, live = progress_fraction()
+        lab.update_progress(max(1, min(95, int(95.0 * frac))))
+        if live:
+            log("progress %.0f%% | " % (100 * frac) + " ".join(live))
 
 for fh in logs.values():
     try:
