@@ -58,6 +58,7 @@ HEADROOM = float(C("pack_headroom", 0.92))
 WEIGHTS_RAW = str(C("pack_weights", ""))
 STAGGER = float(C("stagger_seconds", 45))
 GRACE = float(C("shutdown_grace_seconds", 30))
+STALL = float(C("stall_minutes", 45)) * 60.0
 POLL = 5.0
 
 if not ARMS:
@@ -122,12 +123,33 @@ for key in ("train_object", "val_object", "guardrail_object", "replay_object"):
     log("fetched %s -> %s (%.0fs)" % (obj, LOCAL[obj], time.time() - t))
 log("%d shared input(s) staged for %d arms" % (len(LOCAL), N))
 
+# The base model is a shared input too, and it was the one I forgot. Four children calling
+# from_pretrained on a cold cache is four concurrent downloads of the same repo into the same
+# directory, racing on the hub's locks and partial files; the corpus was already fetched once
+# per card and the weights should be as well. Pre-warming here means every child finds the
+# snapshot complete and does no network work at all.
+BASE = str(CFG.get("base_model") or "")
+if BASE:
+    try:
+        from huggingface_hub import snapshot_download
+        t = time.time()
+        path = snapshot_download(BASE)
+        log("base model cached at %s (%.0fs)" % (path, time.time() - t))
+    except Exception as exc:
+        # Not fatal: the children can still fetch it themselves, just less pleasantly.
+        log("could not pre-warm %s (%s); children will fetch it individually" % (BASE, exc))
+
 
 def spawn(arm):
     adir = os.path.join(OUT, arm)
     os.makedirs(adir, exist_ok=True)
     env = dict(os.environ)
     env["TIDEPOOL_PACK_CHILD"] = "1"
+    # Packing makes fragmentation expensive in a way a solo run never notices: a child that
+    # holds 2 GB of reserved-but-unallocated blocks is 2 GB its siblings cannot have, and the
+    # first packed trial died on exactly that boundary. Expandable segments let the allocator
+    # grow and release a single region instead of stranding fixed-size blocks.
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     env["TIDEPOOL_PACK_ARM"] = arm
     env["TIDEPOOL_PACK_OUT"] = adir
     env["TIDEPOOL_PACK_MEMFRAC"] = str(MEMFRAC[arm])
@@ -217,10 +239,42 @@ def progress_fraction():
     return (sum(fracs) / len(fracs) if fracs else 0.0), live
 
 
+def console_size(arm):
+    try:
+        return os.path.getsize(os.path.join(OUT, arm, "console.log"))
+    except Exception:
+        return -1
+
+
 done = {}
 last_report = 0.0
+# A hung arm is the one failure the process boundary does not contain: it holds its slice of
+# the card and its share of the SMs, and the pack sits behind it until the job's own wall
+# clock kills everything, siblings included. So each child is watched for silence -- no new
+# console output at all -- and killed on its own if it goes quiet for `stall_minutes`. The
+# threshold is generous because a legitimate quiet stretch does exist (model download, corpus
+# indexing, the validation pass), and killing a slow arm is worse than waiting for it.
+grew = {a: (time.time(), console_size(a)) for a in ARMS}
+stalled = set()
 while len(done) < N:
     time.sleep(POLL)
+    now = time.time()
+    for arm, p in children.items():
+        if arm in done or p.poll() is not None:
+            continue
+        sz = console_size(arm)
+        last_t, last_sz = grew[arm]
+        if sz != last_sz:
+            grew[arm] = (now, sz)
+        elif now - last_t > STALL:
+            log("%s has produced no output for %.0f min; killing it so the rest of the pack "
+                "is not held behind it" % (arm, (now - last_t) / 60.0))
+            stalled.add(arm)
+            grew[arm] = (now, sz)
+            try:
+                p.terminate()
+            except Exception:
+                pass
     for arm, p in children.items():
         if arm in done:
             continue
@@ -234,6 +288,20 @@ while len(done) < N:
                 logs[arm].flush()
             except Exception:
                 pass
+            # A child's output goes to its own file, which is only uploaded when the pack
+            # finishes. Without this, an arm that dies twenty minutes in is a bare exit code
+            # for the remaining nine hours, and there is nothing to act on until the whole
+            # job lands. The tail goes to the job log the moment it happens instead.
+            if rc != 0:
+                try:
+                    with open(os.path.join(OUT, arm, "console.log")) as fh:
+                        tail = fh.readlines()[-40:]
+                    log("---- %s died, last %d line(s) of its console ----" % (arm, len(tail)))
+                    for line in tail:
+                        log("[%s] %s" % (arm, line.rstrip()))
+                    log("---- end %s ----" % arm)
+                except Exception as exc:
+                    log("could not read %s's console: %s" % (arm, exc))
     if time.time() - last_report > 60:
         last_report = time.time()
         frac, live = progress_fraction()
@@ -259,7 +327,8 @@ for arm in ARMS:
     else:
         missing.append("%s (no score.json; rc=%s)" % (arm, done.get(arm)))
     if done.get(arm) != 0:
-        failed.append("%s rc=%s" % (arm, done.get(arm)))
+        failed.append("%s rc=%s%s" % (arm, done.get(arm),
+                                      " (killed after stalling)" if arm in stalled else ""))
 
 # Every child artifact goes up under an <arm>__ prefix so one job's artifact namespace holds
 # N arms without collision and each file still says which arm produced it.
@@ -299,19 +368,31 @@ summary = {
     "gpu_hours_per_arm_share": round((time.time() - t0) / 3600.0 / max(1, N), 3),
     "results": results,
     "failed": failed,
+    "stalled": sorted(stalled),
     "missing_scores": missing,
     "artifacts_uploaded": uploaded,
 }
 # What the next pack should be sized at, measured rather than guessed. The spare figure is
 # against the same headroom the children were held to, so it is directly actionable: an arm
 # only "still fits" if it would fit under the ceiling this pack already respected.
-peaks = {a: r.get("peak_gpu_gb") for a, r in results.items() if r.get("peak_gpu_gb")}
+# Reserved, not allocated, and with the CUDA context added on top. The first packed trial
+# made the difference concrete: an arm reporting 6.07 GB allocated and 6.98 GB reserved held
+# 7.52 GB as far as the driver and its siblings were concerned. Sizing a pack on the
+# allocated figure overcommits the card by roughly 1.5 GB per arm, which is how three arms
+# that "fit" leave a fourth OOM-ing at its ceiling with free memory still on the card.
+CONTEXT_GB = 0.55
+peaks = {}
+for a, r in results.items():
+    v = r.get("peak_gpu_reserved_gb") or r.get("peak_gpu_gb")
+    if v:
+        peaks[a] = round(v + CONTEXT_GB, 2)
 card = next((r.get("card_total_gb") for r in results.values() if r.get("card_total_gb")), None)
 if peaks and card:
     worst, used = max(peaks.values()), sum(peaks.values())
     spare = card * HEADROOM - used
     summary["memory"] = {
-        "per_arm_peak_gb": peaks, "card_total_gb": card,
+        "per_arm_footprint_gb": peaks, "context_allowance_gb": CONTEXT_GB,
+        "card_total_gb": card,
         "pack_peak_total_gb": round(used, 2),
         "spare_gb_under_headroom": round(spare, 2),
         "further_arms_that_would_fit": int(spare // worst) if worst > 0 else None,

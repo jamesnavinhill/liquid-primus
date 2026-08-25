@@ -35,6 +35,12 @@ parameters:
   # stacks load peaks the steady state would never reach, so they are spaced out.
   stagger_seconds: 45
   shutdown_grace_seconds: 30
+  # A hung arm is the one failure a process boundary does not contain: it holds its slice
+  # of the card and the pack sits behind it until the job's wall clock kills everything.
+  # A child that produces no output at all for this long is killed on its own. Generous,
+  # because legitimate quiet stretches exist (model download, corpus indexing, validation)
+  # and killing a merely slow arm is worse than waiting for it.
+  stall_minutes: 45
   run_tag: s5.3-pack
   base_model: LiquidAI/LFM2.5-1.2B-Instruct
   train_object: tidepool/s4.4/train.jsonl.gz
@@ -65,4 +71,7 @@ parameters:
   smoke: false
   smoke_rows: 512
   max_steps: 0
-minutes_requested: 900
+# A pack runs every arm it carries, so its wall clock is the slowest arm's, not the sum. Sized
+# for a full-parameter arm sharing a card: those are the slowest thing this sweep runs, and a
+# pack cut off at the wall loses every arm on the card, not one.
+minutes_requested: 1200

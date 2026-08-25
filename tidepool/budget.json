@@ -454,7 +454,20 @@
    "start": "2026-08-25T20:44:17Z",
    "end": "2026-08-25T21:31:57Z",
    "note": "Stopped by me at 484/9697 steps to free a GPU slot for the packed smoke (c77ab752). The GPU time was genuinely consumed so it is charged here. C7 is re-run inside the first real pack."
+  },
+  {
+   "jobId": "c77ab752-7c40-4391-a08e-cdf305dff653",
+   "substage": "s5.3",
+   "task": "s5-sft-pack",
+   "label": "packed smoke: C2', C4, C6, C3 at 30 steps on one card",
+   "accelerators": "L40S:1",
+   "provider": "aws",
+   "status": "FAILED",
+   "spend": 0.153,
+   "start": "2026-08-25T21:32:24Z",
+   "end": "2026-08-25T21:41:36Z",
+   "note": "Reported FAILED because one of four arms failed, which is the intended report: C3 OOMed at its own 11.0 GB ceiling with 9.4 GB still free on the card and its three siblings finished normally, which is the isolation working. Bought the numbers that size every later pack: 7.5 GB per LoRA arm and 11.4 GB for the entropy-weighted arm as the driver sees them, against 6.1 GB as torch reports allocated. Packed C4 saw 238,195 tokens, the same count byte for byte as the solo C4 smoke."
   }
  ],
- "total_spent": 12.133
+ "total_spent": 12.286
 }
