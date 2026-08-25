@@ -214,7 +214,38 @@ if PEAK_GB > LIMIT_GB + 1e-6:
 # The child's whole configuration travels on the environment. A child never calls the job
 # API, so it cannot ask for its own config; passing the supervisor's verbatim is what keeps a
 # packed arm's recipe byte-identical to the same arm run solo.
+#
+# `pack_overrides` is the exception, and it exists because not every packable program can
+# recognise its own arm. The sweep trainer can: `arm` selects a recipe from a table inside
+# main.py, so one shared config describes all eight arms. An evaluation pass cannot, because
+# what distinguishes two of its arms is which checkpoint and which component they run, and
+# those are values rather than a name. Rather than push an arm table into every future child
+# script, an arm may be handed a patch on the shared config:
+#
+#   -p pack_overrides='{"C6": {"lora_r": 64}, "RB": {"batch_size": 32}}'
+#
+# It is JSON so the values keep their types; a bare string parameter would turn every number
+# into text and every false into a true.
 CHILD_CFG = dict(CFG)
+OVERRIDES = {}
+_ov = str(C("pack_overrides", "")).strip()
+if _ov:
+    try:
+        OVERRIDES = json.loads(_ov)
+    except Exception as exc:
+        lab.error(message="pack_overrides is not valid JSON (%s): %r" % (exc, _ov[:200]))
+        raise SystemExit(2)
+    if not isinstance(OVERRIDES, dict):
+        lab.error(message="pack_overrides must be an object of arm -> {key: value}")
+        raise SystemExit(2)
+    for a, patch in OVERRIDES.items():
+        if a not in ARMS:
+            lab.error(message="pack_overrides names %r, which is not one of arms=%s"
+                              % (a, ",".join(ARMS)))
+            raise SystemExit(2)
+        if not isinstance(patch, dict):
+            lab.error(message="pack_overrides[%s] must be an object, got %r" % (a, patch))
+            raise SystemExit(2)
 
 
 def log(msg):
@@ -234,6 +265,9 @@ if AFTER:
 for a in sorted(SCRIPTS):
     if SCRIPTS[a] != "main.py":
         log("%s runs %s rather than the sweep trainer" % (a, SCRIPTS[a]))
+for a in sorted(OVERRIDES):
+    log("%s takes the shared config with %s patched"
+        % (a, ", ".join("%s=%r" % kv for kv in sorted(OVERRIDES[a].items()))))
 
 children = {}          # arm -> Popen
 started = {}           # arm -> monotonic start
@@ -291,7 +325,9 @@ def spawn(arm):
     env["TIDEPOOL_PACK_ARM"] = arm
     env["TIDEPOOL_PACK_OUT"] = adir
     env["TIDEPOOL_PACK_MEMFRAC"] = str(MEMFRAC[arm])
-    env["TIDEPOOL_PACK_CFG"] = json.dumps(CHILD_CFG)
+    cfg = dict(CHILD_CFG)
+    cfg.update(OVERRIDES.get(arm) or {})
+    env["TIDEPOOL_PACK_CFG"] = json.dumps(cfg)
     env["TIDEPOOL_PACK_LOCAL"] = json.dumps(LOCAL)
     # Distinct W&B run per arm; without this every child reports into one run.
     env["WANDB_RUN_GROUP"] = str(C("run_tag", "s5.3-pack"))
@@ -569,6 +605,7 @@ summary = {
     "per_arm_memory_fraction": MEMFRAC,
     "per_arm_script": {a: SCRIPTS[a] for a in ARMS},
     "waits_on": AFTER,
+    "overrides": OVERRIDES,
     "provides": {a: "%s:%s" % v for a, v in PROVIDES.items()},
     "card_gb": CARD_GB,
     "peak_concurrent_demand_gb": round(PEAK_GB, 2),

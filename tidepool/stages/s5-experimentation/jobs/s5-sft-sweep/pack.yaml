@@ -47,6 +47,13 @@ parameters:
   # how a buffer generated on this card reaches the arms consuming it without a round trip,
   # while still landing in shared storage for every later stage.
   pack_provides: ""
+  # JSON: `{"<arm>": {"<key>": <value>}}`, merged onto the shared config for that arm alone.
+  # The sweep trainer does not need it -- `arm` selects a recipe from a table inside main.py --
+  # but a program whose arms differ by which checkpoint and which component they run cannot
+  # recognise itself from a name, and this is how such an arm is configured without pushing an
+  # arm table into every future child script. JSON rather than a bare string so values keep
+  # their types.
+  pack_overrides: ""
   # How often the supervisor looks at its children. Only lowered by the scheduling tests.
   poll_seconds: 5
   # Every child peaks its memory while loading the same base model. Starting them together

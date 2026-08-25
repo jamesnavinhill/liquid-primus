@@ -68,8 +68,10 @@ if spec.get("produce"):
 print("step 2/2", flush=True)
 if spec.get("rc"):
     sys.exit(int(spec["rc"]))
-json.dump({"tokens_per_second": 100.0, "peak_gpu_reserved_gb": 1.0,
-           "card_total_gb": 47.7}, open(os.path.join(out, "score.json"), "w"))
+cfg = json.loads(os.environ["TIDEPOOL_PACK_CFG"])
+json.dump({"tokens_per_second": 100.0, "peak_gpu_reserved_gb": 1.0, "card_total_gb": 47.7,
+           "saw_batch_size": cfg.get("batch_size"), "saw_arm": cfg.get("arm")},
+          open(os.path.join(out, "score.json"), "w"))
 '''
 
 
@@ -195,10 +197,32 @@ for bad, why in (
     r = run(cfg, {})
     check("validation", r["rc"] == 2, "%s was accepted" % why)
 
+# 8. Per-arm config patches, for child scripts that cannot recognise their own arm from a
+#    name -- an evaluation arm is a checkpoint and a component, not a recipe in a table.
+r = run(dict(BASE, arms="A,B", pack_gb="10,10",
+             pack_overrides=json.dumps({"B": {"batch_size": 32, "smoke": True}})),
+        {"A": {}, "B": {}})
+check("overrides", r["summary"] and r["summary"]["overrides"] == {"B": {"batch_size": 32,
+                                                                       "smoke": True}},
+      "pack_overrides was not recorded: %s" % (r["summary"] or {}).get("overrides"))
+check("overrides", r["summary"] and not r["summary"]["failed"],
+      "a pack with overrides failed: %s" % (r["summary"] or {}).get("failed"))
+# The point is what the child actually received, not what the supervisor recorded.
+res = (r["summary"] or {}).get("results") or {}
+check("overrides", res.get("B", {}).get("saw_batch_size") == 32,
+      "B did not receive its patched batch_size: %s" % res.get("B"))
+check("overrides", res.get("A", {}).get("saw_batch_size") is None,
+      "A received B's patch; overrides are leaking across arms: %s" % res.get("A"))
+for bad, why in (('{"NOPE": {"x": 1}}', "an override for an arm not in the pack"),
+                 ('{"A": 5}', "an override that is not an object"),
+                 ('not json', "an override that is not JSON")):
+    r = run(dict(BASE, arms="A,B", pack_gb="10,10", pack_overrides=bad), {})
+    check("overrides", r["rc"] == 2, "%s was accepted" % why)
+
 if fails:
     print("FAIL")
     for f in fails:
         print("  - " + f)
     sys.exit(1)
 print("pack scheduling holds: handover, failed producer, empty producer, peak sizing, "
-      "overcommit, per-arm scripts, 4 validation cases")
+      "overcommit, per-arm scripts, per-arm config, 7 validation cases")
