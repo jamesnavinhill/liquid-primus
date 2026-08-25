@@ -20,7 +20,13 @@ parameters:
   # above the ceiling, so the run will report how many sources actually exist and take them
   # all rather than silently truncating.
   max_defective: 24000
+  # The clean control arm is drawn from BOTH held-out splits. The test split alone yielded 68
+  # items, which holds the 0.15 false-flag ceiling barely tighter than the frozen 30-item arm
+  # it exists to improve on; the validation split is held out the same way and roughly the same
+  # size, so taking both roughly doubles it. 400 is a ceiling neither split will reach.
   max_control: 400
+  val_object: tidepool/s4.4/val.jsonl.gz
+  control_min: 100
   # No single corpus may supply more than this share of the sources. Only three corpora carry
   # tool-result turns (hermes_glaive 3,748, hermes_fc 772, toolace 701), so the cap is what
   # stops the guardrail being learned in hermes_glaive's response dialect alone.

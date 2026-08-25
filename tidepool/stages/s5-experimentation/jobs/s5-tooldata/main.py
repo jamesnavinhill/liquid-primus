@@ -58,6 +58,8 @@ PROBES_OBJECT = CFG.get("probes_object") or "tidepool/s4.4/probes/probes.jsonl"
 TOKENIZER_ID = CFG.get("tokenizer_id") or "LiquidAI/LFM2.5-1.2B-Instruct"
 MAX_DEFECTIVE = int(CFG.get("max_defective") or 24000)
 MAX_CONTROL = int(CFG.get("max_control") or 400)
+VAL_OBJECT = CFG.get("val_object") or "tidepool/s4.4/val.jsonl.gz"
+CONTROL_MIN = int(CFG.get("control_min") or 100)
 MAX_CORPUS_SHARE = float(CFG.get("max_corpus_share") or 0.40)
 OVERLAP_LIMIT = float(CFG.get("overlap_limit") or 0.30)
 BOILERPLATE_DF = float(CFG.get("boilerplate_df") or 0.50)
@@ -348,29 +350,37 @@ for n, s in enumerate(selected):
     # a fallback those sources were thrown away and the family mix skewed toward whichever
     # transforms always apply.
     body = why = forbid = None
-    mode = None
+    mode = text = pool = None
     for cand in [defects.TRAINED_MODES[(hv + j) % len(defects.TRAINED_MODES)]
                  for j in range(len(defects.TRAINED_MODES))]:
         try:
-            body, why, forbid = defects.apply_defect(s["payload"], cand, depth, args)
+            cbody, cwhy, cforbid = defects.apply_defect(s["payload"], cand, depth, args)
         except Exception:
             gen_counts["transform_error_" + cand] += 1
             continue
-        if body is None:
+        if cbody is None:
             gen_counts["skipped_" + cand] += 1
             continue
-        mode = cand
+        # A value the model can read somewhere in its own prompt is not evidence of
+        # fabrication, so it does not belong on the forbidden list. Scoping that to the
+        # damaged tool body alone was too narrow: the target names the tool, corpus payload
+        # leaves routinely echo the tool's domain words (a `get_current_weather` call
+        # returning a `weather` field), and 1,405 of 4,031 sources were discarded because a
+        # target that said "the get_current_weather response is empty" was recorded as
+        # having quoted a payload leaf `weather`. `empty_body` survived once in 4,031.
+        prompt = all_text(with_tool_body(s["messages"], s["k"], cbody))
+        cforbid = [v for v in (cforbid or []) if not quotes(prompt, [v])]
+        ctext, cpool = targets.pick(row_id(s, cand, depth), cand,
+                                   name or s["c"], cwhy, defects.plain_why(cand, cwhy))
+        if quotes(ctext, cforbid):
+            # Still possible, and still a drop; but try the next transform before giving up
+            # on the source, exactly as a skipped transform does.
+            gen_counts["target_leaked_value"] += 1
+            continue
+        body, why, forbid, text, pool, mode = cbody, cwhy, cforbid, ctext, cpool, cand
         break
     if mode is None:
         gen_counts["no_mode_applied"] += 1
-        continue
-    plain = defects.plain_why(mode, why)
-    text, pool = targets.pick(row_id(s, mode, depth), mode, name or s["c"], why, plain)
-    leak = quotes(text, forbid)
-    if leak:
-        # A target that quotes a value the damaged response no longer carries is the exact
-        # fabrication the probes forbid. Dropping is right; a nonzero count is a bug here.
-        gen_counts["target_leaked_value"] += 1
         continue
     bad_msgs = with_tool_body(s["messages"], s["k"], body) + [
         {"role": "assistant", "content": text}]
@@ -455,8 +465,19 @@ log("wrote %d rows (%d defective + %d clean), %.2fM tokens"
 lab.update_progress(85)
 
 # ------------------------------------------------------------- enlarged clean control arm
-test_local = lab.storage_download(TEST_OBJECT)
-test_src, test_counts, test_groups = harvest(test_local, "test")
+# Both held-out splits, because one is not enough. The test split carries 11,550 rows, of
+# which 179 have a tool return and 73 a usable one; after decontamination that left 68, and a
+# 68-item arm holds a false-flag ceiling barely tighter than the frozen 30-item one it exists
+# to improve on. The validation split is held out from training in the same way and roughly
+# the same size, so taking both roughly doubles the arm. Every item still has to clear the
+# group check against the training sources.
+test_src, test_counts, test_groups = [], collections.Counter(), set()
+for obj, split in ((TEST_OBJECT, "test"), (VAL_OBJECT, "val")):
+    src, cnt, grp = harvest(lab.storage_download(obj), split)
+    test_src.extend(src)
+    for k, v in cnt.items():
+        test_counts[split + "_" + k] += v
+    test_groups |= grp
 FACTS["test_scan"] = dict(test_counts)
 rng2 = random.Random(SEED + 1)
 rng2.shuffle(test_src)
@@ -481,6 +502,7 @@ for s in test_src:
         "probe": "tool_return", "arm": "clean_corpus", "mode": "intact",
         "scenario": "%s_%s_%s" % (s["c"], s["i"], s["k"]), "depth": depth,
         "id": "clean_corpus_%s_%s_%s_d%d" % (s["c"], s["i"], s["k"], depth),
+        "split": s["s"],
         "messages": msgs,
         "defect": "none: a real intact return from the held-out split",
         "check": {"kind": "clean", "expect": s["headline"]},
@@ -551,9 +573,11 @@ if decon["probe_question_gram"] or decon["carries_probe_forbidden_value"]:
     log("note: %d rows dropped for sharing a 13-gram with a probe question and %d for "
         "carrying a value a probe forbids; the final set has neither by construction"
         % (decon["probe_question_gram"], decon["carries_probe_forbidden_value"]))
-if len(control) < 200:
-    fail("clean control arm has %d items; under 200 it cannot hold a false-flag ceiling "
-         "any tighter than the frozen 30-item arm already does" % len(control))
+if len(control) < CONTROL_MIN:
+    fail("clean control arm has %d items, under the %d floor; the arm exists to hold the "
+         "0.15 false-flag ceiling tighter than the frozen 30-item arm can, and it cannot do "
+         "that on a sample this small" % (len(control), CONTROL_MIN))
+FACTS["control_by_split"] = dict(collections.Counter(c["split"] for c in control))
 missing_modes = sorted(set(defects.TRAINED_MODES) - {p["mode"] for p in kept})
 if missing_modes:
     fail("trained modes with no surviving rows: %s" % ", ".join(missing_modes))

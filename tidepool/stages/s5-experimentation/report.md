@@ -1266,3 +1266,52 @@ four rows would have run 40 items per component against B1's 6,466 and reported 
 full passes. The relaunch passes all five counts explicitly, the recorded commands are
 corrected, and the run log now says why in the place someone would copy them from. B1's own
 full pass used `-p limit_per_component=0`, so nothing already recorded is affected.
+
+- 2026-08-25 · mirror · Pushed to `github.com/jamesnavinhill/liquid-primus` under `tidepool/`,
+  commit `bba6212`: the three fixed generator files and their config, the two check scripts
+  (`fixture_test.py`, the 23-check unit fixture, and `decon_check.py`, the local diagnosis that
+  is explicit in its own docstring about not being a result), this stage's record of both empty
+  runs, the corrected queue commands in `runs/s5.2-baselines.md`, the ledger and the task list.
+
+## Attempt 2 got the hard part right and failed two gates on the easy parts (s5.3)
+
+`f11afe02` wrote 5,202 rows and 2.87M tokens, and cleared seven of the nine gates including the
+one the whole guardrail axis rests on: **detector coverage 0.704**, inside the `[0.60, 0.90]`
+band. The taught phrasings split as designed against the frozen 26-pattern detector, so a flag
+rate measured on this training will be a measurement of the behaviour rather than a recall test
+of our own wording. Decontamination behaved: 0 rows dropped for sharing a question gram, 25
+dropped for carrying a value a probe forbids an answer to quote. Held-out modes absent, clean
+pairing exactly 1:1, no source drawn from a non-train split, three or more undetected families.
+
+Two gates failed and both had a real cause.
+
+**The no-fabrication check discarded 1,405 of 4,031 sources, 34.9%.** Not a template quoting
+payload values, which is what the gate was written to catch, and not a coincidence of spelling
+either, which is what the previous fix addressed. The mechanism, found by running the rotation
+and the target selection over the held-out split and printing what actually collided: **corpus
+tool responses routinely echo the called function's own name back inside the payload.** A
+`get_stock_price` return carries `"name": "get_stock_price"`. `empty_body` deletes the payload,
+so that name lands on the list of values the response no longer carries; and the target names
+the tool, because naming the tool is how a reply says which call failed. So the check was
+recording the model for quoting a string sitting in its own prompt, in the tool call, three
+turns up. `empty_body` survived once in 4,031 attempts. Measured over the 73 held-out sources
+that carry a usable tool return, 19 leaked, 12 of them every single `empty_body` case.
+
+The fix follows from the check's own premise: a value the model can read anywhere in its prompt
+is not evidence of fabrication, so the forbidden list is scoped to the whole prompt rather than
+to the damaged tool body alone. Over the same 73 sources that takes the leak count from 19 to
+**0**. And a leak now falls through the mode rotation instead of discarding the source, exactly
+as a non-applicable transform already did, so a source whose first defect happens to collide
+gets a different defect rather than being thrown away.
+
+**The clean control arm reached 68 items against a floor of 200.** The floor was unreachable,
+not missed: the test split holds 11,550 rows, 179 with a tool return, 73 usable, 68 after
+decontamination. A gate the data cannot satisfy is a bug in the gate. The arm now draws from
+both held-out splits, which are held out the same way and roughly the same size, and the floor
+is 100 with the reason stated: the arm exists to hold the plan's 0.15 false-flag ceiling
+tighter than the frozen 30-item arm can, and 68 barely does that while roughly 140 does.
+
+Two local diagnostics are checked in beside the generator, both explicit in their own
+docstrings that they produce no citable numbers: `decon_check.py`, which measured the
+contamination rule, and `leak_check.py`, which found the function-name collision. The fixture
+is up to 26 checks and includes the function-name case as a regression. Attempt 3 is `7248507b`.

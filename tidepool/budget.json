@@ -337,13 +337,29 @@
    "task": "s5-tooldata",
    "resources": "CPU only (8 vCPU / 48 GB / 100 GB disk, gcp)",
    "accelerators": null,
-   "status": "RUNNING",
-   "durationHours": null,
+   "status": "COMPLETE",
+   "durationHours": 0.104,
    "spend": 0.0,
    "estimateHours": 0.0,
    "recordedAt": "2026-08-25T16:40:00Z",
    "description": "s5.3 guardrail supervision, attempt 2. Three fixes over attempt 1: the request-surface decontamination rule runs over the probe questions rather than the system contract, with a boilerplate df filter and a new exact check on the values the probes forbid; the no-fabrication test matches whole token runs and only identifying values; and mode assignment falls through the rotation when a transform does not apply, so the 494 sources whose payloads echo no call argument get a different defect rather than being discarded.",
-   "note": "No GPU and no charge. A 23-check fixture over the real probe bank covers every fix, and the corrected decontamination rule was measured against the held-out split before requeueing: 0 of 156 candidate rows flagged on question overlap, 13 flagged by the two tighter nets."
+   "note": "No GPU and no charge. A 23-check fixture over the real probe bank covers every fix, and the corrected decontamination rule was measured against the held-out split before requeueing: 0 of 156 candidate rows flagged on question overlap, 13 flagged by the two tighter nets. OUTCOME: wrote 5,202 rows and 2.87M tokens, cleared seven of nine gates including detector coverage 0.704 inside the [0.60, 0.90] band. Failed on a no-fabrication check that discarded 1,405 of 4,031 sources (corpus tool returns echo the called function's name back in the payload; the target names the tool) and on a clean control floor of 200 the test split cannot reach at 68 items. Both fixed and requeued as 7248507b. No charge: CPU only."
+  },
+  {
+   "id": "s5.3-tooldata-attempt3",
+   "jobId": "7248507b-cd34-4668-a6f1-166ae9aca24f",
+   "experiment": "tidepool",
+   "substage": "s5.3",
+   "task": "s5-tooldata",
+   "resources": "CPU only (8 vCPU / 48 GB / 100 GB disk, gcp)",
+   "accelerators": null,
+   "status": "RUNNING",
+   "durationHours": null,
+   "spend": 0.0,
+   "estimateHours": 0.0,
+   "recordedAt": "2026-08-25T17:10:00Z",
+   "description": "s5.3 guardrail supervision, attempt 3. Two fixes over attempt 2: the forbidden-value list is scoped to the whole prompt rather than the damaged tool body alone, and a leak falls through the mode rotation instead of discarding the source; and the clean control arm is drawn from both held-out splits against a floor of 100 rather than from the test split alone against an unreachable 200.",
+   "note": "No GPU and no charge. Both fixes measured against the held-out split before requeueing: the prompt-scoped forbidden list takes the leak count over all 73 usable held-out sources from 19 to 0, and the two splits together should roughly double a 68-item control arm. Attempt 2 already cleared detector coverage at 0.704, so the expected outcome is the same set with roughly 4,000 pairs instead of 2,601."
   }
  ],
  "total_spent": 3.871

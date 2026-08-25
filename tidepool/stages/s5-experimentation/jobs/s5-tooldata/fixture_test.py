@@ -124,5 +124,24 @@ for i, scen in enumerate(bank_tools.SCENARIOS):
 print("  target leaks over %d scenario/mode/depth cells: %d" % (len(bank_tools.SCENARIOS) * 7 * 3, leaks))
 check("no target quotes a forbidden value", leaks == 0)
 
+# 7 --- the prompt-scoped forbidden filter, which is what killed empty_body
+# Corpus tool responses routinely echo the function name back in the payload. `empty_body`
+# removes it, so it lands on the forbidden list, and the target interpolates the same name
+# because naming the tool is how the reply says which call failed. Measured on the held-out
+# split: 12 of 12 empty_body sources leaked this way, and 4,030 of 4,031 were discarded.
+pay2 = {"name": "get_current_weather", "weather": "overcast", "temperature_c": 11.2,
+        "station_name": "Lisbon Portela"}
+b2, w2, f2 = defects.apply_defect(pay2, "empty_body", 1, {"city": "Lisbon"})
+t2, _ = targets.pick("fx-tool", "empty_body", "get_current_weather", w2, defects.plain_why("empty_body", w2))
+check("unfiltered list reads the tool name as a leak", quotes(t2, f2) != [])
+prompt = ("You are a function-calling assistant.\n"
+          "What is the weather at Lisbon Portela right now?\n"
+          "<tool_call>{\"name\": \"get_current_weather\", \"arguments\": {\"city\": \"Lisbon\"}}</tool_call>\n"
+          "<tool_response>%s</tool_response>" % b2)
+f2s = [v for v in f2 if not quotes(prompt, [v])]
+check("prompt-scoped list clears the leak", quotes(t2, f2s) == [])
+check("prompt-scoped list still forbids a value only the payload had",
+      "overcast" in f2s and "get_current_weather" not in f2s)
+
 print("%d checks passed, %d failed" % (ok, fail))
 sys.exit(1 if fail else 0)
