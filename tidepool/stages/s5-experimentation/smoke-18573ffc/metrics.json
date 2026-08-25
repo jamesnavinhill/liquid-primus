@@ -1,0 +1,29 @@
+{
+ "run_tag": "s5.1-smoke",
+ "base_model": "LiquidAI/LFM2.5-1.2B-Instruct",
+ "mix": "role_balanced",
+ "smoke": true,
+ "template_mode": "native",
+ "template_notes": [
+  "used the model's own chat template; 2 of 64 probe rows carried a tool turn and it accepted them"
+ ],
+ "steps": 30,
+ "tokens_seen": 221857,
+ "tokens_per_second": 1435.3,
+ "val_loss_before": 1.3223,
+ "val_loss_after": 0.494,
+ "val_loss_delta": -0.8284,
+ "trainable_params": 11108352,
+ "total_params": 1181448960,
+ "effective_batch": 16,
+ "learning_rate": 0.0001,
+ "lora": {
+  "r": 16,
+  "alpha": 32,
+  "dropout": 0.05
+ },
+ "epoch_budget_tokens": 83089178,
+ "projected_full_run_hours": 16.08,
+ "wall_clock_seconds": 204.9,
+ "assertion_failures": []
+}

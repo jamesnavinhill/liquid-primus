@@ -331,8 +331,15 @@ if WANDB:
     WANDB.finish()
 lab.update_progress(100)
 log("SCORE " + json.dumps(score))
+# lab.finish() marks SUCCESS and takes (message, score, ...) with no status argument;
+# lab.error() marks FAILED and takes message only. A failed run therefore carries its
+# numbers in score.json rather than in job_data.score, which is why the message repeats
+# the headline figures.
 if fails:
-    lab.finish("failed", "%d assertion failures; see metrics.json" % len(fails), score=score)
+    lab.error(message="%d assertion failures; see metrics.json (val loss %.4f -> %.4f, "
+                      "%.0f tok/s, template %s)"
+                      % (len(fails), val_before, val_after, tok_per_s, enc.mode))
 else:
-    lab.finish("success", "%s: %d steps, val loss %.4f -> %.4f, %.0f tok/s, template %s"
-               % (RUN_TAG, step, val_before, val_after, tok_per_s, enc.mode), score=score)
+    lab.finish(message="%s: %d steps, val loss %.4f -> %.4f, %.0f tok/s, template %s"
+                       % (RUN_TAG, step, val_before, val_after, tok_per_s, enc.mode),
+               score=score)

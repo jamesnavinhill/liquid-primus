@@ -75,6 +75,30 @@
    "status": "COMPLETE",
    "note": "Wall clock 2m45s, of which 44.4s was building the 13-gram index over the training split. Zero GPU-hours because the job requested no accelerator. Running total charged against the allowance across s4: 0.0 of 200 GPU-h, against 145 planned for the project as a whole.",
    "recordedAt": "2026-08-25T12:20:00Z"
+  },
+  {
+   "jobId": "18573ffc-abea-4c70-b59b-756e96c1e005",
+   "experiment": "tidepool",
+   "substage": "s5.1",
+   "description": "s5.1 supervised smoke, attempt 1. Every science criterion passed: native chat template accepted tool turns (no fallback), loss mask 83/896 probe tokens, LoRA 11,108,352 of 1,181,448,960 params (0.940%), val loss 1.3223 -> 0.4940 over 30 steps, 1435.3 tok/s, priority_share 0.5, 0 assertion failures, all 5 artifacts saved including adapter.zip. Job record is FAILED because the final lab.finish() call used a status argument the SDK does not have, so it raised after all work and all saves completed. Task wall clock 204.9 s.",
+   "resources": "L4:1",
+   "durationHours": 0.134,
+   "spend": 0.134,
+   "status": "FAILED",
+   "spendNote": "Measured from job start (12:03:28Z) to the observed terminal status, so it includes provisioning; the task itself ran 204.9 s. L4:1 makes GPU-hours equal to wall-clock hours.",
+   "recordedAt": "2026-08-25T12:12:22Z"
+  },
+  {
+   "jobId": "defa6156-9197-46a1-bae6-6535a5a854b6",
+   "experiment": "tidepool",
+   "substage": "s5.1",
+   "description": "s5.1 replay-generation smoke, attempt 1. Every science criterion passed: 64 of 64 sampled prompts usable within the 1024-token window, 64 completions, 0 empty, 15,677 completion tokens at 204.1 tok/s, 0 assertion failures, replay.jsonl + replay_summary.json + score.json all saved. Job record is FAILED for the same reason as 18573ffc: the final lab.finish() call used a status argument the SDK does not have. Task wall clock 77.2 s.",
+   "resources": "L4:1",
+   "durationHours": 0.098,
+   "spend": 0.098,
+   "status": "FAILED",
+   "spendNote": "Measured from job start (12:03:38Z) to the observed terminal status, so it includes provisioning; the task itself ran 77.2 s.",
+   "recordedAt": "2026-08-25T12:12:22Z"
   }
  ]
 }

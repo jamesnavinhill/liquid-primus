@@ -1,18 +1,20 @@
 # Stage 5: Experimentation
 
-_Status: in progress. `s5.1` smoke runs are in flight on two providers; nothing has been
-trained for real yet._
+_Status: in progress. `s5.1` has its measurements; both smoke jobs are being re-run to
+prove one fix. Nothing has been trained for real yet._
 
 ## Headline
 
-The supervised pipeline is written and two smoke runs are in flight, one on the training
-path and one on the replay-generation path, at a few minutes of GPU each. The mix
-calibration the plan called for is settled and is a consequence of three stated rules
-rather than a hand-picked set of weights: **tool calling takes 45.0% of the epoch's tokens,
-structured output 5.0%, SQL 27.4% and code 22.6%**, on a 90.6M-token epoch. Tool calling and
-structured output together take exactly the 50% floor the plan set, and structured output
-reaches only 5% because the corpus holds 1.5M tokens of it and repetition is capped at three
-passes.
+The supervised smoke run passed every check it was built to make: the model's own chat
+template accepted tool-call turns with no fallback, the loss mask landed on assistant tokens
+only, LoRA attached 11.1M of 1,181M parameters, and **validation loss fell 1.3223 → 0.4940
+over 30 steps at 1,435 tokens per second, which puts the full 90.6M-token reference epoch at
+16.1 GPU-hours** rather than at a guess. The replay path produced 64 of 64 completions with
+none empty at 204 tok/s, or 33.3 hours per 100k. Both jobs then crashed on their final status
+call, a one-line misuse of the experiment harness that lost no measurement and no artifact;
+both are being re-run with it fixed, at about 0.1 GPU-hour each, because the ranked dashboard
+the sweep depends on reads exactly the field that crash left empty. Spend so far is 0.23 of
+145 GPU-hours.
 
 ## Work log
 
@@ -20,6 +22,22 @@ passes.
   providers: the supervised run `18573ffc` on one and the replay generation `defa6156` on
   another. The GPU cap is two at a time and both want the same card, so splitting them means
   a provider being out of L4 capacity costs one smoke rather than both.
+- 2026-08-25 · s5.1 · Both smoke jobs reached the GPU and are reporting. The in-flight record
+  and the per-attempt log live in `runs/s5.1-smoke.md`; live loss curves are on Weights &
+  Biases under the `tidepool` project
+  ([supervised run](https://wandb.ai/james-navinhill/tidepool/runs/mz0evlcl)).
+- 2026-08-25 · s5.1 · Repaired the in-flight job marker, which had been written in a shape
+  the run scheduler cannot parse. Left as it was, the two running jobs would have been
+  invisible to it and the project would have sat still while they burned GPU time. The job
+  intents it carried are preserved in `runs/s5.1-smoke.md`.
+- 2026-08-25 · s5.1 · Both smoke jobs finished their work, saved every artifact, and then
+  raised on the last statement: the harness's `finish` call was written with a status argument
+  it does not take. Fixed in both task scripts against the SDK's published signature, and both
+  smokes re-queued as `c8699eaf` (supervised) and `66aca6c7` (replay). Full measurements from
+  attempt 1, the failure signature, and the relaunch accounting are in `runs/s5.1-smoke.md`.
+- 2026-08-25 · s5.1 · Charged both failed attempts to the ledger at 0.232 GPU-hours together.
+  They spent real compute and produced real measurements, so recording them as free would
+  understate the stage.
 
 ## s5.1 What the smoke runs are for
 
@@ -96,8 +114,20 @@ checkpointing at a 2,048-token window fits with room to spare.
 
 ## Compute
 
-Everything before this stage ran on CPU, so 0.0 of the 200 GPU-hour allowance is spent. The
-two smoke jobs are the first GPU charge on the project, at well under an hour between them.
-The projected cost of a full single-epoch reference run is measured by the smoke rather than
-guessed: the supervised job records its own throughput and writes the implied hours for the
-90.6M-token epoch into its metrics, which is what the next budget entry will be sized from.
+Everything before this stage ran on CPU. The two attempt-1 smokes are the first GPU charge on
+the project at **0.232 GPU-hours** together, measured from job start to terminal status so
+that provisioning is included; the tasks themselves ran 204.9 s and 77.2 s. Attempt 2 adds
+roughly the same again. Against a 145 GPU-hour plan and a 200 GPU-hour enforced allowance
+(re-read at this substage: 2 GPUs at a time, L4 among the allowed types, 0 held), the stage
+has spent 0.2%.
+
+The failed attempts are charged in full. They spent the compute and they produced the
+measurements the rest of the stage is sized from, so recording them as free would make the
+ledger flatter than the project.
+
+The projected reference-run cost is now measured rather than assumed: **16.08 GPU-hours** for
+one 90.6M-token epoch at the observed 1,435 tok/s on an L4. The plan's supervised sweep budget
+of 38 GPU-hours therefore covers roughly two full-epoch arms on this card, which is a real
+constraint for `s5.3` and is taken up there rather than here: either the sweep arms run
+sub-epoch, or they run on a faster card, and the choice is the operator's at the direction
+decision.

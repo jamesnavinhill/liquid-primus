@@ -191,9 +191,15 @@ for f in fails:
     log("ASSERTION FAILURE: %s" % f)
 lab.update_progress(100)
 log("SCORE " + json.dumps(score))
+# lab.finish() marks SUCCESS and takes (message, score, ...) with no status argument;
+# lab.error() marks FAILED and takes message only. A failed run therefore carries its
+# numbers in score.json rather than in job_data.score, which is why the message repeats
+# the headline figures.
 if fails:
-    lab.finish("failed", "%d assertion failures; see replay_summary.json" % len(fails),
-               score=score)
+    lab.error(message="%d assertion failures; see replay_summary.json "
+                      "(%d completions, %d empty, %.0f tok/s)"
+                      % (len(fails), n_out, score["empty"], tps))
 else:
-    lab.finish("success", "%d frozen greedy completions over the prompt pool, %.0f tok/s"
-               % (n_out, tps), score=score)
+    lab.finish(message="%d frozen greedy completions over the prompt pool, %.0f tok/s"
+                       % (n_out, tps),
+               score=score)

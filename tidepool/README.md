@@ -6,8 +6,17 @@ state below is the state of the run, not a summary written afterwards.
 
 Stage 4 (data preparation) is complete: the corpus is rendered and measured at 518,330
 supervised examples and 201.5M trainable tokens, plus a 447,053-prompt pool, and the two
-hand-written probe sets are built and proven held out. Stage 5 (experimentation) is next.
-Nothing has drawn on the GPU allowance yet, since every job so far ran on CPU.
+hand-written probe sets are built and proven held out.
+
+Stage 5 (experimentation) has started and the smoke runs have reported. The supervised path
+works end to end on an L4: the model's own chat template accepts tool-call turns, the loss
+mask lands on assistant tokens only, LoRA attaches 11.1M of 1,181M parameters, and validation
+loss fell 1.3223 to 0.4940 over 30 steps at 1,435 tokens per second. That throughput puts one
+full 90.6M-token epoch at 16.08 GPU-hours, which is now a measurement rather than an estimate.
+The replay path returned 64 of 64 completions with none empty at 204 tok/s, or 33.34 hours per
+100k. Both first attempts then raised on their final status call, a one-line misuse of the
+experiment harness that cost no measurement and no artifact, and both are being re-run with it
+fixed. 0.232 of the 145 GPU-hour plan is spent.
 
 | Path | What it is |
 | --- | --- |
@@ -24,6 +33,8 @@ Nothing has drawn on the GPU allowance yet, since every job so far ran on CPU.
 | `stages/s4-data-preparation/eda/diagnostics-<job>/` | Raw per-corpus statistics from the diagnostics job, one file per corpus, plus its figures. |
 | `stages/s4-data-preparation/jobs/` | The code each queued job ran, exactly as submitted. |
 | `stages/s5-experimentation/` | The training report, and `jobs/` holds the supervised fine-tuning task and the replay-generation task as submitted. |
+| `stages/s5-experimentation/runs/` | One file per run campaign: what each job was for, what it returned, and every relaunch with the reason for it. |
+| `stages/s5-experimentation/smoke-<job>/` | The metrics each smoke job saved, verbatim, so the throughput and loss figures quoted above can be checked against their source. |
 | `stages/s4-data-preparation/preprocess-4674a2ec/` | Per-corpus rendering counts, the unrenderable-reason breakdown, the purity check and the figure from the preprocessing job. |
 | `stages/s4-data-preparation/probes-05bbcd49/` | `probes.jsonl` is the 434 hand-written evaluation items in full, with the build's own summary and score beside it. |
 
