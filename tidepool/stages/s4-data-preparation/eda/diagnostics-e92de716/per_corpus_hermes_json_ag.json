@@ -1,0 +1,95 @@
+{
+ "hf_id": "NousResearch/hermes-function-calling-v1",
+ "config": "json_mode_agentic",
+ "split": "train",
+ "role": "struct",
+ "rows": 1342,
+ "field_missing_null": {},
+ "field_empty_string": {},
+ "adapter_parse_failures": 0,
+ "prompt_chars": {
+  "n": 1342,
+  "mean": 1241.54,
+  "p50": 1194.0,
+  "p90": 1889.8000000000002,
+  "p99": 2871.6299999999956,
+  "max": 4425.0
+ },
+ "tools_per_row": {
+  "n": 1342,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "rows_without_tools": 1342,
+ "params_per_tool": {},
+ "required_per_tool": {},
+ "schema_nesting_depth": {},
+ "declared_type_vocabulary": {},
+ "schema_container_type": {},
+ "rows_with_calls": 0,
+ "calls_per_row": {
+  "n": 1342,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "args_per_call": {},
+ "total_calls": 0,
+ "schema_serialization_formats": {},
+ "assistant_output_formats": {},
+ "calls_with_non_identifier_names": 0,
+ "tool_name_mismatch_rows": 0,
+ "tool_name_mismatch_calls": 0,
+ "refusal_rows": 0,
+ "refusal_families": {},
+ "refusal_with_target_declared": 0,
+ "suspect_over_refusals": 0,
+ "label_contradictions_same_query": 0,
+ "duplicate_prompt_groups": 42,
+ "duplicate_prompt_rows": 84,
+ "distinct_prompts": 1300,
+ "groups": {
+  "n_groups": 834,
+  "sizes": {
+   "n": 834,
+   "mean": 1.61,
+   "p50": 1.0,
+   "p90": 2.0,
+   "p99": 4.0,
+   "max": 10.0
+  },
+  "largest_group_share": 0.00745,
+  "top10_share": 0.04471
+ },
+ "contaminated_rows": 0,
+ "contaminated_rate": 0.0,
+ "contaminated_by_benchmark": {},
+ "tokens_per_prompt": {
+  "n": 1342,
+  "mean": 265.68,
+  "p50": 249.0,
+  "p90": 401.9000000000001,
+  "p99": 646.9499999999996,
+  "max": 1041.0
+ },
+ "tokens_per_schema_block": {
+  "n": 1342,
+  "mean": 194.52,
+  "p50": 171.0,
+  "p90": 332.0,
+  "p99": 588.7799999999966,
+  "max": 877.0
+ },
+ "tokens_per_tool_call": {},
+ "token_stats_coverage": "all rows",
+ "adapter_extras": {
+  "has_json_schema": 1342,
+  "n_turns": 4026
+ },
+ "seconds": 5.5
+}

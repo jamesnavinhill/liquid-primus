@@ -1,0 +1,93 @@
+{
+ "hf_id": "m-a-p/CodeFeedback-Filtered-Instruction",
+ "config": "default",
+ "split": "train",
+ "role": "code",
+ "rows": 156526,
+ "field_missing_null": {},
+ "field_empty_string": {
+  "answer": 1
+ },
+ "adapter_parse_failures": 0,
+ "prompt_chars": {
+  "n": 156526,
+  "mean": 722.73,
+  "p50": 540.0,
+  "p90": 1492.0,
+  "p99": 2585.25,
+  "max": 16445.0
+ },
+ "tools_per_row": {
+  "n": 156526,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "rows_without_tools": 156526,
+ "params_per_tool": {},
+ "required_per_tool": {},
+ "schema_nesting_depth": {},
+ "declared_type_vocabulary": {},
+ "schema_container_type": {},
+ "rows_with_calls": 0,
+ "calls_per_row": {
+  "n": 156526,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "args_per_call": {},
+ "total_calls": 0,
+ "schema_serialization_formats": {},
+ "assistant_output_formats": {},
+ "calls_with_non_identifier_names": 0,
+ "tool_name_mismatch_rows": 0,
+ "tool_name_mismatch_calls": 0,
+ "refusal_rows": 0,
+ "refusal_families": {},
+ "refusal_with_target_declared": 0,
+ "suspect_over_refusals": 0,
+ "label_contradictions_same_query": 0,
+ "duplicate_prompt_groups": 11738,
+ "duplicate_prompt_rows": 24538,
+ "distinct_prompts": 143726,
+ "groups": {
+  "n_groups": 4,
+  "sizes": {
+   "n": 4,
+   "mean": 39131.5,
+   "p50": 38905.0,
+   "p90": 58451.8,
+   "p99": 62411.079999999994,
+   "max": 62851.0
+  },
+  "largest_group_share": 0.40154,
+  "top10_share": 1.0
+ },
+ "contaminated_rows": 759,
+ "contaminated_rate": 0.00485,
+ "contaminated_by_benchmark": {
+  "bfcl_v3": 143,
+  "mbpp_full": 20,
+  "mbpp_san": 10,
+  "humaneval": 560,
+  "mmlu_pro": 36
+ },
+ "tokens_per_prompt": {
+  "n": 40000,
+  "mean": 170.06,
+  "p50": 119.0,
+  "p90": 357.0,
+  "p99": 713.0400000000081,
+  "max": 3953.0
+ },
+ "tokens_per_schema_block": {},
+ "tokens_per_tool_call": {},
+ "token_stats_coverage": "seeded subsample of 40000",
+ "adapter_extras": {},
+ "seconds": 128.6
+}

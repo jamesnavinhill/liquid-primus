@@ -1,0 +1,20 @@
+{
+  "unit": "GPU-hours",
+  "planned": 145,
+  "plannedNote": "Derived from the s3.2 matrix, not stated by the operator: 2 smoke + 10 baselines + 38 supervised sweep + 10 preference rung + 2 merging + 30 RL arm (kill-line guarded) + 12 export/recovery + 12 final evaluation = 116, plus 25% contingency for re-runs, failed launches, and re-measuring one side of a paired comparison after a card substitution. Enforced allowance on 2026-08-25 was 200 GPU-h (12,000 GPU-min) with 2 GPUs at a time, so 55 GPU-h is left unspent as margin. Default card L40S 48GB; A100-40GB for bandwidth-bound rows; L4 for evaluation-only rows; T4 unused for training (no bf16). A three-seed sweep, a tier-2 transfer, and a full RL treatment would add ~225 GPU-h and need a quota raise.",
+  "rate": null,
+  "entries": [
+    {
+      "jobId": "e92de716-f8d5-402c-bef5-615ea1a8d2c3",
+      "experiment": "tidepool",
+      "substage": "s4.2",
+      "description": "s4.2 full-corpus data diagnostics: missingness, tool-schema and call distributions, refusal accounting, LFM2.5 tokenization, group-key sizes, within- and cross-corpus duplicates, 13-gram decontamination against 9 benchmark indices",
+      "resources": "CPU only (8 vCPU / 32 GB / 200 GB disk, gcp); no accelerator requested",
+      "durationHours": 0.209,
+      "spend": 0.0,
+      "status": "COMPLETE",
+      "note": "Wall clock 12m31s (09:46:53Z-09:59:24Z). Zero GPU-hours because the job requested no accelerator, so it draws nothing from the 200 GPU-h allowance.",
+      "recordedAt": "2026-08-25T10:05:00Z"
+    }
+  ]
+}

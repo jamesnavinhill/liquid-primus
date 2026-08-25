@@ -1,0 +1,95 @@
+{
+ "hf_id": "NousResearch/hermes-function-calling-v1",
+ "config": "json_mode_singleturn",
+ "split": "train",
+ "role": "struct",
+ "rows": 1241,
+ "field_missing_null": {},
+ "field_empty_string": {},
+ "adapter_parse_failures": 0,
+ "prompt_chars": {
+  "n": 1241,
+  "mean": 625.3,
+  "p50": 584.0,
+  "p90": 921.0,
+  "p99": 1326.3999999999987,
+  "max": 2084.0
+ },
+ "tools_per_row": {
+  "n": 1241,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "rows_without_tools": 1241,
+ "params_per_tool": {},
+ "required_per_tool": {},
+ "schema_nesting_depth": {},
+ "declared_type_vocabulary": {},
+ "schema_container_type": {},
+ "rows_with_calls": 0,
+ "calls_per_row": {
+  "n": 1241,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "args_per_call": {},
+ "total_calls": 0,
+ "schema_serialization_formats": {},
+ "assistant_output_formats": {},
+ "calls_with_non_identifier_names": 0,
+ "tool_name_mismatch_rows": 0,
+ "tool_name_mismatch_calls": 0,
+ "refusal_rows": 0,
+ "refusal_families": {},
+ "refusal_with_target_declared": 0,
+ "suspect_over_refusals": 0,
+ "label_contradictions_same_query": 0,
+ "duplicate_prompt_groups": 0,
+ "duplicate_prompt_rows": 0,
+ "distinct_prompts": 1241,
+ "groups": {
+  "n_groups": 1238,
+  "sizes": {
+   "n": 1238,
+   "mean": 1.0,
+   "p50": 1.0,
+   "p90": 1.0,
+   "p99": 1.0,
+   "max": 2.0
+  },
+  "largest_group_share": 0.00161,
+  "top10_share": 0.01048
+ },
+ "contaminated_rows": 0,
+ "contaminated_rate": 0.0,
+ "contaminated_by_benchmark": {},
+ "tokens_per_prompt": {
+  "n": 1241,
+  "mean": 143.04,
+  "p50": 133.0,
+  "p90": 209.0,
+  "p99": 302.1999999999998,
+  "max": 433.0
+ },
+ "tokens_per_schema_block": {
+  "n": 1241,
+  "mean": 151.29,
+  "p50": 141.0,
+  "p90": 216.0,
+  "p99": 289.5999999999999,
+  "max": 378.0
+ },
+ "tokens_per_tool_call": {},
+ "token_stats_coverage": "all rows",
+ "adapter_extras": {
+  "has_json_schema": 1241,
+  "n_turns": 3723
+ },
+ "seconds": 3.4
+}

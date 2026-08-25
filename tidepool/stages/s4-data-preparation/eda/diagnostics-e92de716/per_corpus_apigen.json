@@ -1,0 +1,163 @@
+{
+ "hf_id": "argilla/Synth-APIGen-v0.1",
+ "config": "default",
+ "split": "train",
+ "role": "tool",
+ "rows": 49402,
+ "field_missing_null": {},
+ "field_empty_string": {},
+ "adapter_parse_failures": 0,
+ "prompt_chars": {
+  "n": 49402,
+  "mean": 133.63,
+  "p50": 116.0,
+  "p90": 224.0,
+  "p99": 380.0,
+  "max": 1309.0
+ },
+ "tools_per_row": {
+  "n": 49402,
+  "mean": 2.69,
+  "p50": 2.0,
+  "p90": 5.0,
+  "p99": 6.0,
+  "max": 6.0
+ },
+ "rows_without_tools": 2068,
+ "params_per_tool": {
+  "n": 132651,
+  "mean": 1.5,
+  "p50": 1.0,
+  "p90": 2.0,
+  "p99": 4.0,
+  "max": 13.0
+ },
+ "required_per_tool": {
+  "n": 132651,
+  "mean": 1.44,
+  "p50": 1.0,
+  "p90": 2.0,
+  "p99": 4.0,
+  "max": 13.0
+ },
+ "schema_nesting_depth": {
+  "n": 132651,
+  "mean": 3.52,
+  "p50": 3.0,
+  "p90": 5.0,
+  "p99": 6.0,
+  "max": 9.0
+ },
+ "declared_type_vocabulary": {
+  "string": 50330,
+  "array": 45258,
+  "object": 24420,
+  "integer": 24047,
+  "number": 7923,
+  "None": 4345,
+  "boolean": 1814,
+  "['integer', 'number']": 701,
+  "['array', 'object']": 228,
+  "['object', 'object']": 177,
+  "['integer', 'number', 'string']": 133,
+  "['array', 'string']": 133,
+  "['object', 'string']": 115,
+  "['array', 'array']": 100,
+  "['integer', 'string']": 98,
+  "['array', 'integer']": 70,
+  "['array', 'object', 'string']": 42,
+  "['array', 'number']": 32,
+  "['integer', 'number', 'object']": 31,
+  "['object', 'object', 'string']": 28,
+  "['array', 'integer', 'number']": 25,
+  "['array', 'integer', 'string']": 22,
+  "['array', 'integer', 'number', 'object']": 18,
+  "['array', 'array', 'object']": 17,
+  "['integer', 'object']": 16
+ },
+ "schema_container_type": {
+  "object": 132651
+ },
+ "rows_with_calls": 43402,
+ "calls_per_row": {
+  "n": 49402,
+  "mean": 1.45,
+  "p50": 1.0,
+  "p90": 2.0,
+  "p99": 4.0,
+  "max": 15.0
+ },
+ "args_per_call": {
+  "n": 71821,
+  "mean": 1.5,
+  "p50": 1.0,
+  "p90": 2.0,
+  "p99": 4.0,
+  "max": 13.0
+ },
+ "total_calls": 71821,
+ "schema_serialization_formats": {},
+ "assistant_output_formats": {},
+ "calls_with_non_identifier_names": 0,
+ "tool_name_mismatch_rows": 5,
+ "tool_name_mismatch_calls": 7,
+ "refusal_rows": 6000,
+ "refusal_families": {
+  "no_tools": 2068,
+  "missing_params": 1968,
+  "other": 1964
+ },
+ "refusal_with_target_declared": 1968,
+ "suspect_over_refusals": 1942,
+ "label_contradictions_same_query": 5999,
+ "duplicate_prompt_groups": 6175,
+ "duplicate_prompt_rows": 12474,
+ "distinct_prompts": 43103,
+ "groups": {
+  "n_groups": 45617,
+  "sizes": {
+   "n": 45617,
+   "mean": 1.08,
+   "p50": 1.0,
+   "p90": 1.0,
+   "p99": 2.0,
+   "max": 2068.0
+  },
+  "largest_group_share": 0.04186,
+  "top10_share": 0.04241
+ },
+ "contaminated_rows": 36,
+ "contaminated_rate": 0.00073,
+ "contaminated_by_benchmark": {
+  "bfcl_v3": 34,
+  "humaneval": 1,
+  "mmlu_pro": 1
+ },
+ "tokens_per_prompt": {
+  "n": 49402,
+  "mean": 38.9,
+  "p50": 33.0,
+  "p90": 68.0,
+  "p99": 119.0,
+  "max": 506.0
+ },
+ "tokens_per_schema_block": {
+  "n": 49402,
+  "mean": 260.06,
+  "p50": 227.0,
+  "p90": 527.0,
+  "p99": 671.0,
+  "max": 957.0
+ },
+ "tokens_per_tool_call": {
+  "n": 43402,
+  "mean": 35.51,
+  "p50": 30.0,
+  "p90": 56.0,
+  "p99": 115.99499999999898,
+  "max": 1388.0
+ },
+ "token_stats_coverage": "all rows",
+ "adapter_extras": {},
+ "seconds": 77.7
+}

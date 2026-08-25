@@ -1,0 +1,133 @@
+{
+ "ifstruct": {
+  "hf_id": "LiquidAI/ifstruct-v1.0",
+  "config": "default",
+  "split": "test",
+  "rows": 2000,
+  "grams": 599717,
+  "unique_grams": 475096,
+  "prefer_fields": [
+   "prompt"
+  ],
+  "seconds": 3.3
+ },
+ "ifeval": {
+  "hf_id": "google/IFEval",
+  "config": "default",
+  "split": "train",
+  "rows": 541,
+  "grams": 13627,
+  "unique_grams": 13299,
+  "prefer_fields": [
+   "prompt"
+  ],
+  "seconds": 1.1
+ },
+ "ifbench": {
+  "hf_id": "allenai/IFBench_test",
+  "config": "default",
+  "split": "train",
+  "rows": 300,
+  "grams": 13169,
+  "unique_grams": 11914,
+  "prefer_fields": [
+   "prompt",
+   "instruction"
+  ],
+  "seconds": 1.3
+ },
+ "multi_if": {
+  "hf_id": "facebook/Multi-IF",
+  "config": "default",
+  "split": "train",
+  "rows": 4501,
+  "grams": 810324,
+  "unique_grams": 462995,
+  "prefer_fields": "all-long-strings",
+  "seconds": 3.5
+ },
+ "humaneval": {
+  "hf_id": "openai/openai_humaneval",
+  "config": "openai_humaneval",
+  "split": "test",
+  "rows": 164,
+  "grams": 9160,
+  "unique_grams": 9116,
+  "prefer_fields": [
+   "prompt"
+  ],
+  "seconds": 1.2
+ },
+ "mbpp_full": {
+  "hf_id": "google-research-datasets/mbpp",
+  "config": "full",
+  "split": "test",
+  "rows": 500,
+  "grams": 1496,
+  "unique_grams": 1486,
+  "prefer_fields": [
+   "text",
+   "prompt"
+  ],
+  "seconds": 2.4
+ },
+ "mbpp_san": {
+  "hf_id": "google-research-datasets/mbpp",
+  "config": "sanitized",
+  "split": "test",
+  "rows": 257,
+  "grams": 1223,
+  "unique_grams": 1219,
+  "prefer_fields": [
+   "prompt",
+   "text"
+  ],
+  "seconds": 2.3
+ },
+ "mmlu_pro": {
+  "hf_id": "TIGER-Lab/MMLU-Pro",
+  "config": "default",
+  "split": "test",
+  "rows": 12032,
+  "grams": 430621,
+  "unique_grams": 379696,
+  "prefer_fields": [
+   "question"
+  ],
+  "seconds": 2.9
+ },
+ "bfcl_v3": {
+  "hf_id": "gorilla-llm/Berkeley-Function-Calling-Leaderboard",
+  "files": 25,
+  "rows": 5251,
+  "grams": 767633,
+  "unique_grams": 269206,
+  "per_file": {
+   "BFCL_v3_chatable.json": 200,
+   "BFCL_v3_exec_multiple.json": 50,
+   "BFCL_v3_exec_parallel.json": 50,
+   "BFCL_v3_exec_parallel_multiple.json": 40,
+   "BFCL_v3_exec_simple.json": 100,
+   "BFCL_v3_irrelevance.json": 240,
+   "BFCL_v3_java.json": 100,
+   "BFCL_v3_javascript.json": 50,
+   "BFCL_v3_live_irrelevance.json": 882,
+   "BFCL_v3_live_multiple.json": 1053,
+   "BFCL_v3_live_parallel.json": 16,
+   "BFCL_v3_live_parallel_multiple.json": 24,
+   "BFCL_v3_live_relevance.json": 18,
+   "BFCL_v3_live_simple.json": 258,
+   "BFCL_v3_multi_turn_base.json": 200,
+   "BFCL_v3_multi_turn_composite.json": 200,
+   "BFCL_v3_multi_turn_long_context.json": 200,
+   "BFCL_v3_multi_turn_miss_func.json": 200,
+   "BFCL_v3_multi_turn_miss_param.json": 200,
+   "BFCL_v3_multiple.json": 200,
+   "BFCL_v3_parallel.json": 200,
+   "BFCL_v3_parallel_multiple.json": 200,
+   "BFCL_v3_rest.json": 70,
+   "BFCL_v3_simple.json": 400,
+   "BFCL_v3_sql.json": 100
+  }
+ }
+}

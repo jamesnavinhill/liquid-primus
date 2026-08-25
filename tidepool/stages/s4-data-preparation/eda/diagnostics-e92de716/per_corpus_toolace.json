@@ -1,0 +1,165 @@
+{
+ "hf_id": "Team-ACE/ToolACE",
+ "config": "default",
+ "split": "train",
+ "role": "tool",
+ "rows": 11300,
+ "field_missing_null": {},
+ "field_empty_string": {},
+ "adapter_parse_failures": 0,
+ "prompt_chars": {
+  "n": 11300,
+  "mean": 274.86,
+  "p50": 166.0,
+  "p90": 654.1000000000004,
+  "p99": 1200.0200000000004,
+  "max": 6727.0
+ },
+ "tools_per_row": {
+  "n": 11300,
+  "mean": 2.99,
+  "p50": 3.0,
+  "p90": 6.0,
+  "p99": 8.0,
+  "max": 9.0
+ },
+ "rows_without_tools": 748,
+ "params_per_tool": {
+  "n": 33756,
+  "mean": 2.19,
+  "p50": 2.0,
+  "p90": 4.0,
+  "p99": 11.0,
+  "max": 32.0
+ },
+ "required_per_tool": {
+  "n": 33756,
+  "mean": 1.37,
+  "p50": 1.0,
+  "p90": 3.0,
+  "p99": 5.0,
+  "max": 18.0
+ },
+ "schema_nesting_depth": {
+  "n": 33756,
+  "mean": 3.2,
+  "p50": 3.0,
+  "p90": 4.0,
+  "p99": 8.0,
+  "max": 13.0
+ },
+ "declared_type_vocabulary": {
+  "string": 25983,
+  "float": 5407,
+  "int": 5332,
+  "array": 1996,
+  "dict": 1612,
+  "boolean": 891,
+  "['integer', 'null']": 26,
+  "['string', 'null']": 24,
+  "['integer', 'string']": 8,
+  "['string', 'integer']": 6,
+  "['number', 'string']": 4,
+  "['number', 'null']": 2
+ },
+ "schema_container_type": {
+  "dict": 33756
+ },
+ "rows_with_calls": 9331,
+ "calls_per_row": {
+  "n": 11300,
+  "mean": 1.63,
+  "p50": 1.0,
+  "p90": 4.0,
+  "p99": 5.0,
+  "max": 14.0
+ },
+ "args_per_call": {
+  "n": 18371,
+  "mean": 1.74,
+  "p50": 2.0,
+  "p90": 3.0,
+  "p99": 5.0,
+  "max": 18.0
+ },
+ "total_calls": 18371,
+ "schema_serialization_formats": {
+  "json": 10552,
+  "unknown": 379,
+  "xml": 68,
+  "markdown": 76,
+  "yaml_block": 156,
+  "latex_tabular": 69
+ },
+ "assistant_output_formats": {
+  "pythonic_bracket": 10013,
+  "natural_language": 3727,
+  "bracket_other": 68,
+  "custom_delimited": 11
+ },
+ "calls_with_non_identifier_names": 8626,
+ "tool_name_mismatch_rows": 113,
+ "tool_name_mismatch_calls": 288,
+ "refusal_rows": 1928,
+ "refusal_families": {
+  "other": 1928
+ },
+ "refusal_with_target_declared": 0,
+ "suspect_over_refusals": 0,
+ "label_contradictions_same_query": 0,
+ "duplicate_prompt_groups": 134,
+ "duplicate_prompt_rows": 269,
+ "distinct_prompts": 11165,
+ "groups": {
+  "n_groups": 10394,
+  "sizes": {
+   "n": 10394,
+   "mean": 1.09,
+   "p50": 1.0,
+   "p90": 1.0,
+   "p99": 2.0,
+   "max": 379.0
+  },
+  "largest_group_share": 0.03354,
+  "top10_share": 0.03619
+ },
+ "contaminated_rows": 4,
+ "contaminated_rate": 0.00035,
+ "contaminated_by_benchmark": {
+  "bfcl_v3": 4
+ },
+ "tokens_per_prompt": {
+  "n": 11300,
+  "mean": 64.46,
+  "p50": 40.0,
+  "p90": 149.0,
+  "p99": 280.0100000000002,
+  "max": 1329.0
+ },
+ "tokens_per_schema_block": {
+  "n": 10921,
+  "mean": 442.98,
+  "p50": 394.0,
+  "p90": 789.0,
+  "p99": 1379.5999999999985,
+  "max": 3010.0
+ },
+ "tokens_per_tool_call": {
+  "n": 9331,
+  "mean": 25.99,
+  "p50": 25.5,
+  "p90": 29.0,
+  "p99": 32.333333333333336,
+  "max": 54.0
+ },
+ "token_stats_coverage": "all rows",
+ "adapter_extras": {
+  "bracketed": 10092,
+  "nl_turns": 3727,
+  "lead_space": 0,
+  "trail_space": 0,
+  "non_identifier_call_names": 8602,
+  "n_turns": 27638
+ },
+ "seconds": 28.3
+}

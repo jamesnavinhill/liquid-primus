@@ -1,0 +1,24 @@
+name: s4-splits
+run: python main.py
+setup: |
+  pip install -q --upgrade "datasets>=3.0" "transformers>=4.45" numpy matplotlib
+resources:
+  cpus: 8
+  memory: 32
+  disk_space: 200
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  HF_HUB_ENABLE_HF_TRANSFER: "0"
+  TOKENIZERS_PARALLELISM: "true"
+parameters:
+  ngram_n: 13
+  seed: 20260825
+  split_salt: tidepool-s4.3
+  test_frac: 0.05
+  val_frac: 0.05
+  collapse_frac: 0.02
+  code_key_rare_symbols: 1
+  max_prompt_chars_for_grams: 20000
+  tokenizer_id: LiquidAI/LFM2.5-1.2B-Instruct
+  token_stats_subsample: 40000
+minutes_requested: 240

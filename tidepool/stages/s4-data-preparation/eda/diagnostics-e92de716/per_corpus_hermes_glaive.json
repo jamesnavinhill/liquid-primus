@@ -1,0 +1,143 @@
+{
+ "hf_id": "NousResearch/hermes-function-calling-v1",
+ "config": "glaive_func_calling",
+ "split": "train",
+ "role": "tool",
+ "rows": 5209,
+ "field_missing_null": {
+  "subcategory": 865
+ },
+ "field_empty_string": {},
+ "adapter_parse_failures": 865,
+ "prompt_chars": {
+  "n": 4344,
+  "mean": 65.14,
+  "p50": 61.0,
+  "p90": 98.0,
+  "p99": 156.0,
+  "max": 258.0
+ },
+ "tools_per_row": {
+  "n": 4344,
+  "mean": 2.0,
+  "p50": 2.0,
+  "p90": 2.0,
+  "p99": 2.0,
+  "max": 2.0
+ },
+ "rows_without_tools": 0,
+ "params_per_tool": {
+  "n": 8688,
+  "mean": 2.0,
+  "p50": 2.0,
+  "p90": 3.0,
+  "p99": 4.0,
+  "max": 6.0
+ },
+ "required_per_tool": {
+  "n": 8688,
+  "mean": 1.71,
+  "p50": 2.0,
+  "p90": 3.0,
+  "p99": 3.0,
+  "max": 5.0
+ },
+ "schema_nesting_depth": {
+  "n": 8688,
+  "mean": 3.08,
+  "p50": 3.0,
+  "p90": 4.0,
+  "p99": 5.0,
+  "max": 8.0
+ },
+ "declared_type_vocabulary": {
+  "string": 5676,
+  "number": 2512,
+  "integer": 1761,
+  "array": 856,
+  "object": 176,
+  "boolean": 79,
+  "{}": 1
+ },
+ "schema_container_type": {
+  "object": 8687,
+  "None": 1
+ },
+ "rows_with_calls": 4344,
+ "calls_per_row": {
+  "n": 4344,
+  "mean": 1.56,
+  "p50": 2.0,
+  "p90": 2.0,
+  "p99": 3.0,
+  "max": 3.0
+ },
+ "args_per_call": {
+  "n": 6760,
+  "mean": 1.86,
+  "p50": 2.0,
+  "p90": 3.0,
+  "p99": 3.0,
+  "max": 5.0
+ },
+ "total_calls": 6760,
+ "schema_serialization_formats": {},
+ "assistant_output_formats": {},
+ "calls_with_non_identifier_names": 0,
+ "tool_name_mismatch_rows": 3,
+ "tool_name_mismatch_calls": 3,
+ "refusal_rows": 0,
+ "refusal_families": {},
+ "refusal_with_target_declared": 0,
+ "suspect_over_refusals": 0,
+ "label_contradictions_same_query": 0,
+ "duplicate_prompt_groups": 349,
+ "duplicate_prompt_rows": 3501,
+ "distinct_prompts": 1192,
+ "groups": {
+  "n_groups": 3406,
+  "sizes": {
+   "n": 3406,
+   "mean": 1.28,
+   "p50": 1.0,
+   "p90": 2.0,
+   "p99": 6.0,
+   "max": 20.0
+  },
+  "largest_group_share": 0.0046,
+  "top10_share": 0.03177
+ },
+ "contaminated_rows": 0,
+ "contaminated_rate": 0.0,
+ "contaminated_by_benchmark": {},
+ "tokens_per_prompt": {
+  "n": 4344,
+  "mean": 16.79,
+  "p50": 15.0,
+  "p90": 25.0,
+  "p99": 41.0,
+  "max": 66.0
+ },
+ "tokens_per_schema_block": {
+  "n": 4344,
+  "mean": 202.24,
+  "p50": 200.0,
+  "p90": 250.0,
+  "p99": 302.0,
+  "max": 397.0
+ },
+ "tokens_per_tool_call": {
+  "n": 4344,
+  "mean": 27.14,
+  "p50": 26.0,
+  "p90": 38.0,
+  "p99": 54.0,
+  "max": 142.0
+ },
+ "token_stats_coverage": "all rows",
+ "adapter_extras": {
+  "has_json_schema": 0,
+  "n_turns": 36633
+ },
+ "seconds": 8.1
+}

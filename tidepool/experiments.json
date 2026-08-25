@@ -1,0 +1,12 @@
+{
+  "experiments": [
+    {
+      "name": "tidepool",
+      "id": "tidepool",
+      "created": "2026-08-25",
+      "created_at_stage": "s4.2",
+      "purpose": "All Transformer Lab jobs for the tidepool project: s4 data diagnostics and split materialization, s5 training and sweeps, s6 evaluation.",
+      "tags": ["primus-6a430460", "primus-name-tidepool"]
+    }
+  ]
+}

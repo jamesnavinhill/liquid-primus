@@ -1,0 +1,19 @@
+name: s4-data-diagnostics
+run: python main.py
+setup: |
+  pip install -q --upgrade "datasets>=3.0" "transformers>=4.45" numpy matplotlib
+resources:
+  cpus: 8
+  memory: 32
+  disk_space: 200
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  HF_HUB_ENABLE_HF_TRANSFER: "0"
+  TOKENIZERS_PARALLELISM: "true"
+parameters:
+  tokenizer_id: LiquidAI/LFM2.5-1.2B-Instruct
+  ngram_n: 13
+  token_stats_full_below: 80000
+  token_stats_subsample: 40000
+  seed: 20260825
+minutes_requested: 180

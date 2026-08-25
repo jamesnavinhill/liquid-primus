@@ -1,0 +1,88 @@
+{
+ "hf_id": "LiquidAI/antidoom-mix-v1.0",
+ "config": "default",
+ "split": "train",
+ "role": "prompts",
+ "rows": 478229,
+ "field_missing_null": {
+  "source_config": 323680,
+  "source_license_url": 20000
+ },
+ "field_empty_string": {},
+ "adapter_parse_failures": 0,
+ "prompt_chars": {
+  "n": 478229,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "tools_per_row": {
+  "n": 478229,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "rows_without_tools": 478229,
+ "params_per_tool": {},
+ "required_per_tool": {},
+ "schema_nesting_depth": {},
+ "declared_type_vocabulary": {},
+ "schema_container_type": {},
+ "rows_with_calls": 0,
+ "calls_per_row": {
+  "n": 478229,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "args_per_call": {},
+ "total_calls": 0,
+ "schema_serialization_formats": {},
+ "assistant_output_formats": {},
+ "calls_with_non_identifier_names": 0,
+ "tool_name_mismatch_rows": 0,
+ "tool_name_mismatch_calls": 0,
+ "refusal_rows": 0,
+ "refusal_families": {},
+ "refusal_with_target_declared": 0,
+ "suspect_over_refusals": 0,
+ "label_contradictions_same_query": 0,
+ "duplicate_prompt_groups": 1,
+ "duplicate_prompt_rows": 478229,
+ "distinct_prompts": 1,
+ "groups": {
+  "n_groups": 1,
+  "sizes": {
+   "n": 1,
+   "mean": 478229.0,
+   "p50": 478229.0,
+   "p90": 478229.0,
+   "p99": 478229.0,
+   "max": 478229.0
+  },
+  "largest_group_share": 1.0,
+  "top10_share": 1.0
+ },
+ "contaminated_rows": 0,
+ "contaminated_rate": 0.0,
+ "contaminated_by_benchmark": {},
+ "tokens_per_prompt": {
+  "n": 40000,
+  "mean": 0.0,
+  "p50": 0.0,
+  "p90": 0.0,
+  "p99": 0.0,
+  "max": 0.0
+ },
+ "tokens_per_schema_block": {},
+ "tokens_per_tool_call": {},
+ "token_stats_coverage": "seeded subsample of 40000",
+ "adapter_extras": {},
+ "seconds": 63.8
+}

@@ -1,0 +1,8 @@
+{
+ "pairs": {
+  "sql_clinton | sql_ctx": 75985,
+  "hermes_fc | hermes_fc_st": 1161,
+  "antidoom | sql_clinton": 1
+ },
+ "total_prompts_seen_in_more_than_one_corpus": 77147
+}
