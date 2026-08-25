@@ -1,23 +1,27 @@
 # Stage 5: Experimentation
 
-_Status: in progress. Both smoke paths have passed clean with their metrics on record; a
-calibration run on the 48GB card is provisioning. Nothing has been trained for real yet._
+_Status: `s5.1` complete, `s5.2` in progress. The throughput the whole budget rests on is
+measured, the sweep is resized to fit it, and the evaluation harness every later number comes
+from is built and verified against ground truth. Its end-to-end smoke is on the GPU now._
 
 ## Headline
 
-The supervised smoke run passed every check it was built to make: the model's own chat
-template accepted tool-call turns with no fallback, the loss mask landed on assistant tokens
-only, LoRA attached 11.1M of 1,181M parameters, and **validation loss fell 1.3223 → 0.4940
-over 30 steps at 1,435 tokens per second, which puts the full 90.6M-token reference epoch at
-16.1 GPU-hours** rather than at a guess. The replay path produced 64 of 64 completions with
-none empty at 204 tok/s, or 33.3 hours per 100k, and 213 tok/s on the re-run. Both jobs then crashed on their final status
-call, a one-line misuse of the experiment harness that lost no measurement and no artifact;
-the fix has since been proven: the re-run recorded COMPLETE with a full score dict and all
-five artifacts, at 1,398 tok/s and a 16.5-hour projected epoch, within 2% of the first
-attempt. The replay smoke then did the same, and reproduced attempt 1 exactly: the same 64 completions
-and the same 15,677 tokens, which is the determinism check that path needs. A calibration run
-is now provisioning on an L40S to replace the plan's assumed 6,000 tok/s with a measured number
-on the card the sweep will actually use. Spend so far is 0.59 of 145 GPU-hours.
+The one assumption the whole compute budget rested on turned out to be wrong by half. A short
+calibration run measured **3,994 training tokens per second on the 48 GB card against the 6,000
+the plan assumed**, which makes one pass over the training mix cost 6.3 GPU-hours instead of
+4.2. At that rate the planned 8-arm sweep would need 103 GPU-hours where it was given 38, and a
+full two-pass version would need 227 against an account that holds 200, so it could not have
+run at all. The sweep is therefore resized to a fixed 64 million tokens per arm: all 8 arms
+survive, every comparison stays paired at equal exposure, and it fits the approved 145
+GPU-hours with nothing to ask for. Both smoke paths are closed on the science first: validation
+loss fell 1.32 → 0.28 over 60 steps, the model's own chat template accepted tool-call turns
+with no fallback, and the replay path reproduced its 64 completions and 15,677 tokens exactly
+across two runs. Attention then moved to `s5.2`, where the one evaluation harness that scores
+every model in this project was built and checked before it was allowed to spend GPU time: its
+tool-call grader scores a ground-truth oracle at exactly 1.0000 over 858 items and 0.000 on
+three deliberate degradations, and a determinism bug in the vendored instruction-following
+grader was caught locally by a score that is impossible by construction. Spend so far is 0.71
+of 145 GPU-hours.
 
 ## Work log
 
@@ -64,11 +68,61 @@ on the card the sweep will actually use. Spend so far is 0.59 of 145 GPU-hours.
   assumed 6,000 tokens per second on that card, and the L4 measurement suggests the assumption
   is optimistic. One short job replaces the assumption with a measurement, which is cheaper
   than discovering it eight arms into the sweep.
-- 2026-08-25 · s5.1 · The calibration run was refused at launch, at no compute cost, because
-  the provider jobs go to by default does not sell the card the plan's budget is written
-  against. Re-queued against the first source the hardware guidance lists for that card, and
-  now provisioning as `68635a5d`. Every run in the sweep inherits the same default and will
-  need the same pinning.
+- 2026-08-25 · s5.1 · The calibration run was refused at launch, at no compute cost, because the
+  provider jobs go to by default does not sell the card the plan's budget is written against.
+  Re-queued against the first source the hardware guidance lists for that card, and it ran clean
+  as `68635a5d`. Every run in the sweep inherits the same default and will need the same pinning.
+- 2026-08-25 · s5.1 · **The calibration landed and the budget moved.** 3,994.2 tok/s measured on
+  the 48 GB card against 6,000 assumed, so every supervised row is half again as expensive as
+  planned. Re-priced the sweep three ways and resized it to a fixed 64.0M-token arm budget, which
+  holds all 8 arms inside the approved 145 GPU-hours. Full arithmetic and what a larger sweep
+  would cost are under "Compute" below. The standing instruction to size the sweep to available
+  compute and to price the larger version before overspending is what chose this shape.
+- 2026-08-25 · s5.1 · Noted a second, quieter movement: the epoch token budget came back 9%
+  lower than the L4 smoke derived it (83.1M against 90.6M). The mix rules are deterministic, so
+  the spread is in the mean-tokens-per-row estimator, which reads a subsample. Every projection
+  is quoted against the conservative figure and full-scale runs will report the exact count.
+- 2026-08-25 · s5.1 · Substage closed. Every criterion the smokes were written to test came back
+  clean, the harness fix is proven on the record, and the two numbers that size the rest of the
+  stage are measurements.
+
+- 2026-08-25 · s5.2 · Built the evaluation harness the whole project scores through, as one job
+  that generates and scores in the same run (task `s5-eval`, 16 files). The alternative, a GPU
+  pass that hands raw text to a cheap CPU scorer, needs the orchestrator to move artifacts
+  between two jobs on every evaluation, and the scoring dependencies turned out to be light
+  enough that the split buys nothing. Raw completions are saved before scoring touches them, so
+  a grading bug found after eight sweep arms costs a rerun over saved text and no GPU time.
+- 2026-08-25 · s5.2 · Decided the baseline gets prompted in its own tool-call format as well as
+  ours, and scores the better of the two. Our training data presents tool contracts in a
+  different surface form than the one LFM2.5 ships with, so grading the stock checkpoint only
+  our way would have inflated every delta measured against it by the cost of a format mismatch.
+- 2026-08-25 · s5.2 · Defined our tool-calling number as a named subset and wrote the
+  exclusions into every summary file. A fifth of the public benchmark scores a model by
+  executing its calls against live third-party APIs, and its multi-turn split grades against a
+  stateful environment that is not in the data; neither is reproducible here. The published
+  1B-class threshold in `overview.md` is an overall on the full benchmark, so `B4` is a rerun
+  of that model through this harness and the rerun becomes the threshold.
+- 2026-08-25 · s5.2 · Closed a hole in the project's own success criteria. They ask for a
+  false-alarm rate on clean tool returns, and all 434 probe items are defective, so the
+  quantity had no denominator. Added a 30-item clean control arm generated from the same bank
+  and wrapper with the payload intact, saved as an artifact with a content hash on every run,
+  plus a frozen 26-pattern detector so “flagged the defect” is measured separately from
+  “did not invent a value”.
+- 2026-08-25 · s5.2 · Verified every grader locally on fixtures before queueing anything.
+  The tool-call checker scores a ground-truth oracle at 1.0000 across 858 items and 0.000 for a
+  wrong function name, an extra parameter and silence; the structured-output validator loads all
+  2,000 rows and rejects empty and garbage answers with the benchmark's own error strings; the
+  instruction-following registry resolves all 541 prompts. One real bug surfaced: about a dozen
+  instruction classes draw a missing argument at random, so the strict and loose passes were
+  grading different instructions and loose scored below strict, which cannot happen. Seeded per
+  item and instruction from a stable checksum, loose now sits at or above strict and repeat runs
+  are identical.
+- 2026-08-25 · s5.2 · Harness smoke queued as `5fe7a828` on an L4, at 40 items per component
+  over the stock instruct checkpoint. It proves the path rather than measuring the model: the
+  chat template accepting tool turns, both surface forms rendering and parsing, every grader
+  returning, and the artifacts landing. The card, the serving backend and the decoding settings
+  are frozen here and recorded in every summary, because changing them later invalidates every
+  full-precision number in the project.
 
 ## s5.1 What the smoke runs are for
 
@@ -218,6 +272,85 @@ across a 30-step run on shuffled data is the noise floor of a smoke, not a discr
 chase. The replay half is still on GPU. The full attempt log, the failure signature and the
 relaunch accounting are in `runs/s5.1-smoke.md`.
 
+## s5.2 The evaluation harness, and what its numbers mean
+
+One job definition scores every model this project reports on: the baseline row, the eight sweep
+arms, the tuning runs and the final checkpoints. It is the most reused artifact in the project,
+so the decisions inside it are recorded in full here and in `runs/s5.2-baselines.md`.
+
+| Component | Items | Graded by | Metric |
+| --- | --- | --- | --- |
+| Tool calling (BFCLv3-AST) | ~4,400 over 11 categories, in 2 surface forms | our checker, verified against the answer key | unweighted category mean, item-weighted beside it |
+| Structured output (IFStruct v1.0) | 2,000 | Liquid's own validator, vendored verbatim | first-attempt validity, mean partial score |
+| Instruction following (IFEval) | 541 | Google's own instruction registry, vendored | prompt and instruction level, strict and loose |
+| In-house probes | 434 graded + 30 clean control | the `s4.4` checks, plus a flag detector | flag rate, false-flag rate, stack-idiom accuracy, by envelope depth |
+
+Four decisions shape what those numbers mean.
+
+**The baseline is prompted in its own format as well as ours.** The `s4` training data puts a
+tool contract in the system message as a JSON array and expects a JSON call back. LFM2.5 ships
+with a template that takes tools as an argument and answers in Python call syntax. Scoring the
+stock checkpoint only in our convention would understate it, and every delta measured against it
+would carry the format mismatch as a free gain. Both forms are generated, the parser accepts
+either regardless of which was prompted, and a baseline scores the better of the two.
+
+**Our tool-calling number is a named subset.** The `exec_*` and `rest` categories score by
+executing calls against live third-party APIs with real credentials, and `multi_turn_*` grades
+against a stateful environment that lives in the benchmark's harness. Neither is reproducible
+here, so the metric is the composite over the 8 abstract-syntax categories plus the 3 that score
+restraint, equal weight per category, with the exclusions written into every summary file.
+Categories differ in size by two orders of magnitude, so a size-weighted mean would mostly
+report on one of them; both are printed. The absolute threshold in `overview.md` is a published
+overall on the full benchmark and is therefore not comparable, which is why `B4` reruns that
+model through this harness and the rerun becomes the threshold.
+
+**Benchmark prompts go in verbatim, with no system prompt.** Adding our own structured-output
+instruction would flatter every model on the structured-output benchmark and break comparability
+with the published figure, even though our models are trained on it. The in-house probes carry
+their own system prompt in the data, so nothing is added to them either.
+
+**The guardrail criteria needed a denominator.** `overview.md` asks for a flag rate of at least
+0.70 on malformed tool returns with a false-flag rate at most 0.15. Every graded probe item is
+defective, so there was nothing to false-alarm on: a 30-item clean control arm is now built from
+the same bank and envelope wrapper with the payload intact, generated deterministically and
+saved with its content hash (`561a23f3c6532c4f`) on every run. Separately, the original checks
+pass an item when the completion avoids the value the model would have to invent, which is a
+different event from saying the return was wrong. A frozen family of 26 flag phrasings now
+measures the second alongside the first, and the original check is unchanged.
+
+### What was proven before any GPU time was spent
+
+Fixture checks in the sandbox, none of them a result.
+
+- The tool-call checker scores a **ground-truth oracle at exactly 1.0000 on all 858 items** of
+  three categories, and 0.000 with the function name perturbed, 0.000 with one extra parameter,
+  0.000 emitting no call. Restraint categories score silence and calls in the right directions.
+  A checker that cannot score a perfect model as perfect quietly floors every model it grades.
+- One data quirk found on the way: 7 of 3,351 ground-truth parameters carry an empty list of
+  acceptable values, the benchmark's way of saying the parameter must be left empty. Read
+  naively that marks a correct call wrong.
+- The structured-output validator loads all 2,000 rows and returns the benchmark's own error
+  strings for an empty and a garbage answer.
+- **A determinism bug in the instruction-following grader, found and fixed.** About a dozen of
+  its 25 instruction classes draw a missing keyword argument at random, so an unseeded run
+  grades the strict and loose passes against two different instructions. The first local run
+  scored loose *below* strict, which is impossible by construction. Seeded per item and
+  instruction from a stable checksum, loose sits at or above strict and two runs over the same
+  completions agree exactly.
+- The probe graders behave correctly on real items of all three check kinds and the clean arm,
+  in both the pass and the fail direction.
+
+### The serving path is frozen here
+
+Hugging Face `transformers`, bf16, greedy, left-padded length-sorted batches, on one L4. It is
+the same code path the training jobs load a model through, which is why it was chosen: nothing
+extra to install and no batching-dependent numerics to argue about later. A screening pass is
+roughly 5 million generated tokens, about half a GPU-hour per model. Moving to a faster
+inference server later invalidates every full-precision number taken here and means rerunning
+all of them, so the backend, the card and the decoding settings are part of every recorded
+result. The 4-bit builds (`B2`, `B3`, `B5`) need a separate `llama.cpp` serving path and are not
+scored through this task.
+
 ## Operator input (s5.1)
 
 The run was asked to hand back for a reply and the answer came back automatically: no operator
@@ -247,45 +380,82 @@ has spent 0.2%.
 The failed attempts are charged in full. They spent the compute and they produced the
 measurements the rest of the stage is sized from, so recording them as free would make the
 ledger flatter than the project.
+### What the calibration measured, and what it costs
 
-### The first real test of the plan's compute assumption
+The plan's whole 145 GPU-hour budget rested on one assumed number: 6,000 training tokens per
+second for a 1.2B model on one L40S, the default card for every supervised row. That number is
+now measured. **It is 3,994.2 tok/s, so the plan was optimistic by 50%.** The L4 smoke had
+bracketed the card at 3,600-5,000 and the truth sits at the bottom of the band, which is the
+answer that costs money and the reason the run was worth 0.12 GPU-hours.
 
-The projected reference-run cost is now measured rather than assumed: **16.08 GPU-hours** for
-one 90.6M-token epoch at the observed 1,435 tok/s on an L4.
+A second figure moved at the same time, and it is the one nobody was watching. The epoch token
+budget came back at 83.09M here against 90.6M on the L4 smoke, a 9% spread on the number every
+training row is priced from. The mix rules are deterministic, so the spread lives in the
+per-role mean-tokens-per-row estimate, which is taken from a subsample whose size follows the
+smoke row count. Both figures are estimates and the estimator is noisier than the budget table
+implied, so everything below is priced against the conservative **90.6M**.
 
-The plan's whole 145 GPU-hour budget rests on one number, stated at `s3.3` as a deliberately
-conservative figure: **6,000 training tokens per second for a 1.2B model on one L40S**, which
-is the default card for every supervised row. The smoke ran on an L4, so it does not measure
-that number directly. It does constrain it. An L40S is worth roughly two and a half to three
-and a half times an L4 on dense bf16 for work of this shape, so 1,435 tok/s on an L4 implies
-something in the region of 3,600 to 5,000 tok/s on an L40S. The plan assumed 6,000.
+At the measured rate, one epoch of the role-balanced mix costs **6.30 GPU-hours**. The plan's
+`C` row bought 8 training runs and 8 screenings for 38 GPU-hours, which after 2.4 hours of
+screening leaves 4.45 GPU-hours per arm, or **64.0M tokens, 0.71 of one epoch**. The plan's own
+estimation basis assumed each arm was 2 epochs of a 120M-token corpus. Against the mix that
+`s4.4` actually rendered, 2 epochs is 181M tokens:
 
-Three reasons not to treat that as a verdict yet. The smoke ran 30 steps over 512 rows, which
-is short enough that startup is still being amortized; throughput was still climbing at the
-last step (1,571 tok/s against the 1,435 average), so the steady-state figure is higher than
-what was measured. Smoke sequences are also shorter than the epoch's mean. And a card ratio
-taken off spec sheets is exactly the kind of substitution this project's own protocol refuses
-between paired numbers.
+| Sweep shape (8 arms) | Per arm | `C` row total | Whole plan, +25% contingency |
+| --- | ---: | ---: | ---: |
+| 2 epochs, as the plan's basis assumed | 12.60 GPU-h | 103.2 | **227 GPU-h** |
+| 1 epoch | 6.30 GPU-h | 52.8 | **164 GPU-h** |
+| 64.0M tokens (0.71 epoch), the 38-hour line | 4.45 GPU-h | 38.0 | **145 GPU-h** |
 
-So the honest reading is that the plan's central estimate looks optimistic by something like
-20 to 40%, and that the cheapest way to replace an inference with a measurement is to run this
-same smoke once on an L40S. At roughly 0.1 GPU-hour that is the next thing to do, ahead of the
-baselines, because every row of the supervised sweep is priced off this one number and the
-sweep's own line is 38 GPU-hours. If the true L40S rate is near 4,000 tok/s, one full-epoch
-arm costs 6.3 GPU-hours and the 8-run sweep in the plan does not fit its line at full epochs.
-That is a real constraint on `s5.3` and it is better found now, at the cost of one short job,
-than discovered by a sweep that overruns. The 25% contingency (29 GPU-hours) exists for
-exactly this, and the decision about how to spend it belongs at the `s5.4` direction
-checkpoint with a measured number in hand.
+The enforced allowance is 200 GPU-hours. The 2-epoch sweep is therefore not merely over its
+line, it is **off the table**: it would need 227 GPU-hours and the account cannot hold it. The
+1-epoch sweep fits the allowance at 164 GPU-hours but spends 19 hours past what was approved at
+`s3.4`.
+
+### The sweep is sized to fit, and here is what a larger one would cost
+
+The standing instruction on this project is to size the first sweep to the compute actually
+available and to say what a larger version would cost before spending past what has been
+approved. That decides it, so the `C` sweep runs at a **fixed 64.0M-token budget per arm**,
+which is the third row above: it holds the 38-hour line, it stays inside the 145 GPU-hours
+approved at `s3.4`, and no operator has to be asked for anything.
+
+Fixing a **token** budget rather than an epoch fraction is what keeps the comparison honest.
+`C7` samples the raw mix uniformly and draws rows with different length statistics from `C1`'s
+role-balanced sample, so equal epochs would mean unequal tokens and the mix-weighting result
+would be confounded by exposure. Equal tokens, drawn in the same hash order, leaves the
+sampler as the only difference between them.
+
+Two things this trade gives up, recorded rather than buried. Each arm sees 71% of an epoch
+instead of a full pass, so an arm that would only separate late in training is scored early;
+the sweep ranks recipes and `s5.5` takes the winner to full length, which is the shape that
+absorbs this. And the ranking rests on one seed per arm, as the plan already had it.
+
+What a larger version costs, stated before anything is spent: the same 8 arms at one full epoch
+each is **52.8 GPU-hours**, 15 hours past the `C` line, landing the plan at 164 of the 200
+allowed. At two epochs each it is 103.2 GPU-hours and the plan does not fit the account at all.
+A three-seed version of the sized sweep, which is what would turn the ranking into a
+significance claim, is 114 GPU-hours for the `C` row alone and needs a quota raise.
+
+One row of the sweep is still unpriced. `C3` is full-parameter SFT, not LoRA: at bf16 with Adam
+states it wants roughly 14 GB of optimizer memory, which the 48 GB card holds comfortably, but
+its throughput per token is lower than an adapter's and by how much is not measured. It is
+budgeted at the same 64.0M tokens as its siblings and flagged here as the one arm whose cost
+could overrun its share. If it does, the overrun gate catches it before the next launch.
 
 ## Immediate next actions
 
-1. Read the L40S calibration run, now provisioning, and replace the plan's assumed 6,000 tok/s
-   with its observed figure.
-2. Re-price the `C` supervised sweep against that measurement before queueing any baseline,
-   and if it does not fit its 38 GPU-hour line, bring the options to `s5.4` rather than
-   quietly shortening the arms.
-3. Pin the provider in every sweep task that asks for the 48GB card. The stored calibration
-   task now carries `resources.compute_provider`, which is where the field validates; at the
-   top level it is rejected. Left unset, a sweep arm lands on a provider that does not sell
-   the card and fails at launch, or worse, on a smaller card whose numbers are not comparable.
+1. Read the harness smoke `5fe7a828` against its own assertions: the model's template must
+   accept tool turns with no fallback, both surface forms must render and parse, every grader
+   must return, and the artifacts must be on the job record. The rates it reports are not
+   results at 40 items per component and the summary marks the run as limited.
+2. Then the baseline row at full item counts: `B1` the full-precision instruct checkpoint,
+   `B4` the 1B-class competitor that carries the absolute threshold, and `B6` the base
+   non-instruct checkpoint, all through the same task with the model swapped by parameter.
+   `B2`, `B3` and `B5` are 4-bit builds and wait on the `llama.cpp` serving path.
+3. Pin the provider in every task that asks for the 48 GB card. The stored calibration task
+   carries `resources.compute_provider: aws`, which is where the field validates; at the top
+   level it is rejected. Left unset a sweep arm lands on a provider that does not sell the card
+   and fails at launch, or worse, on a smaller card whose numbers are not comparable.
+4. Carry the 64.0M-token arm budget into the `s5.3` sweep tasks as a parameter, not a
+   convention, so no arm can quietly run longer than the one it is compared against.

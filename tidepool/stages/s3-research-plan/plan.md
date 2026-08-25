@@ -252,6 +252,22 @@ short-convolution blocks are not the shape these throughput figures are usually 
 An SFT arm is ~60k examples × ~1,000 tokens × 2 epochs ≈ 120M tokens ≈ 5.5 GPU-h. Screening
 suite ≈ 0.3 GPU-h, full suite ≈ 1.0 GPU-h, both at batch-parallel greedy inference on L4.
 
+> **Amended at `s5.1`, 2026-08-25, against a measurement.** The 6,000 tok/s above is wrong by
+> half: job `68635a5d` measured **3,994.2 tok/s** on `L40S:1` running this project's own
+> supervised code. One epoch of the `s4.4` role-balanced mix is 90.6M tokens and therefore costs
+> **6.30 GPU-h**, not 4.2, and the 2-epoch arm the basis assumed is 181M tokens at 12.60 GPU-h.
+> Eight such arms would need 103 GPU-h against this row's 38, and would put the plan at 227 GPU-h
+> against a 200 GPU-h enforced allowance, so the sweep as priced could not have run.
+>
+> The `C` sweep is resized rather than cut: **every arm gets a fixed 64.0M-token budget**
+> (4.45 GPU-h, 0.71 of an epoch), which holds the 38 GPU-h line and all 8 arms, and keeps the
+> plan inside the 145 GPU-h approved at `s3.4`. A fixed token budget rather than an epoch
+> fraction is what keeps `C7` (uniform mix, different row-length statistics) paired with `C1` on
+> exposure. The arm budget is a task parameter, not a convention. The trade is that arms are
+> ranked at 71% of a pass and `s5.5` takes the winner to full length; a full-epoch version of the
+> same sweep is 52.8 GPU-h, and a three-seed version is 114 GPU-h and needs a quota raise.
+> Reasoning and the full table: `../s5-experimentation/report.md`, "Compute".
+
 | Phase | Rows | GPU-h |
 | ----- | ---- | ----- |
 | Smoke (`s5.1`) | fixture runs of every task type | 2 |

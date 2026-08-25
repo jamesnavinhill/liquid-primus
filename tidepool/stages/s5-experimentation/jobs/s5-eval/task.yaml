@@ -1,0 +1,45 @@
+# s5.2 — the project's evaluation harness. One model per queue; every number in the
+# baseline row, the sweep, the tuning runs and the final checkpoints comes from this task,
+# so the card and the serving path are pinned here and not chosen per run.
+#
+# The L4 is the eval card for every full-precision comparison: it has bf16, it is a
+# three-source card (AWS, GCP, RunPod) so a run is not hostage to one provider, and the
+# earlier smoke already ran on it. Changing card mid-project would put the FP numbers on
+# two different sets of numerics, so it stays fixed and is recorded in each summary.
+name: s5-eval
+run: python main.py
+setup: |
+  python -c "import torch" 2>/dev/null || pip install -q torch
+  pip install -q -U transformers peft accelerate huggingface_hub
+  # Scoring dependencies only. IFStruct's validator needs PyYAML; Google's IFEval
+  # registry needs absl-py, immutabledict, langdetect and nltk. nltk is pinned below 3.9
+  # because the registry loads the punkt *pickle*, which 3.9 removed in favour of
+  # punkt_tab, and an unpinned install fails on sentence-count instructions only.
+  pip install -q "pyyaml>=6" absl-py immutabledict langdetect "nltk==3.8.1"
+resources:
+  cpus: 8
+  memory: 32
+  disk_space: 100
+  accelerators: "L4:1"
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+parameters:
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  # A storage path to a LoRA adapter directory, merged before evaluation. Empty = the
+  # base checkpoint as published.
+  adapter_object: ""
+  run_tag: s5.2-harness-smoke
+  components: bfcl,ifstruct,ifeval,probes
+  # Both surface forms for the tool contract: the s4 training convention and the model's
+  # own native tools= rendering. A baseline's score is the better of the two.
+  bfcl_styles: tools_text,native_tools
+  bfcl_categories: simple,multiple,parallel,parallel_multiple,live_simple,live_multiple,live_parallel,live_parallel_multiple,irrelevance,live_irrelevance,live_relevance
+  probes_object: tidepool/s4.4/probes/probes.jsonl
+  # 0 = the whole component. Anything else is a smoke, and the summary says so.
+  limit_per_component: 40
+  batch_size: 16
+  max_new_bfcl: 320
+  max_new_ifstruct: 768
+  max_new_ifeval: 768
+  max_new_probes: 320
+minutes_requested: 90
