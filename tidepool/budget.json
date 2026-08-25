@@ -121,6 +121,17 @@
    "durationHours": 0.0,
    "spend": 0.0,
    "note": "Refused at launch after 4s: the default provider does not sell this card. No instance was created, so nothing is charged. Recorded so the attempt is not invisible."
+  },
+  {
+   "id": "s5.1-selfdistill-attempt2",
+   "substage": "s5.1",
+   "jobId": "66aca6c7-6047-468b-8cbf-14265f8b7021",
+   "task": "s5-selfdistill",
+   "accelerators": "L4:1",
+   "status": "COMPLETE",
+   "durationHours": 0.233,
+   "spend": 0.233,
+   "note": "Replay smoke, attempt 2. Score dict landed; 3 artifacts verified. 64/64 completions, 0 empty, 15,677 completion tokens at 212.6 tok/s. Byte-identical counts to attempt 1, which is the determinism check on frozen greedy decoding. Longer than its 77s of task time because provisioning is inside the measurement."
   }
  ]
 }

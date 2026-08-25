@@ -1,0 +1,23 @@
+{
+ "run_tag": "s5.1-selfdistill-smoke",
+ "base_model": "LiquidAI/LFM2.5-1.2B-Instruct",
+ "pool_object": "tidepool/s4.4/prompt_pool.jsonl.gz",
+ "sample_salt": "tidepool-replay-v1",
+ "n_prompts_requested": 64,
+ "max_new_tokens": 320,
+ "greedy": true,
+ "smoke": true,
+ "wall_clock_seconds": 74.1,
+ "score": {
+  "completions": 64,
+  "empty": 0,
+  "completion_tokens": 15677,
+  "completion_tokens_per_second": 212.6,
+  "pool_rows": 447053,
+  "sampled": 64,
+  "usable": 64,
+  "projected_hours_per_100k": 32.0,
+  "assertion_failures": 0
+ },
+ "assertion_failures": []
+}

@@ -1,7 +1,7 @@
 # Stage 5: Experimentation
 
-_Status: in progress. The supervised smoke has passed twice and its fix is proven; the
-replay smoke and an L40S calibration run are on GPU. Nothing has been trained for real yet._
+_Status: in progress. Both smoke paths have passed clean with their metrics on record; a
+calibration run on the 48GB card is provisioning. Nothing has been trained for real yet._
 
 ## Headline
 
@@ -10,13 +10,14 @@ template accepted tool-call turns with no fallback, the loss mask landed on assi
 only, LoRA attached 11.1M of 1,181M parameters, and **validation loss fell 1.3223 → 0.4940
 over 30 steps at 1,435 tokens per second, which puts the full 90.6M-token reference epoch at
 16.1 GPU-hours** rather than at a guess. The replay path produced 64 of 64 completions with
-none empty at 204 tok/s, or 33.3 hours per 100k. Both jobs then crashed on their final status
+none empty at 204 tok/s, or 33.3 hours per 100k, and 213 tok/s on the re-run. Both jobs then crashed on their final status
 call, a one-line misuse of the experiment harness that lost no measurement and no artifact;
 the fix has since been proven: the re-run recorded COMPLETE with a full score dict and all
 five artifacts, at 1,398 tok/s and a 16.5-hour projected epoch, within 2% of the first
-attempt. The replay smoke is re-running behind it, and a calibration run is now on an L40S to
-replace the plan's assumed 6,000 tok/s with a measured number on the card the sweep will
-actually use. Spend so far is 0.35 of 145 GPU-hours.
+attempt. The replay smoke then did the same, and reproduced attempt 1 exactly: the same 64 completions
+and the same 15,677 tokens, which is the determinism check that path needs. A calibration run
+is now provisioning on an L40S to replace the plan's assumed 6,000 tok/s with a measured number
+on the card the sweep will actually use. Spend so far is 0.59 of 145 GPU-hours.
 
 ## Work log
 
@@ -53,6 +54,11 @@ actually use. Spend so far is 0.35 of 145 GPU-hours.
   job record, all five artifacts present, and figures within 2% of attempt 1. The harness fix
   is proven, so every later run in this stage will land its numbers where the ranked dashboard
   reads them.
+- 2026-08-25 · s5.1 · The replay smoke re-ran clean as well, and its counts came back
+  byte-identical to the first attempt: 64 of 64 prompts usable, 64 completions, none empty,
+  15,677 tokens. Hash-ranked sampling over a fixed pool with frozen greedy decoding is supposed
+  to be reproducible, and now it is shown to be. Throughput moved 4%, which is instance
+  variation. Both smoke paths are closed on the science.
 - 2026-08-25 · s5.1 · Queued a calibration run of the same supervised code on an L40S,
   at 60 steps over 1,024 rows. The plan's whole 145 GPU-hour budget rests on an
   assumed 6,000 tokens per second on that card, and the L4 measurement suggests the assumption
@@ -274,14 +280,12 @@ checkpoint with a measured number in hand.
 
 ## Immediate next actions
 
-1. The supervised smoke has landed clean with its score dict on the record. Confirm the replay
-   smoke does the same, which is what makes the ranked dashboard usable for `s5.3` and `s5.4`.
-2. Read the L40S calibration run, now provisioning, and replace the plan's assumed 6,000 tok/s
+1. Read the L40S calibration run, now provisioning, and replace the plan's assumed 6,000 tok/s
    with its observed figure.
-3. Re-price the `C` supervised sweep against that measurement before queueing any baseline,
+2. Re-price the `C` supervised sweep against that measurement before queueing any baseline,
    and if it does not fit its 38 GPU-hour line, bring the options to `s5.4` rather than
    quietly shortening the arms.
-4. Pin the provider in every sweep task that asks for the 48GB card. The stored calibration
+3. Pin the provider in every sweep task that asks for the 48GB card. The stored calibration
    task now carries `resources.compute_provider`, which is where the field validates; at the
    top level it is rejected. Left unset, a sweep arm lands on a provider that does not sell
    the card and fails at launch, or worse, on a smaller card whose numbers are not comparable.
