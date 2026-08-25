@@ -1,0 +1,63 @@
+name: s5-sft-pack
+run: python pack.py
+setup: |
+  python -c "import torch" 2>/dev/null || pip install -q torch
+  pip install -q -U transformers peft accelerate wandb
+  python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"
+resources:
+  # Four trainers share the card, so the host has to feed four of them: dataloader workers,
+  # four tokenizer passes and four checkpoint writes. The GPU count is what the quota is
+  # priced on, so a fatter host is free -- an under-provisioned one would simply starve the
+  # card, which is the whole thing this task exists to avoid.
+  cpus: 16
+  memory: 96
+  disk_space: 300
+  accelerators: "L40S:1"
+  compute_provider: aws
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  WANDB_API_KEY: "{{secret._WANDB_API_KEY}}"
+parameters:
+  # Comma-separated arms to run concurrently on this one card. Everything below is passed
+  # through to each child unchanged, so a packed arm's recipe is byte-identical to the same
+  # arm queued alone; only `arm` is overridden, per child, from this list.
+  arms: ""
+  # Fraction of the card the children may divide between them. The remainder is left for
+  # fragmentation, the CUDA context each process holds, and the transient peak during model
+  # load. Each child is capped at pack_headroom / len(arms) and fails alone if it exceeds it.
+  pack_headroom: 0.92
+  # Every child peaks its memory while loading the same base model. Starting them together
+  # stacks load peaks the steady state would never reach, so they are spaced out.
+  stagger_seconds: 45
+  shutdown_grace_seconds: 30
+  run_tag: s5.3-pack
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  train_object: tidepool/s4.4/train.jsonl.gz
+  val_object: tidepool/s4.4/val.jsonl.gz
+  guardrail_object: tidepool/s5.3/tooldata/tooldata_train.jsonl.gz
+  replay_object: ""
+  budget_tokens: 64000000
+  guardrail_epochs: 2.0
+  replay_frac: 0.0
+  entropy_beta: 1.0
+  mix: role_balanced
+  tuning: lora
+  loss: ce
+  max_seq_len: 2048
+  micro_batch_size: 2
+  grad_accum: 8
+  learning_rate: 1e-4
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  val_rows: 256
+  warmup_ratio: 0.03
+  tool_epochs: 1.0
+  struct_max_epochs: 3.0
+  min_priority_share: 0.5
+  seed: 17
+  arm: C1
+  smoke: false
+  smoke_rows: 512
+  max_steps: 0
+minutes_requested: 900

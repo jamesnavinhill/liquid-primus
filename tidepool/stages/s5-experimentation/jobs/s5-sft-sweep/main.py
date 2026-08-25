@@ -39,18 +39,93 @@ import time
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
-from lab import lab
 
 import sample
 import textify
 
-lab.init()
-CFG = lab.get_config() or {}
+# ------------------------------------------------------------------ packing
+#
+# Several arms share one GPU. `pack.py` is the supervisor; it runs this file once per arm as
+# an isolated child process, so an arm that OOMs, asserts or is killed takes down its own
+# process and nothing else. A child differs from a solo run in five ways and no others:
+#
+#   - its arm, output directory, config and memory ceiling come from the environment
+#   - it never talks to the job API (one job id, one reporter: concurrent writers to a single
+#     job's progress and artifact stream would interleave into nonsense, so the supervisor
+#     owns that channel and collects the children's results at the end)
+#   - it reads shared-storage objects from paths the supervisor already downloaded, so the
+#     corpus is fetched once per GPU rather than once per arm
+#   - it prefixes every log line with its arm so the merged stream stays readable
+#   - it exits non-zero on assertion failure instead of calling lab.error
+#
+# The training path itself is untouched, which is what keeps a packed arm comparable to a solo
+# one. That comparability is measured, not assumed: C1 ran solo before packing existed, so any
+# packed arm can be checked against it on tokens seen, priority share and rows-in-order.
+PACK_CHILD = os.environ.get("TIDEPOOL_PACK_CHILD") == "1"
+PACK_MEMFRAC = float(os.environ.get("TIDEPOOL_PACK_MEMFRAC") or 0.0)
+PACK_LOCAL = json.loads(os.environ.get("TIDEPOOL_PACK_LOCAL") or "{}")
+
+if PACK_CHILD:
+    class _SupervisedLab(object):
+        """Stands in for the job API inside a packed child.
+
+        Every reporting call in this file is already guarded by `if not PACK_CHILD`; this
+        catches anything that is ever added without one, turning it into a visible no-op
+        rather than a second writer on the job's stream. It says so once per method so a
+        missed guard shows up in the console without flooding it.
+
+        Storage calls are the exception and must raise. The file probes for them with
+        `getattr(lab, "storage_upload", None)`, and a stub that answered would hand back a
+        no-op the caller then reports as a successful upload: the weights would never reach
+        shared storage and the log would say they had. Raising makes the probe fail, which is
+        exactly what sends the caller down its CLI fallback -- a separate process writing to
+        an arm-specific prefix, which is safe to run concurrently."""
+
+        _warned = set()
+        _must_raise = ("storage_upload", "storage_download", "get_config", "init")
+
+        def __getattr__(self, name):
+            if name in _SupervisedLab._must_raise:
+                raise AttributeError(
+                    "lab.%s is deliberately absent in a packed child; storage goes through "
+                    "the CLI and config arrives on the environment" % name)
+
+            def _noop(*a, **k):
+                if name not in _SupervisedLab._warned:
+                    _SupervisedLab._warned.add(name)
+                    print("[pack] suppressed lab.%s() in child mode" % name, flush=True)
+            return _noop
+
+    lab = _SupervisedLab()
+    CFG = json.loads(os.environ.get("TIDEPOOL_PACK_CFG") or "{}")
+else:
+    from lab import lab
+    lab.init()
+    CFG = lab.get_config() or {}
+
+
+def storage(obj):
+    """Resolve a shared-storage object to a local path.
+
+    A packed child downloads nothing. Every arm on the card reads the same corpus, so N
+    children fetching it N times would multiply the transfer, the disk and the failure
+    surface for no benefit; the supervisor fetches each object once and hands the resolved
+    paths down. A missing path is fatal rather than silently re-downloaded, because a child
+    that quietly reaches for the network has stopped being isolated."""
+    if not PACK_CHILD:
+        return lab.storage_download(obj)
+    p = PACK_LOCAL.get(obj)
+    if not p or not os.path.exists(p):
+        raise SystemExit("pack child was given no local path for %r (supervisor should have "
+                         "downloaded it before spawning children)" % obj)
+    return p
 
 
 def C(k, default):
     v = CFG.get(k)
     return default if v is None or v == "" else v
+
+
 
 
 # ------------------------------------------------------------------ 0. the arm
@@ -74,7 +149,7 @@ ARMS = {
     "C6":  {"lora_r": 64, "lora_alpha": 128},
     "C7":  {"mix": "raw"},
 }
-ARM = str(C("arm", "C1"))
+ARM = str(os.environ.get("TIDEPOOL_PACK_ARM") or C("arm", "C1"))
 if ARM not in ARMS:
     raise SystemExit("unknown arm %r; the sweep defines %s" % (ARM, sorted(ARMS)))
 RECIPE = ARMS[ARM]
@@ -119,12 +194,15 @@ STRUCT_MAX_EPOCHS = float(A("struct_max_epochs", 3.0))
 PRIORITY_SHARE = float(A("min_priority_share", 0.5))
 RUN_TAG = C("run_tag", "s5.3-%s" % ARM)
 
-OUT = "out"
+OUT = os.environ.get("TIDEPOOL_PACK_OUT") or "out"
 os.makedirs(OUT, exist_ok=True)
 torch.manual_seed(SEED)
 
 
 def log(msg):
+    if PACK_CHILD:
+        print("[%s] %s" % (ARM, msg), flush=True)
+        return
     lab.log(msg)
     print(msg, flush=True)
 
@@ -133,6 +211,8 @@ def dump(name, obj):
     p = os.path.join(OUT, name)
     with open(p, "w") as fh:
         json.dump(obj, fh, indent=1, default=str)
+    if PACK_CHILD:
+        return p                      # the supervisor collects and uploads, arm-prefixed
     try:
         lab.save_artifact(p)
     except Exception as exc:
@@ -148,20 +228,20 @@ log("arm %s: %s" % (ARM, json.dumps(RECIPE) if RECIPE else "reference, no overri
 
 log("downloading splits")
 sources, source_names = [], []
-train_local = lab.storage_download(TRAIN_OBJ)
+train_local = storage(TRAIN_OBJ)
 sources.append(train_local)
 source_names.append(TRAIN_OBJ)
-val_local = lab.storage_download(VAL_OBJ)
+val_local = storage(VAL_OBJ)
 
 if GUARD_EPOCHS > 0:
-    sources.append(lab.storage_download(GUARD_OBJ))
+    sources.append(storage(GUARD_OBJ))
     source_names.append(GUARD_OBJ)
 if REPLAY_FRAC > 0:
     if not REPLAY_OBJ:
         fails.append("arm %s asks for %.0f%% replay but no replay_object is configured, so "
                      "the arm cannot be run as specified" % (ARM, 100 * REPLAY_FRAC))
     else:
-        sources.append(lab.storage_download(REPLAY_OBJ))
+        sources.append(storage(REPLAY_OBJ))
         source_names.append(REPLAY_OBJ)
 
 t0 = time.time()
@@ -282,6 +362,14 @@ if TUNING == "lora" and trainable > 0.2 * total:
     fails.append("the LoRA arm has %.1f%% of parameters trainable, which is not an adapter"
                  % (100.0 * trainable / total))
 dev = "cuda" if torch.cuda.is_available() else "cpu"
+if PACK_CHILD and PACK_MEMFRAC > 0 and dev == "cuda":
+    # A hard ceiling per arm, so an arm that would grow into its neighbours' memory hits its
+    # own allocator limit and fails alone instead of OOM-ing whichever sibling happened to
+    # allocate next. Without this, packing turns one arm's bad batch into everyone's crash.
+    torch.cuda.set_per_process_memory_fraction(PACK_MEMFRAC, 0)
+    _tot = torch.cuda.get_device_properties(0).total_memory / 1e9
+    log("memory ceiling %.2f of %.1f GB (pack fraction %.3f)"
+        % (PACK_MEMFRAC * _tot, _tot, PACK_MEMFRAC))
 if dev == "cpu":
     fails.append("no CUDA device is visible, so this run is not the run that was requested")
 model.to(dev)
@@ -437,7 +525,8 @@ for epoch in range(100):
         if step % max(1, steps // 40) == 0 or step == 1:
             log("step %d/%d  loss %.4f  %d tokens  %.0f tok/s"
                 % (step, steps, tr, seen_tok, seen_tok / max(1e-6, time.time() - t_train)))
-            lab.update_progress(min(95, int(90.0 * step / steps)))
+            if not PACK_CHILD:
+                lab.update_progress(min(95, int(90.0 * step / steps)))
         if not math.isfinite(tr):
             fails.append("training loss became %s at step %d" % (tr, step))
             done = True
@@ -463,7 +552,8 @@ model.save_pretrained(adir)
 tok.save_pretrained(adir)
 zpath = shutil.make_archive(os.path.join(OUT, "adapter"), "zip", adir)
 try:
-    lab.save_artifact(zpath)
+    if not PACK_CHILD:
+        lab.save_artifact(zpath)
 except Exception as exc:
     fails.append("the weights could not be saved as an artifact (%s), so this run produced "
                  "nothing a later job can load" % exc)
@@ -473,7 +563,10 @@ if not os.path.exists(zpath) or os.path.getsize(zpath) < 1024:
 # to load several arms at once and reaching across job boundaries for weights is fragile. The
 # SDK does not document an upload call, so try it, fall back to the CLI, and treat neither as
 # fatal: the artifact attached above is the guaranteed copy.
-DEST = "tidepool/s5.3/arms/%s" % ARM
+# Namespaced by mode as well as arm. A smoke trains 480 rows and produces weights that look
+# exactly like a real arm's from the outside; writing them to the arm's own prefix would leave
+# s5.4 loading a 30-step adapter and never knowing.
+DEST = "tidepool/s5.3/arms/%s%s" % (ARM, "-smoke" if SMOKE else "")
 mirrored = False
 try:
     up = getattr(lab, "storage_upload", None)
@@ -499,8 +592,22 @@ dump("mix_calibration.json", {"arm": ARM, "recipe": RECIPE, "plan": plan, "selec
                               "realized_role_counts": role_counts,
                               "rows_trained": len(rows), "smoke": SMOKE})
 dump("train_history.json", hist)
+# Peak allocation is what sets the pack size, so every run records it whether it was packed
+# or not: a solo arm's peak is the budget a packed arm has to fit inside, and a packed arm's
+# peak against its own ceiling says how much slack is left for one more.
+if dev == "cuda":
+    peak_gb = round(torch.cuda.max_memory_allocated(0) / 1e9, 2)
+    reserved_gb = round(torch.cuda.max_memory_reserved(0) / 1e9, 2)
+    card_gb = round(torch.cuda.get_device_properties(0).total_memory / 1e9, 1)
+else:
+    peak_gb = reserved_gb = card_gb = None
+log("peak GPU memory %s GB allocated, %s GB reserved, of %s GB"
+    % (peak_gb, reserved_gb, card_gb))
+
 metrics = {
     "arm": ARM, "recipe": RECIPE, "run_tag": RUN_TAG, "base_model": BASE,
+    "packed": PACK_CHILD, "pack_memory_fraction": PACK_MEMFRAC or None,
+    "peak_gpu_gb": peak_gb, "peak_gpu_reserved_gb": reserved_gb, "card_total_gb": card_gb,
     "mix": MIX, "tuning": TUNING, "loss": LOSS, "smoke": SMOKE,
     "template_mode": enc.mode, "template_notes": enc.notes,
     "steps": step, "tokens_seen": int(seen_tok), "budget_tokens": BUDGET,
@@ -524,15 +631,22 @@ score = {"arm": ARM, "val_loss": round(val_after, 4),
          "tokens_per_second": round(tok_per_s, 1), "tokens_seen": int(seen_tok),
          "steps": step, "template_mode": enc.mode,
          "priority_share": plan["priority_share_achieved"],
-         "gpu_hours": metrics["gpu_hours"], "assertion_failures": len(fails)}
+         "gpu_hours": metrics["gpu_hours"], "assertion_failures": len(fails),
+         "packed": PACK_CHILD, "peak_gpu_gb": peak_gb, "card_total_gb": card_gb}
 dump("score.json", score)
 for f in fails:
     log("ASSERTION FAILURE: %s" % f)
 if WANDB:
     WANDB.log({"val/loss_after": val_after, "val/loss_before": val_before})
     WANDB.finish()
-lab.update_progress(100)
+if not PACK_CHILD:
+    lab.update_progress(100)
 log("SCORE " + json.dumps(score))
+if PACK_CHILD:
+    # The supervisor reads score.json for the numbers and the exit code for pass/fail. It
+    # must be able to tell "this arm asserted" from "this arm died", so assertions exit 3
+    # and an uncaught exception keeps whatever code Python gives it.
+    raise SystemExit(3 if fails else 0)
 if fails:
     lab.error(message="%s: %d assertion failures; see metrics.json (val loss %.4f -> %.4f, "
                       "%.0f tok/s, %d tokens)"

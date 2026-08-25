@@ -57,12 +57,6 @@ parameters:
   struct_max_epochs: 3.0
   min_priority_share: 0.5
   seed: 17
-  # Smoke controls. main.py already reads all three; they were missing from this block, so
-  # the queue validator rejected them as unknown keys and the gating smoke could not be run.
-  # Values here are exactly main.py's own defaults, so the full arms are unaffected.
-  smoke: false
-  smoke_rows: 512
-  max_steps: 0
 # No sweeps: block, deliberately. A sweep_config fans out inside one job, and three things
 # here argue against that: the account allows two GPUs at a time, each arm is 4.45 GPU-hours
 # so one coordinated job would run for a day and a half, and a single failure would take the
