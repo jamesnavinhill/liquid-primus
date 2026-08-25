@@ -1,13 +1,15 @@
 # Stage 5: Experimentation
 
-_Status: `s5.1` complete, `s5.2` in progress with two of its six rows complete and a third part way. The
+_Status: `s5.1` complete, `s5.2` in progress with three of its seven rows complete, a fourth part way and a fifth running. The
 throughput the whole budget rests on is measured, the sweep is resized to fit it, and the
 evaluation harness every later number comes from is built, verified against ground truth and
 smoked end to end. **The reference baseline is complete at full item counts on all four
 components**, and it reads below the competitor on tool calling and at the floor on the guardrail
 axis. **The competitor's tool-calling component is now measured at full item counts**, and it sits 9.4
-points above the reference. **The first 4-bit row is complete**, through a `llama.cpp` path this stage
-built and verified, and it holds every axis except the one our training data is written in.
+points above the reference. **Two 4-bit rows are complete**, through a `llama.cpp` path this stage built and verified; both
+hold every axis except the one our training data is written in, and the gap between them prices
+what quantization-aware training is worth. The runtime control that makes either interpretable is
+running.
 **The guardrail training set is built and clean**: three attempts, nine gates, 7,988 rows and
 4.35M tokens in shared storage with a 138-item clean control arm. One sweep arm was retired as
 unrunnable and replaced._
@@ -29,18 +31,19 @@ with no published figure that may be quoted beside it. Instruction following rea
 541 prompts, 4.5 points under the card's 86.23, which the four-way IFEval mean plausibly
 reconciles and the harness never printed the numbers to confirm.
 
-**The first 4-bit row is in, and its most alarming number is not yet attributable.** The vendor's
-own quantization-aware Q4_0 build, served through the `llama.cpp` b10622 binary this stage
-compiled and stored, holds 95.4% of the reference on its native calling format (0.6392 against
-0.6700), 98.9% on instruction following and 101.1% on structured output. On the `s4` text
-convention it holds **78.6%** (0.4208 against 0.5355), far under the project's 93% per-axis floor
-and the loudest result the stage has produced. The naive reading is that 4-bit quantization
-destroys the exact surface form our training data teaches, which is what nine papers in `s2`
-predict and would be a serious problem for the whole export plan. The two rows differ in **two**
-things though, precision and serving runtime, so the reading cannot be accepted yet. The control
-that separates them, the same weights unquantized through the same binary, was scheduled fourth
-in the baseline queue and has been **promoted to run next**. Every 4-bit claim downstream waits on
-it.
+**Both community and vendor 4-bit builds are in, and the gap between them is the finding.** The
+vendor's quantization-aware Q4_0 build holds 95.4% of the reference on its native calling format
+(0.6392 against 0.6700). The best cheap community post-training quant holds **87.1%** (0.5837).
+Same binary, same card, same items, same decoding: quantization-aware training is worth **5.6
+points** of tool calling on this family, which is direct evidence for the recovery rung the export
+plan at `s5.6` already carries. On the `s4` text convention the two builds agree with each other
+and disagree loudly with the reference, retaining **78.6%** and **81.0%** against a 93% per-axis
+floor. Read naively that says 4-bit destroys the exact surface form our training data teaches,
+which is what nine papers in `s2` predict. The rows differ in two things though, precision and
+serving runtime, so the reading cannot be accepted yet. The control that separates them, the same
+weights unquantized through the same binary, is **now running**, and every 4-bit claim downstream
+waits on it. On the safety axis the community build reads exactly where the reference does: 0.0074
+flagged, zero false alarms, three of four rows on the same floor.
 
 The 4-bit path itself works, on the fifth attempt: `llama.cpp` b10622 compiled for the target
 architecture in 1,039 seconds, the binaries are in shared storage, and the first full pass through
@@ -1508,3 +1511,76 @@ thin.
   the axes the project's other goals are measured on, and a restart trades a certain 2.2 spent
   GPU-hours for an uncertain speedup. Recorded as an unreviewed autonomous decision. Any later
   competitor row on a non-Liquid architecture gets pinned to a 48GB card up front.
+- 2026-08-25 · mirror · Pushed commit `83e6726`: the replay generator's fix and its sizing, the
+  sweep design record's new section on it, and the confirmation that every remaining baseline
+  row's weights, quant file and tokenizer resolve before the row is queued.
+
+## Operator input (no checkpoint, second)
+
+A second prompt raised at the end of the previous wake was answered automatically rather than by a
+person: _"Full Self Driving: no operator is answering this. Proceed on your own recommendation, and
+record in the stage report which option you took and why."_ The prompt had flagged three things and
+asked for nothing that only a person could settle, so the recommendation each carried was taken as
+written. The 138-item clean control arm stays reported beside the frozen 30-item arm rather than
+folded into it, so every published number keeps its meaning. The replay generator's fix stands and
+the run is sized at 8,000 prompts. The competitor row on the slow card was left to finish. One
+thing was decided this wake that the prompt had not asked about, and it is set out below: the
+harness edit was applied earlier than the previous plan said, which changes what the remaining
+queue costs. Nobody reviewed any of it.
+
+## B3 is in, and quantization-aware training is worth 5.6 points (s5.2)
+
+`95eb4820` finished clean at 17:20:02Z: four components at full item counts, zero assertion
+failures, 1,382,474 generated tokens at 709.2 tok/s, 38 minutes on one L4 against a 1.71-hour
+ledger price. The full table is in `runs/s5.2-baselines.md`; the readings are these.
+
+**Quantization-aware training buys 5.6 points of tool calling on this family.** B2, the vendor's
+QAD build, scores 0.6392 on the format the family ships with. B3, the best cheap community
+post-training quant, scores **0.5837**. Same binary, same card, same tokenizer, same 3,490 items,
+same decoding: what differs is that one was quantization-aware while it trained. That is the
+cleanest single-variable comparison `s5.2` has produced, and it is direct evidence for the
+recovery rung in the `s5.6` export plan. Post-training quantization alone gives up real
+tool-calling accuracy here, and something has to buy it back.
+
+**Two independent 4-bit builds agree on the text convention, and the agreement is the reason the
+control matters.** B2 retains 78.6% of the reference on the `s4` text form; B3 retains 81.0%.
+Different producers, different quantization methods, landing within 2.4 points of each other. The
+agreement is equally consistent with a real property of 4 bits on this family and with a property
+of the `llama.cpp` runtime they share, which is exactly the ambiguity `B1r` was promoted to
+resolve. It is now running as `c3886996`, first row in the queue, same weights unquantized through
+the same binary on the same host family.
+
+**The safety axis still has not moved.** B3 flags 0.0074 of 434 malformed tool returns and raises
+zero false alarms, both identical to the reference. Three of the four rows measured so far sit at
+exactly the same floor. The distance from that floor to the pre-registered stop/go criterion of
+0.35 is the whole of what the guardrail supervision built at `s5.3` has to close, and nothing in
+the baseline set suggests any of it comes for free.
+
+## The clean-control edit went up early, and it takes three rows off the re-score list (s5.2)
+
+The previous plan was to hold the `clean_control_object` edit until every `s5.2` row was down,
+because a row measured against a changed harness is not comparable to one measured before it. B3
+finishing changed the arithmetic: only `c319ebb1` was still scored against the old harness, and it
+runs on a machine that received its copy of the task at launch. The edit went up at 17:19Z.
+
+The check that made it safe to do at all is the additivity test, re-run against the applied tree:
+none of the eight pre-existing summary keys move, the new keys read empty when the arm is not
+configured, and the envelope-depth breakdown stays scoped to the original arms. An unconfigured
+run is byte-comparable to the row it replaces, so `c319ebb1` is unaffected whatever it reads. The
+arm itself was verified in shared storage before the edit was applied — 138 items, every one
+tagged `clean_corpus`, which is what the harness's new gate checks — because a mis-tagged arm
+would have failed a row after it had already spent its GPU hour.
+
+What it buys: `B1r`, `B5` and `B6` each carry the 138-item arm on their first pass, so the
+supplementary re-score list is **B1 through B4** rather than all seven rows. Three GPU passes
+saved on a queue where the two slots are the scarce resource, at no cost to anything already
+measured. Recorded as an unreviewed autonomous decision.
+
+## B4 is slow, advancing, and being left alone (s5.2)
+
+`c319ebb1` has held a slot since 14:58Z and is 976 of 2,000 through structured output at 77 tok/s,
+up from 816 at 17:10Z, so it is moving at roughly 160 items per ten minutes and is not wedged. Two
+components remain after this one. The estimate is terminal around 21:00–22:00Z. The decision to
+let it finish rather than restart it on a faster card was made at 17:10Z and stands: it has already
+produced the tool-calling composite that is the operative external threshold for the project, and a
+restart trades certain spent hours for an uncertain speedup.
