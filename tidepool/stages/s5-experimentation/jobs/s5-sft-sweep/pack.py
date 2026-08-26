@@ -600,6 +600,11 @@ for arm in ARMS:
         src = os.path.join(adir, name)
         if not os.path.isfile(src):
             continue
+        # Checkpoints are not results. They already live in shared storage, which is where a
+        # resume reads them from, and a full-parameter arm's pair runs to tens of gigabytes;
+        # attaching them to the job as well would multiply the pack's upload for nothing.
+        if name.startswith("ckpt-") or name.startswith("resume-ckpt-"):
+            continue
         dst = os.path.join(OUT, "%s__%s" % (arm, name))
         try:
             # Hardlink rather than copy. A full-parameter arm's weight archive runs to a

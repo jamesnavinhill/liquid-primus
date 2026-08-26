@@ -25,6 +25,7 @@ python3 -m py_compile "$DST"/*.py
 # contract is exactly the failure this arrangement exists to prevent.
 python3 "$SWEEP/test_pack_isolation.py" >/dev/null
 python3 "$SWEEP/test_pack_schedule.py" >/dev/null
+python3 "$SRC/test_resolve_adapter.py" >/dev/null
 rm -rf "$DST/__pycache__"
 echo "contract and scheduling checks pass"
 echo "built $DST from $SRC + $SWEEP/pack.py:"

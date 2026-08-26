@@ -103,6 +103,11 @@ parameters:
   max_prompt_tokens: 1024
   sample_salt: tidepool-replay-v1
   c5b_dose_tokens: 3200000
+  # Checkpointing, same meaning as in the solo task. Each child namespaces its objects
+  # by arm as well as by run tag, so several arms on one card cannot collide.
+  ckpt_every_steps: 0
+  ckpt_max_gb: 60.0
+  resume: true
   smoke: false
   smoke_rows: 512
   max_steps: 0

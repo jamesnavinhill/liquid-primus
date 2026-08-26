@@ -20,9 +20,46 @@ arm alone**, a packed arm sees a token count identical to the same arm run solo,
 that failed did so inside its own ceiling with 9.4 GB still free and its three siblings untouched.
 The supervisor now schedules as well as isolates, so **the entire rest of the sweep is one job on
 one card**: the replay buffer is generated as an arm of the pack and handed to the two arms that
-consume it, with no second job and no round trip through storage._
+consume it, with no second job and no round trip through storage. The solo reference arm **stalled
+at step 2,940 of 8,416 with no identifiable cause and was stopped**; nothing was recoverable,
+because the trainer wrote weights only after its final step. **The trainer now checkpoints to
+shared storage and resumes from them**, and the reference arm is re-running from the top inside
+the packing supervisor, which carries the stall watchdog the solo path never had. That re-run's
+first attempt was refused a machine outright by an account-region validation at zero cost, and
+it is now away on the second provider in the card's source row with an unchanged recipe. Both
+GPU slots are full and the sweep is moving again._
 
 ## Headline
+
+**Update, 2026-08-26 03:47 UTC — the restarted reference run never got a machine, and it is
+away on a second provider.** The reference arm C1 was stopped for stalling and re-queued at
+00:55 UTC. That re-queue never started: the cloud region it was sent to needs an account
+verification that has not cleared, so no machine was ever handed over and the attempt cost
+0.00 GPU-hours. Our provider guidance lists three sources for this card in order, and says AWS
+has capacity in two US regions only, so the fix was to move down the list rather than retry the
+same door. C1 is running on the second source with the recipe unchanged in every parameter,
+job 1728ed4a, and it got further in its first minute than the failed attempt managed at all.
+One caveat is recorded rather than assumed: C1 is the arm every other arm is compared against,
+and it is now the only one renting its card from a different vendor. The card model, recipe,
+seed and 64.0M-token budget are identical, so if its loss curve or throughput sits oddly
+against the packed arms, the vendor is a candidate explanation and re-running it costs about
+four GPU-hours to rule out. The other run, three arms packed onto one card, is at 60% and
+healthy. Both slots are busy, spend stands at **16.3 of 145 approved GPU-hours**, and the last
+five arms go out as one job the moment the packed run frees its card.
+
+**Earlier, 2026-08-26 01:00 UTC — the stalled run was stopped, and what made it expensive was
+fixed.** C1 ran smoothly for three hours and then produced no progress for nearly three more,
+with nothing in its logs pointing to a cause. It was stopped and charged in full at 4.06
+GPU-hours. None of its work could be salvaged, and the reason is worth recording: the trainer
+saved its weights only after the final step, so a run that stopped part way had nothing on
+disk, and the watchdog that would have noticed the silence existed only on the path that shares
+a card between several arms. Both gaps are now closed. The trainer saves its full state to
+shared storage roughly twenty times across a run and can pick up where it left off, so a stall
+costs about a quarter of an hour instead of three, and the reference arm now runs inside the
+packing supervisor so it inherits the watchdog. Two further defects were caught in review before
+any of it went live: every arm sharing a card would have written its checkpoints over the
+others', and the largest arm would have pushed a quarter of a terabyte of uploads across a
+four-hour job. Everything below is the baseline/harness work completed earlier in this stage.
 
 The reference baseline is complete on all four components at full item counts, and two of its four
 numbers reset what this project is aiming at. On tool calling it scores **0.6700 over all 3,490
@@ -1695,3 +1732,39 @@ restart trades certain spent hours for an uncertain speedup.
   the resolver. Cost of finding out: C7 was stopped at 5% (0.794 GPU-h, charged) to free a slot
   for a four-arm packed trial including the full-parameter arm, because the pack size has to be
   chosen against the memory worst case rather than the median one.
+
+- 2026-08-26 03:47Z · s5.3 · **the reference arm's re-queue was refused a machine, and it is
+  away on Nebius.** `5d9be511` (arm `C1`, single-arm pack, queued 00:55Z on `aws`) never ran:
+  AWS answered `RunInstances` in `eu-central-1a` with `PendingVerification`, an account-region
+  validation on the AWS account behind the platform. `progress 0`, `launch_progress.phase =
+  failed`, no `resources`, no artifacts, **0.000 GPU-h** — a measured zero rather than an
+  unknown. The provider steering note (`updated_at 2026-08-23T22:48:37Z`) decided the response:
+  AWS GPU quota exists only in `us-east-1`/`us-east-2` and every other region is zero, and the
+  L40S source row is **AWS (g6e), Nebius, RunPod in try order**, worked left to right. The
+  launch had landed in a region with no quota at all, and `lab task queue` exposes `--provider`
+  and no `--region`, so retrying AWS would have been a coin flip on the scheduler's next region
+  pick. `C1` therefore went to the row's second entry: `1728ed4a-ff04-4cdf-b1dc-c05f5df05de2`,
+  queued 03:46Z on `nebius`, every parameter identical (`arms=C1`, `pack_gb=16`,
+  `stall_minutes=45`, `run_tag=s5.3-C1`, task `cfc6dec7`), reaching `launching_cluster` inside
+  a minute. **The comparability caveat is recorded rather than waved away** in
+  `runs/s5.3-sweep.md`: `C1` is the reference every arm is measured against and is now the only
+  arm renting its L40S from a different vendor. Card model, recipe, seed and the 64.0M-token
+  budget are unchanged, so the exposure is vendor-level rather than hardware-level; if `C1`'s
+  throughput or loss curve sits oddly against the packed arms, a ~4.45 GPU-h re-run on AWS is
+  the check. Three attempts on `C1` now, each with a distinct failure signature and a distinct
+  fix, so each counts as progress rather than a loop, and no attempt has weakened what the arm
+  measures. Ledger: `5d9be511` recorded at 0.000, `1728ed4a` opened with `spend: null` until it
+  is terminal, **total unchanged at 16.345 of 145**.
+- 2026-08-26 03:45Z · housekeeping · **a resolved question was still parked in front of the
+  operator, and it has been cleared.** The `s5.3` blocker raised at 23:51Z asked whether to
+  stop, wait on, or truncate the stalled `C1`. The operator answered it, `e4bd367a` was stopped
+  on their direction at 00:46:20Z and the arm was re-queued at 00:55Z, but the marker itself was
+  never retired, so the project would have read as waiting on a question already settled while
+  a GPU slot sat idle behind a launch that had failed. Retired to `.awaiting.done` this run,
+  with the answer and the action it produced already recorded above and in `runs/`. Nothing was
+  decided here that the operator had not already decided.
+- 2026-08-26 03:43Z · s5.3 · Pack A (`7e8ca5f9`, `C3` + `C7` + `C2'` on one card) at **60%**,
+  healthy, still on the pre-checkpoint code by design — a task edit does not touch a launched
+  job. Two consecutive readings at 60% against a wedge threshold of twenty, so it is not a
+  stall signal; the `progress` field is coarse at this granularity. Next when it frees its card:
+  `queue_pack_b.sh`, the last four arms plus the replay buffer as a single job.

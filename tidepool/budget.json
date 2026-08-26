@@ -467,7 +467,46 @@
    "start": "2026-08-25T21:32:24Z",
    "end": "2026-08-25T21:41:36Z",
    "note": "Reported FAILED because one of four arms failed, which is the intended report: C3 OOMed at its own 11.0 GB ceiling with 9.4 GB still free on the card and its three siblings finished normally, which is the isolation working. Bought the numbers that size every later pack: 7.5 GB per LoRA arm and 11.4 GB for the entropy-weighted arm as the driver sees them, against 6.1 GB as torch reports allocated. Packed C4 saw 238,195 tokens, the same count byte for byte as the solo C4 smoke."
+  },
+  {
+   "jobId": "e4bd367a-8148-4704-88a4-33e15636fa80",
+   "substage": "s5.3",
+   "task": "s5-sft-sweep",
+   "label": "arm C1 (reference recipe), solo, attempt 1 -- stalled",
+   "accelerators": "L40S:1",
+   "provider": "aws",
+   "status": "STOPPED",
+   "spend": 4.059,
+   "start": "2026-08-25T20:42:48Z",
+   "end": "2026-08-26T00:46:20Z",
+   "note": "Stopped at the operator's direction after stalling. Ran cleanly to step 2940/8416 (22.9M of 64.0M tokens, loss 0.3024, 5229 tok/s) by ~21:59Z, then produced no further step line for 2h47m while the job stayed RUNNING at 31% and the machine stayed reachable; no OOM, traceback, scheduled eval, or preemption signal appears anywhere in its logs. The full charge is the cost of the real root cause, which is mine: the trainer wrote weights only after its final step, so nothing was recoverable, and the stall_minutes watchdog exists only in pack.py, which the solo path does not use. Checkpointing is now in the trainer, and the watchdog comes free by relaunching C1 as a single-arm pack rather than by duplicating the logic into the solo path."
+  },
+  {
+   "jobId": "5d9be511-9fc9-4cce-8e69-c4b82766038a",
+   "substage": "s5.3",
+   "task": "s5-sft-pack",
+   "label": "arm C1 (reference recipe), single-arm pack, attempt 2 -- never launched",
+   "accelerators": "L40S:1",
+   "provider": "aws",
+   "status": "FAILED",
+   "spend": 0.0,
+   "start": "2026-08-26T00:55:17Z",
+   "end": "2026-08-26T00:55:30Z",
+   "note": "Zero spend, and it is a measured zero rather than an unknown: no instance was ever handed over. AWS refused RunInstances in eu-central-1a with PendingVerification, an account-region validation on our aws account, so the launch failed at phase 'failed'/100% with progress 0, no resources block and no artifacts. Not capacity, not the 2-GPU cap, not the task. Re-queued with the identical recipe on the next source in the L40S row, nebius, as 1728ed4a."
+  },
+  {
+   "jobId": "1728ed4a-ff04-4cdf-b1dc-c05f5df05de2",
+   "substage": "s5.3",
+   "task": "s5-sft-pack",
+   "label": "arm C1 (reference recipe), single-arm pack, attempt 3 -- running on nebius",
+   "accelerators": "L40S:1",
+   "provider": "nebius",
+   "status": "RUNNING",
+   "spend": null,
+   "start": "2026-08-26T03:46:00Z",
+   "end": null,
+   "note": "Open entry, spend recorded when the job is terminal. Estimated 4.45 GPU-h at 64.0M tokens, the same budget as every other arm. First job in this project on nebius; the provider changed because AWS refused the region, and the recipe did not change, so C1 stays comparable with the packed arms it is the reference for."
   }
  ],
- "total_spent": 12.286
+ "total_spent": 16.345
 }

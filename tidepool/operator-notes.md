@@ -20,6 +20,8 @@ Where two notes pull in different directions, the LATER one wins, and a
 ## All projects
 
 - Wants visible insight into runs: metrics, logs, and any dashboard or UI they can open themselves. Surface where to look rather than only summarizing in prose.  _(recorded by Primus from james@jami.studio, 2026-08-25)_
+- A concurrency cap on GPU instances is not a cap on parallel work. Pack each GPU with as many runs as fit and engineer the isolation so one run failing, stopping or being cancelled does not disturb the others; do not treat an instance limit as a reason to run one job per card or to serialize work.  _(recorded by Primus from james@jami.studio, 2026-08-25)_
+- Prefers being told when a constraint is being worked around rather than accepted. If a limit looks binding, check whether it is actually binding before planning around it, and say plainly when an earlier framing was wrong.  _(recorded by Primus from james@jami.studio, 2026-08-25)_
 
 ## This project
 

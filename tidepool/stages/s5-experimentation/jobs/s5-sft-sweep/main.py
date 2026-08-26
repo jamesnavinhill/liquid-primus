@@ -30,6 +30,7 @@ Two invariants hold across every arm, and both are asserted rather than assumed.
 """
 
 import gzip
+import hashlib
 import json
 import math
 import os
@@ -195,6 +196,13 @@ STRUCT_MAX_EPOCHS = float(A("struct_max_epochs", 3.0))
 PRIORITY_SHARE = float(A("min_priority_share", 0.5))
 RUN_TAG = C("run_tag", "s5.3-%s" % ARM)
 
+# Checkpointing. Weights used to be written once, after the final step, so an arm that
+# stalled part way through had nothing to recover: its whole state lived in the memory of a
+# machine nobody can open a shell into, and the only choices were to keep waiting or to
+# throw the hours away. C1 stalled at 2,940 of 8,416 steps and posed exactly that question.
+CKPT_EVERY = int(C("ckpt_every_steps", 0))   # 0 = auto, about twenty per arm
+RESUME = bool(C("resume", True))
+
 OUT = os.environ.get("TIDEPOOL_PACK_OUT") or "out"
 os.makedirs(OUT, exist_ok=True)
 torch.manual_seed(SEED)
@@ -219,6 +227,50 @@ def dump(name, obj):
     except Exception as exc:
         log("save_artifact failed for %s: %s" % (name, exc))
     return p
+
+
+def _storage_put(local, dest):
+    """Upload one local file to a shared-storage prefix. SDK first, CLI as the fallback.
+
+    Both paths are needed and neither is redundant. A packed child has no SDK storage call by
+    design, so it always lands on the CLI; a solo run prefers the SDK because it is in-process.
+    Returns whether the object actually reached storage, because a caller that reports an
+    upload it did not make is the failure mode this project has already been bitten by."""
+    try:
+        up = getattr(lab, "storage_upload", None)
+        if callable(up):
+            up(local, dest=dest)
+            return True
+    except Exception as exc:
+        log("SDK storage_upload failed for %s (%s)" % (os.path.basename(local), exc))
+    try:
+        import subprocess
+        r = subprocess.run(["lab", "storage", "upload", local, "--dest", dest,
+                            "--no-interactive"], capture_output=True, text=True, timeout=1800)
+        if r.returncode == 0:
+            return True
+        log("CLI storage upload returned %d: %s" % (r.returncode, r.stderr[-400:]))
+    except Exception as exc:
+        log("CLI storage upload failed for %s (%s)" % (os.path.basename(local), exc))
+    return False
+
+
+def _storage_get(obj, dst):
+    """Fetch one shared-storage object, or return None when it is not there.
+
+    Deliberately not `storage()`. That resolver is for inputs the supervisor pre-downloads and
+    it is fatal on a miss, which is right for a corpus. A checkpoint is optional by nature --
+    the first run of any arm has none -- so absence is an ordinary answer here, not an error.
+    The CLI is used in both modes so a packed child can read its own checkpoint back."""
+    try:
+        import subprocess
+        r = subprocess.run(["lab", "storage", "download", obj, dst, "--no-interactive"],
+                           capture_output=True, text=True, timeout=1800)
+        if r.returncode == 0 and os.path.exists(dst) and os.path.getsize(dst) > 0:
+            return dst
+    except Exception as exc:
+        log("checkpoint fetch failed for %s (%s)" % (obj, exc))
+    return None
 
 
 fails = []
@@ -472,6 +524,108 @@ opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=L
                         weight_decay=0.0, betas=(0.9, 0.95))
 sched = get_cosine_schedule_with_warmup(opt, int(steps * WARMUP), steps)
 
+# ------------------------------------------------------------------ 2b. checkpoint / resume
+#
+# The checkpoint goes to shared storage rather than to local disk, which is the whole point:
+# the machine is torn down with the job, so a local checkpoint dies with the thing it exists
+# to survive. It carries the optimizer and scheduler state as well as the weights, because an
+# Adam moment reset half way through a cosine schedule is a different recipe, not a resumed
+# one, and this sweep's entire job is to compare recipes.
+# Namespaced by ARM as well as by run tag. A pack hands every child the SAME config, so
+# every arm on a card shares one run_tag; without the arm in the path, four trainers would
+# write four different recipes over one pair of objects and each would find a stranger's
+# checkpoint on resume.
+CKPT_DEST = "tidepool/s5.3/ckpt/%s/%s%s" % (RUN_TAG, ARM, "-smoke" if SMOKE else "")
+CKPT_SLOTS = ("ckpt-a.pt", "ckpt-b.pt")
+
+# Every value that changes what a step MEANS is hashed. Resuming across a recipe change would
+# produce an arm that is neither of the two recipes while reporting itself as one of them,
+# which is worse than losing the run: the sweep would rank a checkpoint nobody specified.
+FINGERPRINT = hashlib.sha256(json.dumps({
+    "arm": ARM, "base": BASE, "mix": MIX, "tuning": TUNING, "loss": LOSS,
+    "entropy_beta": ENTROPY_BETA, "replay_frac": REPLAY_FRAC, "replay_object": REPLAY_OBJ,
+    "guardrail_epochs": GUARD_EPOCHS, "budget": BUDGET, "max_seq_len": MAX_LEN,
+    "micro_bs": MICRO_BS, "accum": ACCUM, "lr": LR, "warmup": WARMUP,
+    "lora": [LORA_R, LORA_ALPHA, LORA_DROPOUT], "seed": SEED,
+    "steps": steps, "rows": len(rows), "smoke": SMOKE,
+}, sort_keys=True).encode()).hexdigest()[:16]
+
+_TRAINABLE = [n for n, prm in model.named_parameters() if prm.requires_grad]
+
+# How often to checkpoint is a trade between what a stall costs and what the uploads cost, and
+# the two sides are not the same size on every arm. A rank-16 adapter is a few hundred
+# megabytes with its Adam moments; a full-parameter arm is a fp32 copy of the whole model plus
+# two moments, some fourteen gigabytes, and twenty of those is a quarter of a terabyte pushed
+# through the network for a job that is meant to be four hours of arithmetic. So the cadence is
+# derived from the payload: as many checkpoints as fit under ckpt_max_gb of total upload,
+# capped at twenty and floored at four, and never more than one per fifty steps.
+_CKPT_BYTES = sum(prm.numel() for prm in model.parameters() if prm.requires_grad) * 12
+_CKPT_GB = _CKPT_BYTES / 1e9
+if CKPT_EVERY <= 0:
+    _budget_gb = float(C("ckpt_max_gb", 60.0))
+    _n = int(_budget_gb / _CKPT_GB) if _CKPT_GB > 0 else 20
+    _n = max(4, min(20, _n))
+    CKPT_EVERY = max(50, steps // _n)
+log("checkpoints: about %.2f GB each (%d trainable tensors), every %d of %d steps, to %s"
+    % (_CKPT_GB, len(_TRAINABLE), CKPT_EVERY, steps, CKPT_DEST))
+
+
+def save_checkpoint(state, slot):
+    """Write one checkpoint and, only if it lands, move the pointer to it.
+
+    Two slots are alternated and the pointer is written afterwards, so a run killed during an
+    upload leaves the previous checkpoint intact and still pointed at. Writing one slot in
+    place would mean the moment of greatest risk -- a half-written object -- was also the only
+    copy."""
+    path = os.path.join(OUT, slot)
+    payload = dict(state)
+    payload.update({
+        "fingerprint": FINGERPRINT,
+        "arm": ARM, "run_tag": RUN_TAG, "total_steps": steps,
+        "weights": {n: prm.detach().cpu().clone()
+                    for n, prm in model.named_parameters() if prm.requires_grad},
+        "opt": opt.state_dict(),
+        "sched": sched.state_dict(),
+    })
+    torch.save(payload, path)
+    if not _storage_put(path, CKPT_DEST):
+        log("checkpoint at step %d did not reach storage; the previous one still stands"
+            % state["step"])
+        return False
+    ptr = os.path.join(OUT, "ckpt-latest.json")
+    with open(ptr, "w") as fh:
+        json.dump({"slot": slot, "step": state["step"], "fingerprint": FINGERPRINT}, fh)
+    _storage_put(ptr, CKPT_DEST)
+    log("checkpoint at step %d/%d saved to %s/%s" % (state["step"], steps, CKPT_DEST, slot))
+    return True
+
+
+def load_checkpoint():
+    """Return the furthest usable checkpoint for this arm, or None.
+
+    Both slots are read rather than trusting the pointer. The pointer is written after a slot
+    uploads, so it can never be ahead of the data, but it can be behind it if a run died
+    between the two uploads -- and the newer slot is the one worth having."""
+    best = None
+    for name in CKPT_SLOTS:
+        got = _storage_get("%s/%s" % (CKPT_DEST, name), os.path.join(OUT, "resume-" + name))
+        if not got:
+            continue
+        try:
+            ck = torch.load(got, map_location="cpu", weights_only=False)
+        except Exception as exc:
+            log("checkpoint %s did not load (%s); ignoring it" % (name, exc))
+            continue
+        if ck.get("fingerprint") != FINGERPRINT:
+            log("checkpoint %s was written by a different recipe (%s against this run's %s); "
+                "ignoring it and starting from the base checkpoint"
+                % (name, ck.get("fingerprint"), FINGERPRINT))
+            continue
+        if best is None or int(ck.get("step", 0)) > int(best.get("step", 0)):
+            best = ck
+    return best
+
+
 WANDB = None
 if os.environ.get("WANDB_API_KEY"):
     try:
@@ -510,15 +664,68 @@ def eval_loss():
 # ------------------------------------------------------------------ 3. train
 
 model.train()
-hist, step, seen_tok, t_train = [], 0, 0, time.time()
-val_before = eval_loss()
-log("val loss before any step: %.4f" % val_before)
-running, micro, ent_running = 0.0, 0, []
-done = False
-for epoch in range(100):
+t_train = time.time()
+
+# Resume, if there is anything to resume from. A first run of an arm finds nothing and this
+# whole block is a no-op costing one storage miss.
+_ck = load_checkpoint() if RESUME else None
+RESUMED_FROM = 0
+if _ck is not None:
+    _res = model.load_state_dict(_ck["weights"], strict=False)
+    _unexpected = list(getattr(_res, "unexpected_keys", []) or [])
+    _absent = [n for n in _TRAINABLE if n not in _ck["weights"]]
+    if _unexpected or _absent:
+        # Shapes and names line up or they do not; a partial load would train a model that is
+        # part checkpoint and part base weights and report itself as the checkpoint.
+        fails.append("checkpoint weights do not match this model (%d unexpected, %d trainable "
+                     "tensors missing), so the resume was refused"
+                     % (len(_unexpected), len(_absent)))
+        _ck = None
+if _ck is not None:
+    opt.load_state_dict(_ck["opt"])
+    sched.load_state_dict(_ck["sched"])
+    hist = list(_ck.get("hist") or [])
+    step = int(_ck.get("step") or 0)
+    seen_tok = int(_ck.get("seen_tok") or 0)
+    ent_running = list(_ck.get("ent_running") or [])
+    val_before = float(_ck["val_before"])
+    start_epoch = int(_ck.get("epoch") or 0)
+    skip_micro = int(_ck.get("micro_in_epoch") or 0)
+    RESUMED_FROM = step
+    _ck["weights"] = None          # several GB on the full-parameter arm; it is loaded now
+    log("resumed %s from step %d/%d, %d tokens already seen, skipping %d micro-batches of "
+        "epoch %d; val loss before any step was %.4f on the original run"
+        % (ARM, step, steps, seen_tok, skip_micro, start_epoch, val_before))
+else:
+    hist, step, seen_tok, ent_running = [], 0, 0, []
+    start_epoch, skip_micro = 0, 0
+    val_before = eval_loss()
+    log("val loss before any step: %.4f" % val_before)
+
+tok_at_start = seen_tok        # everything before this was another job's compute
+running, micro = 0.0, 0
+done = step >= steps
+micro_in_epoch = skip_micro
+for epoch in range(start_epoch, start_epoch + 100):
     if done:
         break
-    for batch in loader:
+    if skip_micro:
+        # The loader is built with shuffle off and drop_last on, so micro-batch i is exactly
+        # rows[i * MICRO_BS : (i + 1) * MICRO_BS]. The position is therefore recovered by
+        # starting a loader further into the same row list, rather than by spinning the old
+        # one forward and discarding batches, which on a half-finished arm would mean
+        # collating tens of thousands of batches to throw every one of them away.
+        ep_loader = DataLoader(Conv(rows[skip_micro * MICRO_BS:]), batch_size=MICRO_BS,
+                               shuffle=False, collate_fn=collate,
+                               num_workers=2 if len(rows) > 2000 else 0, drop_last=True)
+        log("epoch %d resumes %d micro-batches in, %d rows remaining"
+            % (epoch, skip_micro, len(rows) - skip_micro * MICRO_BS))
+    else:
+        ep_loader = loader
+        micro_in_epoch = 0
+    skip_micro = 0
+    for batch in ep_loader:
+        micro_in_epoch += 1
         batch = {k: v.to(dev) for k, v in batch.items()}
         loss, ent = compute_loss(batch)
         (loss / ACCUM).backward()
@@ -543,9 +750,16 @@ for epoch in range(100):
                        "train/tokens": seen_tok}, step=step)
         if step % max(1, steps // 40) == 0 or step == 1:
             log("step %d/%d  loss %.4f  %d tokens  %.0f tok/s"
-                % (step, steps, tr, seen_tok, seen_tok / max(1e-6, time.time() - t_train)))
+                % (step, steps, tr, seen_tok,
+                   (seen_tok - tok_at_start) / max(1e-6, time.time() - t_train)))
             if not PACK_CHILD:
                 lab.update_progress(min(95, int(90.0 * step / steps)))
+        if CKPT_EVERY and step % CKPT_EVERY == 0 and not SMOKE:
+            # Slot alternates so the object being overwritten is never the only good copy.
+            save_checkpoint({"step": step, "seen_tok": int(seen_tok), "epoch": epoch,
+                             "micro_in_epoch": micro_in_epoch, "hist": hist,
+                             "ent_running": ent_running, "val_before": val_before},
+                            CKPT_SLOTS[(step // CKPT_EVERY) % len(CKPT_SLOTS)])
         if not math.isfinite(tr):
             fails.append("training loss became %s at step %d" % (tr, step))
             done = True
@@ -555,7 +769,7 @@ for epoch in range(100):
             break
 
 val_after = eval_loss()
-tok_per_s = seen_tok / max(1e-6, time.time() - t_train)
+tok_per_s = (seen_tok - tok_at_start) / max(1e-6, time.time() - t_train)
 log("val loss after %d steps: %.4f (was %.4f)" % (step, val_after, val_before))
 if step and not (val_after < val_before):
     fails.append("validation loss did not fall over %d steps (%.4f -> %.4f), so the "
@@ -586,24 +800,7 @@ if not os.path.exists(zpath) or os.path.getsize(zpath) < 1024:
 # exactly like a real arm's from the outside; writing them to the arm's own prefix would leave
 # s5.4 loading a 30-step adapter and never knowing.
 DEST = "tidepool/s5.3/arms/%s%s" % (ARM, "-smoke" if SMOKE else "")
-mirrored = False
-try:
-    up = getattr(lab, "storage_upload", None)
-    if callable(up):
-        up(zpath, dest=DEST)
-        mirrored = True
-except Exception as exc:
-    log("SDK storage_upload failed (%s)" % exc)
-if not mirrored:
-    try:
-        import subprocess
-        r = subprocess.run(["lab", "storage", "upload", zpath, "--dest", DEST,
-                            "--no-interactive"], capture_output=True, text=True, timeout=1800)
-        mirrored = r.returncode == 0
-        if not mirrored:
-            log("CLI storage upload returned %d: %s" % (r.returncode, r.stderr[-400:]))
-    except Exception as exc:
-        log("CLI storage upload failed (%s)" % exc)
+mirrored = _storage_put(zpath, DEST)
 log("weights mirrored to %s: %s" % (DEST, mirrored))
 
 dump("mix_calibration.json", {"arm": ARM, "recipe": RECIPE, "plan": plan, "selection": detail,
@@ -630,6 +827,9 @@ metrics = {
     "mix": MIX, "tuning": TUNING, "loss": LOSS, "smoke": SMOKE,
     "template_mode": enc.mode, "template_notes": enc.notes,
     "steps": step, "tokens_seen": int(seen_tok), "budget_tokens": BUDGET,
+    # Nonzero means this arm was finished by more than one job, so its wall-clock and its
+    # tok/s are spliced from two machines and only the token count is comparable.
+    "resumed_from_step": RESUMED_FROM, "checkpoint_every_steps": CKPT_EVERY,
     "tokens_per_second": round(tok_per_s, 1),
     "val_loss_before": round(val_before, 4), "val_loss_after": round(val_after, 4),
     "val_loss_delta": round(val_after - val_before, 4),

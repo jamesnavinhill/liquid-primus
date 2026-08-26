@@ -57,6 +57,23 @@ parameters:
   struct_max_epochs: 3.0
   min_priority_share: 0.5
   seed: 17
+  # Checkpointing. 0 means about twenty checkpoints across the arm, which puts the cost
+  # of a stall well under an hour of the 4.45 each arm is budgeted. Set resume to false
+  # to force an arm to start from the base checkpoint and ignore anything in storage.
+  ckpt_every_steps: 0
+  # Total upload a run may spend on checkpoints. The cadence is derived from it and
+  # from the size of one payload, so a rank-16 adapter gets twenty and a full-parameter
+  # arm gets four rather than a quarter of a terabyte of transfer.
+  ckpt_max_gb: 60.0
+  resume: true
+  # Declared at main.py's own defaults. main.py reads all four, and the queue validator
+  # rejects any key a task does not declare, so an undeclared one fails the launch with a
+  # misleading message about the task having no parameters at all. run_tag falls through to
+  # its computed default when left empty.
+  smoke: false
+  smoke_rows: 512
+  max_steps: 0
+  run_tag: ""
 # No sweeps: block, deliberately. A sweep_config fans out inside one job, and three things
 # here argue against that: the account allows two GPUs at a time, each arm is 4.45 GPU-hours
 # so one coordinated job would run for a day and a half, and a single failure would take the

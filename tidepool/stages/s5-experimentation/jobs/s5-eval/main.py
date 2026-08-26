@@ -31,6 +31,7 @@ import time
 import urllib.request
 
 
+import adapters
 import bfcl
 import gen
 import gen_gguf
@@ -526,8 +527,12 @@ def main():
                         "cache_prompt": False})
     elif backend == "hf":
         if adapter_obj:
-            adapter_dir = storage(adapter_obj)
-            log("adapter downloaded to %s" % adapter_dir)
+            adapter_dir = adapters.resolve(storage(adapter_obj),
+                                           os.path.join(OUT, "adapter"))
+            log("adapter for %s resolved to %s" % (adapter_obj, adapter_dir))
+            check("adapter_loadable",
+                  os.path.exists(os.path.join(adapter_dir, "adapter_config.json")),
+                  "no adapter_config.json under %s" % adapter_dir)
         model, tok, n_params = gen.load_model(base, adapter_dir, log=log)
         runner = gen.Runner(model, tok, log=log)
         serving = {"backend": "transformers", "dtype": "bfloat16", "decoding": "greedy",
