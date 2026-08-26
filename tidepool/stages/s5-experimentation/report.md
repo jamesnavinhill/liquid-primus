@@ -31,7 +31,94 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
-**Update, 2026-08-26 07:05 UTC — the reference training run is done, and the packed run
+**Update, 2026-08-26 13:15 UTC: the second pair of scoring runs is done, and one of the four
+fine-tuned recipes is the first to pass every threshold the project set for a usable
+guardrail.** That recipe (the raw-mixture variant, trained without the role-balancing step)
+catches 72% of fabricated tool-call outputs in the synthetic test set with zero false alarms,
+comfortably past the 70%-catch/15%-false-alarm bar, while staying within a couple of points of
+the reference model on tool-calling accuracy and instruction-following, and beating it on
+structured-output validity. The no-guardrail ablation, scored alongside it, catches only 39%
+of fabrications, as expected for a model never trained to flag them. Both runs finished at
+their full item counts in 2.54 card-hours, matching estimate. The remaining four recipes are a
+bit over halfway through training on the other card, healthy and on schedule, and I've moved
+the new scored files into shared storage for the head-to-head comparison job. Spend stands at
+**33.7 of 145 approved GPU-hours**.
+
+**Earlier, 2026-08-26 09:10 UTC: I misread how far the first scoring pass had got, and the
+cheap price I reported an hour ago was wrong. The corrected price is about 8 card-hours to
+score all eight trained variants on the full benchmark, against 116 unspent.** The progress
+figure the run reports counts one benchmark at a time, and the one it was counting is the
+largest of four. So the pass I described as nearly through its item set had finished the
+biggest benchmark at the first of two ways of presenting a tool to the model, with the second
+way and three further benchmarks still ahead. The rate I quoted came from the easy end of that
+one benchmark, because the run deliberately does its short prompts first and slows as they
+lengthen. The right anchor was already recorded: the published model's own full pass over the
+identical work took 85 minutes and 1.42 card-hours on the same card alone, which puts a pair
+of variants sharing a card at around 2 hours.
+
+The decision that price was used to justify does not change. Running the full benchmark rather
+than a reduced screening pass costs about 6 extra card-hours and buys the comparison its
+statistical power, and power is the point when three of the four finished variants sit six
+ten-thousandths apart on the training metric. What the pass has genuinely established is the
+memory limit: both variants have generated more than four and a half thousand answers each
+under an 11 GB cap with not one retry.
+
+Beside that, the comparison that the direction decision has to rest on is now written,
+registered and verified. Validation loss cannot separate three of the four finished variants, so
+the decision moves to the task scores, and reading those as a table of rates would repeat the
+same mistake at a larger scale: dozens of small differences, any of which could be sampling
+noise. The comparison matches the variants item by item against the reference recipe,
+puts a confidence interval and an exact paired test on every variant-and-benchmark cell, and
+corrects across the whole set of comparisons, because twenty-eight cells against one reference
+throw up a convincing-looking winner by chance about once even when every variant is identical.
+The verdict column has three states and one of them says the two cannot be told apart. It runs
+on ordinary processors and costs no GPU time. Sixty-seven checks over hand-built fixtures pass,
+including one where the per-item and per-category readings of the same result point in opposite
+directions, so both are reported and neither can be mistaken for the other. Spend stands at
+**28.7 of 145 approved GPU-hours**.
+
+**Earlier, 2026-08-26 08:12 UTC: the machinery that will pick a winner is built and tested.**
+Its description is above; the cost claim it originally carried is corrected there.
+
+**Earlier, 2026-08-26 07:52 UTC: the scoring harness has now been run against real trained
+checkpoints, and it found two of its own problems before spending anything on a result.** A
+four-minute trial put all four finished variants on one rented card at a reduced item count.
+Two of the things it was sent to check came back clean: the full-parameter variant, whose
+saved form is a whole model rather than a small adapter, now loads correctly, and all four
+trained variants are readable from shared storage after the repair made earlier today. The
+trial itself failed, on memory. Each variant was given a fifth of the card, and every one of
+them ran out on its first hard batch of tool-calling prompts; one died while 17 GB of the card
+sat free, so the limit ended it and not competition between them. Scoring needs about twice
+the memory that the training runs led me to expect, because at scoring time the memory holds
+the prompt, and the training figure was dominated by gradients that do not exist here.
+Tool-calling prompts carry a dozen tool schemas and run to a few thousand tokens, so two
+variants fit a card for scoring where three fit for training. The harness now halves a batch
+it cannot fit and retries it, so a limit set too low costs time and no longer costs the run,
+and the limits it was given are recorded next to the measurement they came from. The first
+real scoring pass is away at full item counts, the reference recipe against the full-parameter
+variant, and the second half of the training sweep is still running beside it. Spend stands at
+**28.7 of 145 approved GPU-hours**.
+
+**Earlier, 2026-08-26 07:35 UTC: half the sweep is trained, and the cheap way of choosing a
+winner has come up empty.** Four of the eight training variants are finished: the reference
+recipe, the full-parameter version, the one with the safety-training block removed, and the
+one without data balancing. Three of the four land within 0.0006 of each other on validation
+loss, which at one run apiece is a tie rather than a ranking. Tuning all 1.2 billion weights
+instead of a small adapter bought nothing measurable, and dropping the safety block moved the
+number the wrong way by an amount too small to mean anything. Only data balancing separates:
+it is worth about 0.005, the one clean effect in the table. The consequence is concrete. The
+direction decision cannot rest on validation loss, so it has to rest on the task scores
+themselves (tool calling, structured output, instruction following, safety flagging), which
+means the scoring harness is now the critical path. Both cards are working again: the last
+four variants plus the data they need are away as a single run, and the harness is getting its
+first shared-card test beside it. That harness test failed on its first go, four minutes in,
+on a configuration bug of ours: the value that tells each half of the run which tests to score
+is written as JSON, the platform helpfully parses it before handing it over, and our code then
+insisted on parsing it a second time. Fixed, covered by a test that now feeds it the value in
+all three shapes it can arrive in, and re-running. It cost four minutes of a rented card and
+nothing on the critical path. Spend stands at **28.6 of 145 approved GPU-hours**.
+
+**Earlier, 2026-08-26 07:05 UTC — the reference training run is done, and the packed run
 behind it is nearly there too.** C1, the recipe every other sweep arm gets compared against,
 finished cleanly on its second provider after 8,416 training steps: validation loss dropped
 from where the base model started to **0.152**, with no errors and every result file saved.
@@ -267,6 +354,138 @@ Spend is **4.442 of 145 GPU-hours**, of which 0.68 bought nothing at all.
   are under "Compute" below: about 2.5 GPU-hours per full-precision baseline and 0.55 per
   screened arm, which puts the stage through the sweep at roughly 49 of the approved 145
   GPU-hours. Nothing needs asking for.
+- 2026-08-26 07:52Z · s5.3 · The four-arm scoring smoke `97939c69` failed on all four arms and
+  still paid for itself. Both things it was queued to answer came back: the full-parameter
+  arm's checkpoint is recognised as a whole model and loaded as one, and all four Pack A
+  adapters resolve out of shared storage after the hand repair. The failure is the third
+  answer. Every arm ran out of memory in prefill on its first BFCL batch under a 5.2 GB
+  ceiling, with 4.41 GB allocated and 772 MB wanted, and `C7` was killed with 17.33 GB of the
+  card free, so the per-arm cap ended it and not contention. Prefill holds the batch times the
+  sequence length, BFCL's live categories carry a dozen tool schemas at about 3.1k tokens, and
+  none of training's 7.5-to-22 GB figures apply because gradients and optimizer moments do not
+  exist at inference. Scoring holds a little over 5.2 GB an arm at batch 16, so two arms an L4
+  at 11 GB each is the sized figure. Recorded in `pack.yaml` beside `pack_gb`. Cost 0.061
+  GPU-hours and it failed inside four minutes, because an undersized ceiling is hit on the
+  first batch of the first component.
+- 2026-08-26 07:52Z · s5.3 · Made the serving loop degrade instead of dying: `gen.py` halves a
+  group that will not fit and retries it, down to one prompt, and only a single prompt that
+  cannot run at all is still fatal. Wasted attempt time is banked in `oom_seconds` and kept out
+  of the tokens-per-second denominator, and `oom_splits` and `smallest_batch` reach `score.json`
+  so a ceiling set too low is visible in the result. The split is safe because greedy argmax
+  with left padding does not depend on how prompts were grouped, which the module docstring
+  already asserted; what it does break is the older claim that batch composition is a function
+  of item order alone, and the docstring now says composition depends on memory pressure from
+  sibling arms. 16 checks in `test_gen_oom_split.py`, with `torch` stubbed and a fake model
+  refusing any batch above a set size, so the case needs no GPU.
+- 2026-08-26 07:52Z · s5.3 · Departed from the screening profile this report chose for arm
+  ranking two days ago, and queued `385e210a` at full item counts instead. The reason is that
+  the premise changed: screening was priced at 0.55 GPU-hours an arm on the assumption that
+  ranking eight arms does not need every item, and that holds when the arms are separated by a
+  visible margin. Three of the four trained arms sit within 0.0006 of each other on validation
+  loss, so the margins to be resolved are now small enough that sampling noise is the thing
+  most likely to decide the ranking. Full counts are priced at about 2.5 GPU-hours an arm solo,
+  which two-to-a-card puts near 3.5 card-hours a pair and about 14 for all eight, against 116
+  GPU-hours still unspent. The first pair is running at full counts to measure that figure
+  rather than trust it; if it lands materially above the estimate, the remaining three pairs
+  get screened and the report will say which rows were taken which way.
+- 2026-08-26 08:12Z · s5.3 · The full-count measurement came back and the estimate above was
+  wrong in the cheap direction. `385e210a` crossed 1,936 and 1,776 of 3,490 items about fourteen
+  minutes into generation, roughly 130 items a minute an arm, with no out-of-memory splits
+  anywhere in the log: the 11 GB ceiling holds at batch 16 and the halving path has not fired.
+  A pair therefore lands nearer one card-hour than the 3.5 estimated from the s5.2 screening
+  figures, which puts all eight arms at full item counts within a few card-hours of 116
+  unspent. The screening fallback recorded in the entry above is withdrawn, and the departure
+  it hedged turned out cheaper than the plan it departed from. `queue_arms_pass2.sh` (C2p + C7,
+  same settings) is written and waiting on a slot, and it carries an instruction to re-check the
+  completed log for split retries first, because a ceiling that only just held through half an
+  item set is not a ceiling that held.
+- 2026-08-26 08:12Z · s5.3 · Built the comparison the s5.4 decision has to rest on, as task
+  `ecd12a36-da98-4a18-bc38-2889905746e9`, CPU-only and drawing nothing from the GPU allowance.
+  The sweep's selection metric has failed at its one job, so the direction moves to the task
+  scores, and a table of rates would reproduce the same error at a larger scale: eight arms over
+  several components make dozens of small differences, and at that size a ranking is as likely
+  to be noise as signal. The pass joins arms item by item, which takes item difficulty out of
+  the comparison and is the only reason a two-point gap over a few thousand shared items can be
+  resolved; puts a percentile-bootstrap interval and an exact McNemar test on every
+  arm-by-component cell; and applies Holm-Bonferroni across the whole family, because 28 cells
+  against one reference produce a nominally significant result by chance about once even when
+  every arm is identical. `queue_compare.sh` takes every arm in one call for that reason, since
+  splitting them over two jobs would correct each half against a family half the size. It is a
+  job rather than a local script for provenance: a bootstrap interval is a reported statistic
+  and carries a job id like every other number here. Two details worth recording. The per-item
+  verdicts live in `scored_*.jsonl`, and the plan to read `completions_*.jsonl` would have
+  produced an empty comparison, because the completions files hold the raw generations and no
+  verdict. And the probe file is split into its four populations rather than averaged, because
+  an arm can raise its detection rate purely by flagging more often and pooling hides that trade
+  entirely. 67 checks pass (31 on the statistics, 36 on the driver over fixtures with the SDK
+  stubbed); the fixture that earns its keep has an item-weighted delta of +0.1 and a macro delta
+  of -0.125 over the same ten items, so a run reporting one column would report the opposite
+  direction, and both are now reported with the macro one marked as carrying no test.
+- 2026-08-26 08:12Z · s5.3 · `promote_scores.py` moves an arm's scored files from a job's
+  artifact list into `tidepool/s5.3/arms/<arm>/`, stripping the `<arm>__` prefix the supervisor
+  flattens them under. A comparison spans several jobs and cannot be pinned to one, so the
+  verdicts have to live in shared storage. It computes nothing and refuses to overwrite an
+  existing object unless forced, because a rescore landing on the bytes a recorded comparison
+  was drawn from is the one way the step could quietly invalidate a result. Dry-run verified
+  against the finished `37b50115`.
+- 2026-08-26 08:34Z · s5.3 · **Wrote the s5.4 decision rule before any arm had a task score,
+  and writing it turned up a gap in the reliability gate.** The rule is in this report under
+  "The s5.4 decision rule, written before the numbers": ranking on BFCLv3 overall as the
+  pre-registered claim specifies, the paired Holm-corrected test as the evidence gate rather
+  than the ranking metric, three quality gates before an arm is eligible, and a tie-break that
+  picks the cheapest passing recipe and records non-separation as a finding rather than
+  crowning the highest number. The gap: gate 1 was written with the 138-item corpus clean arm
+  governing, and reading the queued configuration rather than assuming it shows
+  `clean_control_object` empty in `pack.yaml` with no arm queue script setting it, so **no arm
+  in the sweep is scored against the corpus clean arm**. Not fixed by setting it for later
+  passes, because C1 was scored without it and would have nothing to pair against. Gate 1 is
+  therefore evaluated on the thirty synthetic items, which bound a rate only to about one item
+  in thirty but do support the paired comparison the decision needs, and
+  `queue_arms_probes.sh` closes the gap for the whole sweep before s5.5: probes only, corpus
+  arm set, four arms a card at 5.5 GB, a few card-minutes for all eight. The rescope trigger
+  is read against that pass.
+- 2026-08-26 09:10Z · s5.3 · **Corrected the cost claim I made at 08:12Z, which was built on a
+  misread progress bar.** The supervisor reports each child's last `generated i/n` line and the
+  harness calls `generate()` once per component with that component's item count as the
+  denominator, so `3490` is BFCL at full item counts and not the run. `progress 97% |
+  C1 3376/3490` meant BFCL was nearly done at the first of two calling conventions, with the
+  second convention, 2,000 IFStruct items, 541 IFEval items and 434 probes still ahead. The
+  next line, `C1 16/3490 C3 3376/3490`, looked like a restart and is not one: `pack.py` prints
+  an exit line for every child and there is none anywhere in the log, so C1 had simply moved to
+  the second convention a poll ahead of C3. The rate I quoted, roughly 130 items a minute, came
+  from the short-prompt front of one component, because `generate()` sorts by prompt length and
+  runs the short ones first. The anchor that should have been used was already in the ledger:
+  `4350ce4e`, B1's full pass over the identical four components at the identical counts across
+  both conventions, solo on an L4, 85 minutes and 1.42 card-hours. `385e210a`'s estimate is set
+  to 2.0 hours from 1.2, so four scoring passes is about 8 card-hours rather than the 4 I
+  claimed, against 116 unspent. The screening fallback stays withdrawn on the corrected price:
+  screening saves about 6 card-hours and costs the paired test most of its power, which is the
+  one thing the s5.4 rule cannot do without. Corrected in `tasks.md`, this report's headline,
+  the ledger entry and `queue_arms_pass2.sh`, whose header carried the 130-a-minute figure. The
+  ceiling result is untouched and still worth having: 11 GB an arm at batch 16, zero
+  out-of-memory splits across 4,626 generations an arm, `gen.py`'s halving path never fired.
+- 2026-08-26 09:10Z · s5.3 · **The replay handover worked and the buffer is sound.** RB exited
+  rc=0 after 49.1 minutes, the supervisor registered its output as the stand-in for
+  `tidepool/s5.3/replay/replay.jsonl.gz` and placed it in shared storage, and C5a and C5b
+  started behind it. The buffer reads 7,945 rows, `n_tok` 23 to 1,332, median 388, 3.21M tokens
+  indexed; the earlier one indexed the same rows at `n_tok` 2, and the trainer's sanity guard
+  refuses to dose from a set like that, so the arms training at all is that guard passing. The
+  step denominators look wrong and are not: 8,416 for C4 and C6 against 8,429 and 8,481 for the
+  replay arms, because the 64.0M-token budget is fixed and replay displaces base data. The
+  13-to-65 ratio being exactly one to five is the check that the dose is what it says.
+- 2026-08-26 09:10Z · s5.3 · **Made the probes promotion reversible and gave it a destination.**
+  Adding the corpus clean arm to an already-scored arm overwrites its `scored_probes.jsonl`, and
+  `--force` now copies the replaced bytes to `<name>.superseded-by-<job>` first, at one extra
+  round trip per file. An overwrite becomes undoable, and the shared items become a determinism
+  check that can actually be run: greedy argmax with left padding does not depend on how prompts
+  were grouped, so an item whose verdict moved between the two passes is a real finding.
+  `--prefix` was added for the same script, because the baselines live under `tidepool/s5.2/`
+  and a baseline promoted into the sweep arms' directory would be read by a comparison that
+  never meant to include it. `queue_baselines_probes.sh` adds the corpus arm to the six s5.2
+  rows, split by backend: `pack_gb` is a torch memory fraction and does not bind a llama.cpp
+  server, so the two transformers rows run under real ceilings and the four 4-bit rows are sized
+  by four slots of 4,096 context. Ports do not collide, since each child adds its pack position
+  to `gguf_port`. Supplementary to s5.4, which reads sweep arms only.
 
 ## s5.1 What the smoke runs are for
 
@@ -1764,3 +1983,128 @@ restart trades certain spent hours for an uncertain speedup.
   job. Two consecutive readings at 60% against a wedge threshold of twenty, so it is not a
   stall signal; the `progress` field is coarse at this granularity. Next when it frees its card:
   `queue_pack_b.sh`, the last four arms plus the replay buffer as a single job.
+
+- 2026-08-26 07:25Z · s5.3 · **Pack A is down clean and Pack B is away.** `7e8ca5f9` finished
+  at 07:01:17Z after 9 h 16 m with 3/3 arms at rc=0 on the full 64.0M-token budget, zero
+  assertion failures, and all 18 per-arm artifacts plus `pack_summary.json` verified present
+  before anything was mirrored. `val_loss`: `C2'` 0.1511, `C3` 0.1513, `C7` 0.1565, against the
+  reference `C1` at 0.1517. Charged 9.198 GPU-h, so **28.544 of 145**; the ledger's
+  `total_spent` field was also stale at 16.345 against a real 19.346 across 37 entries and is
+  corrected. **The finding is a non-finding, and it moves the next substage.** Three of four
+  arms sit inside 0.0006 of each other, which at n=1 seed is a tie, so `val_loss` cannot rank
+  full-parameter against adapter tuning or price the guardrail block. Only `C7` separates, and
+  role balancing against uniform sampling is worth ~0.005. `s5.4` therefore has to be decided
+  on the `s5.2` task metrics scored over each arm's adapter, not on the sweep's own selection
+  metric — which makes the evaluation harness the critical path rather than an `s6` concern.
+  Two jobs went out into the freed cards: **Pack B** (`1df3bf2b`, L40S:1 aws, `run_tag`
+  `s5.3-packB`) is the last four arms plus the replay buffer two of them read, with `RB`
+  generating and `C5a`/`C5b` held on `pack_after` until it exits clean — the first run of the
+  scheduling path in anger; and the **packed evaluation smoke** (`18c83b6b`, L4:1 aws, arms
+  `E1`/`E2` at 16 items per component) earns the harness a job id before `s5.4` leans on it.
+  Provider stayed AWS for both, per the steering note's L40S row (AWS g6e, Nebius, RunPod) and
+  because Pack A had just succeeded there; keeping Pack B on AWS also leaves 7 of 8 arms on one
+  vendor with `C1` the lone exception, which is a better comparability position than a 4/4
+  split. Enforced allowance re-read before launching: 2 GPUs at a time, 0 in use, 194 h 55 m
+  left, so nothing was binding.
+- 2026-08-26 07:22Z · s5.3 · **Correcting the packing gain I reported earlier.** The nine-minute
+  sizing trial called packing a 1.51x throughput win, and that number was measured against the
+  wrong baseline: 2,833 tok/s from the `C4` entropy-weighted smoke over 30 steps, the most
+  expensive arm in the sweep timed across its warmup. Against `C1`'s real solo rate on the same
+  provider (5,229 tok/s), Pack A's 6,302 tok/s aggregate is **1.21x**, and in card-hours 3.07
+  per arm against 3.48 solo — a 12% saving, not 34%. The win that justifies packing is the one
+  the operator named and it is not throughput: three arms on one card left the second card free,
+  so four arms finished in a single 9-hour window under a cap that would otherwise have run them
+  in two rounds. One sizing assumption was also wrong: `C3` was placed first as the presumed
+  slowest arm and finished in 8.07 h against `C7`'s 9.17 h, because the raw-mix arm does 15% more
+  steps. Step count predicted the tail, not tuning method, and Pack B's ordering is read that way.
+- 2026-08-26 07:35Z · s5.3 · **The packed evaluation smoke rejected its own valid input, and the
+  reason is a coverage gap worth naming.** `18c83b6b` died 3 m 46 s after launch, before scoring
+  an item, with the supervisor exiting 2 on `pack_overrides is not valid JSON` against a value
+  that was JSON when I typed it. Reading the stored job back explains it: a `-p key=<value>`
+  argument is typed on the way in, so `job_data['pack_overrides']` is a `dict`, and the
+  supervisor's `str()` of a dict is a Python repr with single quotes, which `json.loads`
+  correctly refuses. Both halves were defensible; the pair was not. `pack.py` now takes a
+  mapping as-is and keeps `json.loads` plus an `ast.literal_eval` fallback for text. The
+  interesting part is why four existing tests on this exact parameter missed it: every one of
+  them built the value with `json.dumps`, because a config written in Python is naturally
+  written as text, so the single code path production actually takes was the single path with no
+  coverage. `test_pack_schedule.py` now runs the same patch as JSON text, as a dict and as a
+  repr, asserting the child received its patched value in each; both contract tests and the
+  staging build pass. Re-queued unchanged as `37b50115` on the same L4. Cost: 0.063 GPU-h for a
+  cluster launch that did no work, spend now 28.607 of 145. Pack B ran through it untouched and
+  passes no overrides, so the patched supervisor stays off the sweep task (`cfc6dec7`) until
+  Pack B lands rather than being uploaded under a live job.
+
+## The s5.4 decision rule, written before the numbers (s5.3)
+
+Recorded at 2026-08-26 08:20 UTC, while `385e210a` was at 62% and no arm had a task score.
+The point of writing it now is that a rule chosen after seeing eight arms across five
+components is not a rule, it is a description of whichever arm happened to win. Everything
+below is fixed until s5.4 executes it, and any departure will be recorded as a departure.
+
+**The ranking metric is BFCLv3 overall**, category-macro-averaged, taking the better of the
+two calling conventions per arm exactly as the B1-B6 baseline rows did. That is the metric
+the project's pre-registered claim is written against, so it is the one the direction is
+chosen on.
+
+**The evidence gate is the paired test, not the ranking metric.** An arm is only said to beat
+C1 if its item-weighted paired difference on that arm's better convention survives
+Holm correction across the whole family in `s5-compare`. The two are different estimators and
+they can disagree: the macro composite weights a 40-item category like a 400-item one, so it
+has no per-item pairing and cannot be tested directly, while the paired test has no way to
+reproduce the macro weighting. Where the two disagree in sign, s5.4 will report both and
+claim no winner on that axis. A ranking without a surviving test is a ranking of noise, and
+saying so is the honest outcome.
+
+**Three gates apply before an arm can be chosen at all**, from the project's own success
+criteria:
+
+1. **Reliability.** Detection rate at or above 0.70 on the malformed-return probes with a
+   false-flag rate at or below 0.15 on the clean items. An arm that buys detection by flagging
+   more often fails here, which is the reason `s5-compare` splits the probe file into four
+   cells.
+
+   **Amended 08:34 UTC, on a configuration fact and before any arm had a score.** The rule as
+   first written had the 138-item corpus clean arm governing over the 30-item synthetic one.
+   Checking the queued configuration rather than assuming it: `clean_control_object` is empty
+   in `pack.yaml` and no arm queue script sets it, so **none of the eight arms is being scored
+   against the corpus clean arm at all**. The default is empty on purpose, so that a re-run of
+   an already-published baseline row stays byte-comparable to the row it replaces, and the
+   arm queue scripts inherited it.
+
+   The fix is not to set it now. Pass 1 is two thirds through generation, and setting it for
+   later passes would give C1 no corpus cell for any arm to be paired against, which is worse
+   than not having the cell. So all eight arms stay identical, and gate 1 is evaluated at s5.4
+   on the 30-item synthetic arm.
+
+   What that costs is stated plainly. Thirty items bound a false-flag rate only to about one
+   item in thirty, so the arms cannot establish the absolute 0.15 ceiling. What they can do is
+   the comparison s5.4 actually needs: every arm sees the same thirty items, paired, so an arm
+   that over-flags shows up against C1 whether or not thirty items can price the rate. An arm
+   flagging a fifth of clean returns would put six discordant pairs against C1's zero, which
+   McNemar resolves easily. The absolute ceiling is a claim about the delivered model and is
+   verified at s6.
+
+   Queued as a follow-up rather than dropped: a **probes-only pass with
+   `clean_control_object` set, over every arm**, which is 138 extra items an arm and a few
+   card-minutes for all eight. It runs after the four scoring passes and before s5.5, so the
+   corpus arm is available on the whole sweep and not only on the direction that wins. The
+   rescope trigger below is read against it, not against the thirty.
+2. **Worst-category floor.** No BFCLv3 category more than 3.0 points below the matched base,
+   and IFEval no more than 2.0 points below it.
+3. **Structured output.** IFStruct at or above C1's, since the claim asks for 5.0 points over
+   the matched base and no arm may spend that margin to buy tool calling.
+
+**If nothing separates.** The likely outcome, given that three of four arms tied within
+0.0006 on validation loss, is that no arm's tool-calling difference survives family
+correction. In that case s5.4 does not pick the numerically highest arm. It picks the
+**cheapest recipe that passes all three gates**, and records that the choice was made on cost
+because the arms could not be distinguished. Cost is ranked as: rank-16 adapter over rank-64
+over full-parameter; no replay over 1% replay over 5% replay; and the reference mixture over
+the raw one, since balancing is the one effect the sweep did resolve. A recorded
+non-separation is a finding about the sweep and goes in the paper as one.
+
+**What would make me rescope instead.** If every arm fails gate 1 (detection under 0.70 or
+false-flag over 0.15), the guardrail axis is not reachable from this training set and s5.5 has
+no direction worth detailing. That is a rescope proposal and would stop for the operator
+rather than being decided here.
