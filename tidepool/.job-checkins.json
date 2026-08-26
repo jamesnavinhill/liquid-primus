@@ -392,6 +392,30 @@
    "status": "RUNNING",
    "completion": null,
    "note": "s5.3 sweep arm C1 (reference recipe), task 37186b22, L40S:1 aws, 64.0M tokens, about 4.45 GPU-h. Queued 19:56Z after the C4 smoke cleared the gate."
+  },
+  {
+   "at": "2026-08-25T22:51:00Z",
+   "status": "RUNNING",
+   "progress": 31,
+   "note": "C1 solo, step 2940/8416 (35%), loss trending down (0.30 at step 2940), 5229 tok/s steady since 1890/8416 last check. Advancing normally, not wedged."
+  },
+  {
+   "at": "2026-08-25T23:51:51Z",
+   "status": "RUNNING",
+   "progress": 31,
+   "note": "WEDGED. Lab still reports RUNNING/31% (unchanged from 22:51Z) but task-logs show no step line since step 2940/8416 loss 0.3024 5229 tok/s at ~21:59Z, i.e. 112+ min silent against a steady ~5-min/210-step cadence over the 14 preceding log lines. Machine-logs from ~22:00:30Z to now (23:51:13Z) contain nothing but repeated wandb telemetry-upload timeout errors (separate sidecar, unrelated to training-loop health -- the VM itself is alive). No OOM/CUDA error/traceback, no scheduled long eval or checkpoint pass logged, no preemption/termination/disconnect signal found anywhere in machine-logs. Cause not identified. Raised as [!] blocker per policy (do not kill an undiagnosed stall, let the operator decide); job left running/untouched."
+  },
+  {
+   "at": "2026-08-26T00:23:04Z",
+   "status": "RUNNING",
+   "progress": 31,
+   "note": "Still wedged. progress 31 unchanged since 22:51Z; ~2h24m since the last step line (2940/8416 at ~21:59Z). Blocker already raised, job left running untouched."
+  },
+  {
+   "at": "2026-08-26T00:46:20Z",
+   "status": "STOPPED",
+   "progress": 31,
+   "note": "Stopped at the operator's direction after 2h47m of silence. Charged 4.059 GPU-h in full. Nothing recoverable: no artifacts, and the trainer only wrote weights after its final step. C1 must be re-run from scratch, as a single-arm pack so it inherits the supervisor's stall watchdog, once the checkpointing fix is registered."
   }
  ],
  "a68b3e57-03a4-4808-8b29-ef04c252f8a5": [
@@ -400,6 +424,103 @@
    "status": "RUNNING",
    "completion": null,
    "note": "s5.3 sweep arm C7 (mix=raw), task 37186b22, L40S:1 aws, 64.0M tokens, about 4.45 GPU-h. Queued 19:56Z after the C4 smoke cleared the gate."
+  }
+ ],
+ "7e8ca5f9-82a2-410e-8fda-ea53f5662bd2": [
+  {
+   "at": "2026-08-25T22:51:00Z",
+   "status": "RUNNING",
+   "progress": 11,
+   "note": "Pack A (C3+C7+C2p on one card), all three arms advancing: C3 1050/8416, C7 968/9697, C2p 856/8585. No OOM, no stall. Advancing normally, not wedged."
+  },
+  {
+   "at": "2026-08-25T23:51:51Z",
+   "status": "RUNNING",
+   "progress": 22,
+   "note": "Pack A healthy and advancing normally since 22:51Z: C3 1050->2100/8416, C7 968->1936/9697, C2p 856->1712/8585. No OOM, no stall. Rules out a platform-wide issue (only the solo C1 job beside it is affected)."
+  },
+  {
+   "at": "2026-08-26T00:23:04Z",
+   "status": "RUNNING",
+   "progress": 25,
+   "note": "Pack A healthy, 22 -> 25% since 23:51Z. Confirms the C1 stall is isolated to that job."
+  },
+  {
+   "at": "2026-08-26T01:02:00Z",
+   "status": "RUNNING",
+   "progress": 31,
+   "note": "Pack A healthy, on the pre-checkpoint code by design."
+  },
+  {
+   "at": "2026-08-26T03:43:00Z",
+   "status": "RUNNING",
+   "note": "Pack A at 60% (was 60% at 01:02Z per the previous reading -- progress field is coarse; not yet a stall signal, and 2 consecutive unchanged readings against a threshold of 20). On the pre-checkpoint code by design."
+  },
+  {
+   "at": "2026-08-26T03:53:00Z",
+   "status": "RUNNING",
+   "progress": 66,
+   "note": "Pack A 60 -> 66% since 03:43Z (C3 6300/8416, C7 5808/9697, C2p 5350/8585), moving steadily. Stall counter resets to 0. On the pre-checkpoint code by design."
+  },
+  {
+   "at": "2026-08-26T04:56:00Z",
+   "status": "RUNNING",
+   "progress": 74,
+   "note": "Pack A 66 -> 74% since 03:53Z, steady. On the pre-checkpoint code by design, no checkpoint expected or needed here."
+  },
+  {
+   "at": "2026-08-26T06:03:00Z",
+   "status": "RUNNING",
+   "progress": 83,
+   "note": "Pack A 74 -> 83% since 04:56Z. C3 (full-parameter arm) reached 8416/8416 and exited rc=0 -- 1 of 3 arms in this pack done, C7 (7744/9697) and C2p (7276/8585) still training. Not terminal yet (job stays RUNNING until all three finish); advancing normally, no OOM, no stall. On the pre-checkpoint code by design."
+  },
+  {
+   "at": "2026-08-26T07:05:00Z",
+   "status": "RUNNING",
+   "note": "93% overall. C3 and C2p both exited rc=0. Only C7 remains, at 9196/9697 steps (~95%), still climbing steadily -- roughly 500 steps left."
+  }
+ ],
+ "5d9be511-9fc9-4cce-8e69-c4b82766038a": [
+  {
+   "at": "2026-08-26T01:02:00Z",
+   "status": "LAUNCHING",
+   "progress": 0,
+   "note": "Arm C1 re-run, queued 00:58Z as a single-arm pack on the checkpointing code. Expect an early 'checkpoints: about N GB each ... every K of 8416 steps' log line; its absence means the registered code is not the code on disk."
+  },
+  {
+   "at": "2026-08-26T03:44:00Z",
+   "status": "FAILED",
+   "note": "Terminal at launch, 0 GPU-h, no instance ever handed over. FAILURE SIGNATURE: AWS RunInstances PendingVerification in eu-central-1a -- 'your request for accessing resources in this region is being validated'. Account-region validation on our aws account, NOT capacity, NOT team quota, NOT the task. Distinct from attempt 1's signature (e4bd367a: silent stall at step 2940/8416 after 2h47m), so this is a NEW failure, not a repeat. Provider note (2026-08-23): AWS GPU quota exists only in us-east-1/us-east-2, every other region is zero, and the L40S row is AWS (g6e), Nebius, RunPod in try order. CHANGE MADE: same recipe, next source in the row -- re-queued on nebius as 1728ed4a. Relaunches for s5.3 arm C1: 3 total, and this one follows a NAMED cause with a fix outside the experiment design, so it is progress, not a loop."
+  }
+ ],
+ "1728ed4a-ff04-4cdf-b1dc-c05f5df05de2": [
+  {
+   "at": "2026-08-26T03:47:00Z",
+   "status": "LAUNCHING",
+   "note": "Arm C1 re-run attempt 3, queued 03:46Z on NEBIUS, task cfc6dec7 as a single-arm pack (-p arms=C1 -p pack_gb=16 -p stall_minutes=45 -p run_tag=s5.3-C1), identical recipe to the aws attempt. Reached launching_cluster/70% within a minute, past the point attempt 2 died. WATCH FOR: an early 'checkpoints: about N GB each ... every K of 8416 steps' line -- its absence means the registered code is not the code on disk. Stall watchdog at 45 min."
+  },
+  {
+   "at": "2026-08-26T03:53:00Z",
+   "status": "RUNNING",
+   "progress": 1,
+   "note": "Got a Nebius instance and started training (attempt 3 succeeded past attempt 2s launch-time death). Logs show data staged, base model cached, C1 started (pid 3487); no step line yet 8 min in, expected while the process spins up. No checkpoint line visible yet -- watch next check-in to confirm it appears once stepping starts."
+  },
+  {
+   "at": "2026-08-26T04:56:00Z",
+   "status": "RUNNING",
+   "progress": 35,
+   "note": "C1 attempt 3 reached step 2940/8416 (35%) -- the exact step where earlier attempts died -- and is still advancing (next line already at 2940, no stall). IMPORTANT: storage ls under tidepool/s5.3/ still shows zero checkpoint objects despite CKPT_EVERY~420 meaning ~7 checkpoints should have landed by now. Checkpointing looks registered (code, params) but is not reaching shared storage -- likely the CLI-fallback upload inside the packed child (lab.storage_upload is deliberately unavailable in child mode by design; falls back to `lab storage upload` subprocess, which needs the lab CLI on the remote worker's PATH) is failing silently every time, non-fatally, so training keeps going with no safety net. Not stopping the job over this -- it is healthy and past its old failure point -- but if this job fails again, check that the CLI-fallback path actually works in the child environment BEFORE relaunching a 4th time, rather than assuming checkpointing will save it."
+  },
+  {
+   "at": "2026-08-26T06:03:00Z",
+   "status": "RUNNING",
+   "progress": 67,
+   "note": "C1 attempt 3, 35 -> ~67% since 04:56Z (task-logs step lines climbed from 2940 to 5670/8416), comfortably past the 2940 point that killed attempts 1 and 2, advancing steadily, not wedged. Re-checked lab storage ls tidepool/s5.3/ckpt/: still zero objects, though by step 5670 at the auto ~420-step cadence roughly 13 checkpoints should have landed -- confirms this is not a transient absence. Also confirmed directly: task-logs never carries a packed child's own log() lines (grepped the full log for '[C1]', found none; only supervisor lines and periodic progress-percent summaries appear), so the missing 'checkpoints: about...' startup line proves nothing either way -- the storage listing is the only real signal, and it still says checkpointing is not reaching shared storage. Leaving the job running rather than relaunching: it is healthy with roughly 2,700 steps left, and killing a job this close over an unconfirmed upload path would be worse than the risk it is meant to cover."
+  },
+  {
+   "at": "2026-08-26T07:05:00Z",
+   "status": "COMPLETE",
+   "note": "8416/8416 steps, val_loss 0.1517, 0 assertion failures, all 6 artifacts uploaded. Mirrored into budget.json and runs/s5.3-sweep.md; dropped from the pending-jobs marker."
   }
  ]
 }
