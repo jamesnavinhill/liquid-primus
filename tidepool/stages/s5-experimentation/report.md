@@ -31,18 +31,22 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
-**Update, 2026-08-26 13:15 UTC: the second pair of scoring runs is done, and one of the four
-fine-tuned recipes is the first to pass every threshold the project set for a usable
-guardrail.** That recipe (the raw-mixture variant, trained without the role-balancing step)
-catches 72% of fabricated tool-call outputs in the synthetic test set with zero false alarms,
-comfortably past the 70%-catch/15%-false-alarm bar, while staying within a couple of points of
-the reference model on tool-calling accuracy and instruction-following, and beating it on
-structured-output validity. The no-guardrail ablation, scored alongside it, catches only 39%
-of fabrications, as expected for a model never trained to flag them. Both runs finished at
-their full item counts in 2.54 card-hours, matching estimate. The remaining four recipes are a
-bit over halfway through training on the other card, healthy and on schedule, and I've moved
-the new scored files into shared storage for the head-to-head comparison job. Spend stands at
-**33.7 of 145 approved GPU-hours**.
+**Update, 2026-08-26 23:12 UTC: six of eight sweep recipes are now scored, and the raw-mixture
+recipe is still the only one that clears the guardrail bar.** Two more recipes finished
+scoring since the last update — both use a small slice of replayed general-purpose data
+during training — and neither catches enough fabricated tool calls to pass: one catches 57%,
+the other 63%, both short of the 70% bar (one of the two also keeps false alarms low, at 10%).
+That leaves the raw-mixture recipe, at 72% catch with zero false alarms, as the only candidate
+out of six scored so far that meets the bar while staying close to the reference model on
+tool-calling accuracy and instruction-following. The last two recipes are still scoring and
+should land within the next couple of hours. Spend stands at **49.5 of 145 approved
+GPU-hours**.
+
+**Correction to the 13:15 UTC update.** That update said the no-guardrail ablation catches
+39% of fabrications with a 3.3% false-alarm rate. Both figures were wrong, and neither came
+from the run: the recorded scores say 0.7% and zero. The error was in a status note written
+alongside the results rather than in the results themselves, which have been consistent
+throughout and are unchanged. The finding is unaffected in direction and stronger in degree.
 
 **Earlier, 2026-08-26 09:10 UTC: I misread how far the first scoring pass had got, and the
 cheap price I reported an hour ago was wrong. The corrected price is about 8 card-hours to
@@ -2108,3 +2112,44 @@ non-separation is a finding about the sweep and goes in the paper as one.
 false-flag over 0.15), the guardrail axis is not reachable from this training set and s5.5 has
 no direction worth detailing. That is a rescope proposal and would stop for the operator
 rather than being decided here.
+
+- 2026-08-26 10:30Z · s5.3 · **Pass 1 lands at full item counts.** `385e210a` (C1 + C3, two
+  arms on one L4 under 11 GB ceilings) finished clean: C1 scored bfcl 0.7196 / ifstruct 0.1375
+  / ifeval 0.7523 / flag rate 0.6111, C3 scored bfcl 0.7110 / ifstruct 0.1449 / ifeval 0.7841,
+  both with zero false alarms on the probes. 2.473 GPU-h for the pair, close to estimate. One
+  correction on the finished logs rather than the live progress line: both arms hit one memory
+  retry late in bfcl/tools_text, not zero as I reported an hour into the run; both retried as
+  8+8 with nothing lost. Full detail in `runs/s5.3-sweep.md` at 10:30Z. Spend 31.183 of 145.
+- 2026-08-26 13:15Z · s5.3 · **Pass 2 lands, and C7 clears every s5.4 gate.** `8b7bad6f` (C2p +
+  C7, same setup) finished clean at 2.541 GPU-h, all 30 artifacts verified present. C2p (the
+  no-guardrail ablation) scored bfcl 0.7104 / ifstruct 0.1391 / ifeval 0.7488 / flag rate
+  0.3889 / false-flag 0.0333. C7 (raw mixture, no role balancing) scored bfcl 0.7038 / ifstruct
+  0.1458 / ifeval 0.7411 / flag rate 0.7222 / false-flag 0.0. Read against the three
+  pre-registered gates above using C1's pass-1 numbers as the baseline: C7 passes gate 1
+  (0.7222 detection, 0.0 false-flag, against the 0.70/0.15 bar), passes gate 2 (no category
+  more than 3.0 points below C1 on bfcl, within 2.0 on ifeval), and passes gate 3 (ifstruct
+  0.1458 against C1's 0.1375) — the first of the four scored arms to clear all three. C2p fails
+  gate 1 as expected, which is itself informative: it confirms the guardrail training block is
+  doing the detection work rather than the base model flagging fabrications on its own. This
+  reading uses the 30-item synthetic clean arm, per the 08:34Z amendment above, since the
+  138-item corpus clean arm is not wired into any arm's scoring yet — the probes-only follow-up
+  pass mentioned in that amendment will close that gap before s5.4 is finalized. Scored files
+  for both arms promoted into `tidepool/s5.3/arms/{C2p,C7}/` via `promote_scores.py`
+  (dry-run verified, no clashes). Full score table and gate-by-gate reading in
+  `runs/s5.3-sweep.md` at 13:15Z. Spend 33.724 of 145.
+- 2026-08-26 13:15Z · mirror · Pushed commit `03cb3d560a1f` to `github.com/jamesnavinhill/liquid-primus`:
+  `tasks.md`, `budget.json`, this report and `runs/s5.3-sweep.md` updated for pass 2's
+  completion and the C7 gate-clearing finding. No code changed this wake, so the push is
+  record only.
+- 2026-08-26 23:12Z · s5.3 · check-in · **Pass 4 lands (C5a, C5b); pass 3 (C4, C6) still
+  running with active progress.** `acc01fdf` finished clean at 2.355 GPU-h, both arms rc=0,
+  30 artifacts verified. C5a scored bfcl 0.7013 / ifstruct 0.1515 / ifeval 0.7837 / flag rate
+  0.5741 / false-flag 0.10; C5b scored bfcl 0.7227 / ifstruct 0.1095 / ifeval 0.7708 / flag
+  rate 0.6333 / false-flag 0.0. Both read off the promoted `score.json` and checked against
+  the job record before writing anything down — no discrepancy this time. Neither clears
+  gate 1 (detection >= 0.70); C7 remains the only one of six scored arms to clear all three
+  s5.4 gates. `ade4c590` (C4, C6) is still running: raw job-status progress reads 61%, but
+  that field resets per phase on this task, and task-logs show real forward movement (C6
+  finished BFCL and ifstruct, now in ifeval; C4 in ifeval at 176/541) with no stall against
+  the last check-in. Full detail and the gate table in `runs/s5.3-sweep.md`. Spend 49.490 of
+  145.

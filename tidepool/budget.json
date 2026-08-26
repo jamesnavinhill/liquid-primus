@@ -595,6 +595,33 @@
       "durationHours": 2.541,
       "note": "2/2 arms completed, rc=0, 0 assertion failures, 30 artifacts uploaded and both arms' scored files promoted into tidepool/s5.3/arms/<arm>/ for the compare job. C2p: bfcl_ast_composite 0.707, ifstruct_validity 0.139, ifeval_prompt_strict 0.7283, probe_flag_rate 0.0074, probe_false_flag 0.0. C7: bfcl_ast_composite 0.7049, ifstruct_validity 0.140, ifeval_prompt_strict 0.7338, probe_flag_rate 0.7222, probe_false_flag 0.0. gpu_hours_billed from pack_summary.json is 2.541 against a 2.0h estimate. C7 is the only sweep arm scored so far (of C1 0.6111, C3 0.6037, C2p 0.0074, C7 0.7222) whose flag rate clears the 0.70 gate-1 detection floor while holding false-flag at 0.0, and it also clears gate 2 (bfcl -1.47 pts, ifeval -1.85 pts against C1, both inside the 3.0/2.0 ceilings) and gate 3 (ifstruct 0.140 >= C1's 0.1375). All four scores read off score.json's per-arm results block, not estimated.",
       "recordedAt": "2026-08-26T13:15:00Z"
+    },
+    {
+      "jobId": "1df3bf2b-0876-43e7-a489-efb2232ae274",
+      "experiment": "tidepool",
+      "substage": "s5.3",
+      "description": "Pack B: the last four sweep arms (C4, C6, C5a, C5b) plus the RB replay buffer two of them read, packed on one L40S. 5/5 arms rc=0, 13.411 h wall clock, 28 artifacts.",
+      "resources": "L40S:1",
+      "durationHours": 13.411,
+      "spend": 13.411,
+      "status": "COMPLETE",
+      "recordedAt": "2026-08-26T20:47:00Z"
+    },
+    {
+      "jobId": "acc01fdf-394c-4a59-ad12-04a778e161bb",
+      "experiment": "tidepool",
+      "substage": "s5.3",
+      "task": "s5-eval-pack",
+      "label": "s5.3 arm scoring, pass 4 -- C5a and C5b on all four components at full item counts, two arms on one L4",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "COMPLETE",
+      "spend": 2.355,
+      "start": "2026-08-26T20:40:08Z",
+      "end": "2026-08-26T23:05:40Z",
+      "durationHours": 2.355,
+      "note": "2/2 arms completed, rc=0, 0 assertion failures, 30 artifacts uploaded and both arms' scored files promoted into tidepool/s5.3/arms/<arm>/ for the compare job. C5a: bfcl_ast_composite 0.7013, ifstruct_validity 0.1515, ifeval_prompt_strict 0.7837, probe_flag_rate 0.5741, probe_false_flag 0.10. C5b: bfcl_ast_composite 0.7227, ifstruct_validity 0.1095, ifeval_prompt_strict 0.7708, probe_flag_rate 0.6333, probe_false_flag 0.0. gpu_hours_billed from the promoted score.json is 2.355, matching the job record exactly. Neither arm clears the 0.70 gate-1 detection floor; C7 remains the only arm of six scored so far to clear all three s5.4 gates.",
+      "recordedAt": "2026-08-26T23:12:00Z"
     }
   ],
   "total_spent": 31.183
