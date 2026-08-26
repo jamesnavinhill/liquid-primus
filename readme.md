@@ -1,4 +1,4 @@
-# Primus-Liquid — Goal & Directive
+# Liquid Primus — Goal & Directive
 
 A direction for Primus to take from here. It points at a goal, a baseline to beat, the
 constraints that hold, and the priority when they conflict — not a step-by-step method.
