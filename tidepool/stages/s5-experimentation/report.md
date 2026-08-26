@@ -31,6 +31,20 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-26 23:28 UTC: all eight sweep recipes are now scored, and exactly one of
+them clears the guardrail bar.** The last two finished at 23:20; neither catches enough
+fabricated tool calls to pass (65% and 62% against the 70% bar), which leaves the raw-mixture
+recipe as the only candidate of eight, at 72% catch with zero false alarms. Two results make
+the choice sharper than a single winner. The two recipes that score *highest* on tool calling
+both fail the guardrail bar, so ranking on the headline metric would have picked against the
+project's stated first priority. And the training-loss column the sweep selected its arms on
+points the wrong way at both ends: its best arm catches 0.7% of fabrications and its worst
+catches 72%. Tool-calling accuracy spans just 2.2 points across all eight recipes while the
+catch rate spans 71, so everything that separates these recipes lives on the guardrail axis.
+A short follow-up pass is now running over all eight to price false alarms on 138 clean cases
+instead of 30, which is the reading the direction decision needs. Spend stands at **52.1 of
+145 approved GPU-hours**.
+
 **Update, 2026-08-26 23:12 UTC: six of eight sweep recipes are now scored, and the raw-mixture
 recipe is still the only one that clears the guardrail bar.** Two more recipes finished
 scoring since the last update — both use a small slice of replayed general-purpose data
@@ -2153,3 +2167,69 @@ rather than being decided here.
   finished BFCL and ifstruct, now in ifeval; C4 in ifeval at 176/541) with no stall against
   the last check-in. Full detail and the gate table in `runs/s5.3-sweep.md`. Spend 49.490 of
   145.
+- 2026-08-26 23:12Z · mirror · Pushed commit `f8bca1b` to `github.com/jamesnavinhill/liquid-primus`:
+  `tasks.md`, `budget.json`, this report and `runs/s5.3-sweep.md` updated for pass 4's
+  completion and the updated gate-1 tally. No code changed this wake, so the push is record
+  only. The remote had also picked up an unrelated repo-restructuring commit (docs/datasets/
+  research moved under `input/`, `.env.example` extended) made outside this project's
+  directory; rebased cleanly on top of it, no conflicts.
+
+## The sweep is fully scored, and exactly one arm clears the bar (s5.3)
+
+Pass 3 (`ade4c590`, C4 + C6) finished at 23:20:04Z, 2 h 40 m, 2.58 GPU-h, both arms `rc=0`,
+0 assertion failures, 30 artifacts plus `pack_summary.json` verified in the job's own artifact
+list before anything here was written. Scores were read off the promoted `score.json` and then
+checked field by field against the job record's `results` block; the two agree exactly, so
+there is no correction attached to this pass.
+
+That completes the eight-arm sweep. Full table, provenance and gate-by-gate reading in
+`runs/s5.3-sweep.md` at 23:28Z. Three things in it matter for `s5.4`:
+
+**One arm clears gate 1, so the rescope trigger does not fire.** The pre-registered trigger was
+*every* arm failing the detection floor, which would have meant the guardrail axis is not
+reachable from this training set and `s5.5` has no direction worth detailing. C7 (raw mixture)
+detects at 0.7222 with zero false alarms on the synthetic clean arm. The other seven fail:
+C4 0.6519, C5b 0.6333, C6 0.6222, C1 0.6111, C3 0.6037, C5a 0.5741, C2p 0.0074. `s5.5` has a
+direction and the project does not stop here.
+
+**The two best tool-calling arms are both gate-1 failures.** C6 tops BFCL at 0.7237 and C5b is
+second at 0.7227, detecting at 0.6222 and 0.6333. Ranking on the pre-registered ranking metric
+alone would have selected against the project's stated first priority, which is the case the
+three gates were written ahead of the ranking metric to handle. Recording it plainly because it
+is the kind of thing that is easy to leave out once a winner exists.
+
+**The axes have very different dynamic range.** BFCL spans 0.0224 across eight arms and IFEval
+0.0813; the flag rate spans 0.7148. Whatever these recipes differ in, they differ in on the
+guardrail axis, and a reader who saw only the tool-calling column would conclude the sweep
+found nothing. Validation loss is worse than uninformative here: its best arm (C2p, 0.1511)
+posts the sweep's lowest detection rate and its worst (C7, 0.1565) the highest.
+
+One arm raised a false alarm at all: C5a, at 0.10, three of thirty. That is inside the 0.15
+ceiling and it is also the reason the ceiling cannot be priced on thirty items, which the
+probes pass now running exists to fix.
+
+- 2026-08-26 23:28Z · s5.3 · **Pass 3 lands; all eight sweep arms are scored and C7 is the only
+  one that clears the guardrail bar.** `ade4c590` complete at 23:20:04Z, success, 2/2 arms
+  `rc=0`, 2.58 GPU-h, 30 artifacts + `pack_summary.json` verified, full item counts asserted on
+  all four components (BFCL 3,490 / IFStruct 2,000 / IFEval 541 / probes 434 graded + 30 clean).
+  C4 scored bfcl 0.7128 / ifstruct 0.1445 / ifeval 0.7468 / flag 0.6519 / false-flag 0.0; C6
+  scored bfcl 0.7237 / ifstruct 0.1210 / ifeval 0.7024 / flag 0.6222 / false-flag 0.0. Promoted
+  `score.json` cross-checked against the job record's `results` block field by field, exact
+  agreement, nothing withdrawn. Neither clears gate 1, which closes the tally at one of eight:
+  **C7 passes, the other seven fail, and the `s5.4` rescope trigger does not fire.** C6's
+  rank-64 adapter cost 1.7% more wall clock than C4's rank-16, so rank does not survive the
+  merge as a serving cost. Promoted via `promote_scores.py ade4c590 --arms C4,C6` (dry run
+  first, no clashes). Mirrored into `runs/s5.3-sweep.md`, this report and `budget.json`. Spend
+  52.070 of 145.
+- 2026-08-26 23:27Z · s5.3 · **Probes pass queued over all eight arms, both cards.**
+  `9ba23f0c` (C1, C2p, C3, C4) and `2c91ab0d` (C5a, C5b, C6, C7), four arms a card at 5.5 GB
+  each via `queue_arms_probes.sh`, so the two jobs are byte-identical in settings. Probes only,
+  `clean_control_object=tidepool/s5.3/tooldata/clean_control.jsonl`, full item counts. This adds
+  the 138-item corpus clean arm that the four scoring passes could not carry, and it is the arm
+  the `s5.4` false-flag reading and the rescope trigger are written against. It goes to all
+  eight arms at once rather than to later passes only, because C1 would otherwise have no
+  corpus cell for any arm to pair against. On promotion these supersede each arm's
+  `scored_probes.jsonl` with `--force` and nothing else; the full pass's `score.json` stays
+  untouched, and the superseded bytes are kept for a determinism check over the shared items.
+  Both GPU slots are full; the account cap is 2 and 194 h 55 m of the enforced allowance remains.
+  After these land: the comparison job over all eight arms in one call, then `s5.4`.

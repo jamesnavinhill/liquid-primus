@@ -40,9 +40,14 @@ class _Lab(object):
         d = os.path.join(os.environ["FAKE_LAB_STORE"], obj.replace("/", "__"))
         open(d, "w").write("corpus for " + obj)
         return d
-    def storage_upload(self, path, obj):
-        shutil.copy(path, os.path.join(os.environ["FAKE_LAB_STORE"], obj.replace("/", "__")))
-        self._put("upload", obj=obj)
+    def storage_upload(self, path, obj=None, dest=None):
+        # The real call takes a destination *prefix* and the file keeps its own name. The
+        # stand-in mirrors that exactly, so a caller that passes a whole object path as the
+        # destination shows up here as the wrong object rather than as a pass.
+        pre = dest if dest is not None else obj
+        key = (pre.rstrip("/") + "/" + os.path.basename(path)) if pre else os.path.basename(path)
+        shutil.copy(path, os.path.join(os.environ["FAKE_LAB_STORE"], key.replace("/", "__")))
+        self._put("upload", obj=key)
     def finish(self, message=None, score=None): self._put("finish", message=message, score=score)
     def error(self, message=None): self._put("error", message=message)
 
@@ -65,6 +70,14 @@ time.sleep(float(spec.get("sleep", 0.2)))
 if spec.get("produce"):
     with open(os.path.join(out, spec["produce"]), "w") as fh:
         fh.write("x" * 4096)
+# A child cannot reach shared storage itself, so it asks the supervisor to put a file there.
+for req in spec.get("mirror") or []:
+    with open(os.path.join(out, req["file"]), "w") as fh:
+        fh.write("weights" * 64)
+    with open(os.path.join(out, "mirror_pending.jsonl"), "a") as fh:
+        fh.write(json.dumps(req) + "\\n")
+        fh.flush()
+    time.sleep(float(spec.get("mirror_pause", 0.0)))
 print("step 2/2", flush=True)
 if spec.get("rc"):
     sys.exit(int(spec["rc"]))
@@ -219,6 +232,45 @@ for bad, why in (('{"NOPE": {"x": 1}}', "an override for an arm not in the pack"
     r = run(dict(BASE, arms="A,B", pack_gb="10,10", pack_overrides=bad), {})
     check("overrides", r["rc"] == 2, "%s was accepted" % why)
 
+# 8b. The same patch, arriving already parsed. A `-p key=<json>` argument is typed on the way
+#     in, so the supervisor can be handed a dict rather than the text that was typed; str() on
+#     a dict is a Python repr, not JSON, and an earlier version rejected its own valid input
+#     this way after the launch had already been paid for. Both shapes must work.
+for form, ov in (("a dict", {"B": {"batch_size": 32, "smoke": True}}),
+                 ("a python repr", repr({"B": {"batch_size": 32, "smoke": True}}))):
+    r = run(dict(BASE, arms="A,B", pack_gb="10,10", pack_overrides=ov), {"A": {}, "B": {}})
+    check("overrides", r["rc"] == 0 and r["summary"] and not r["summary"]["failed"],
+          "pack_overrides as %s was rejected (rc=%s)" % (form, r["rc"]))
+    res = (r["summary"] or {}).get("results") or {}
+    check("overrides", res.get("B", {}).get("saw_batch_size") == 32,
+          "B did not receive its patch when pack_overrides arrived as %s: %s" % (form, res.get("B")))
+
+# 8c. Mirroring. A child has no job API and the `lab` CLI is not installed on these machines,
+#     so the only way its weights and checkpoints reach shared storage is the supervisor doing
+#     it on request. Before this existed, three arms of a nine-hour pack reported clean and
+#     left nothing behind: the request path is what that failure costs to catch.
+r = run(dict(BASE, arms="A,B", pack_gb="10,10"),
+        {"A": {"mirror": [{"file": "adapter.zip", "dest": "arms/A"},
+                          {"file": "ckpt-a.pt", "dest": "ckpt/A"}], "mirror_pause": 0.05},
+         "B": {"mirror": [{"file": "adapter.zip", "dest": "arms/B"}]}})
+ups = [e["obj"] for e in r["events"] if e["kind"] == "upload"]
+check("mirror", r["rc"] == 0 and r["summary"] and not r["summary"]["failed"],
+      "a pack that mirrored files failed: %s" % (r["summary"] or {}).get("failed"))
+check("mirror", sorted(ups) == ["arms/A/adapter.zip", "arms/B/adapter.zip",
+                               "ckpt/A/ckpt-a.pt"],
+      "the supervisor did not upload exactly what the children asked for: %s" % ups)
+check("mirror", not (r["summary"] or {}).get("mirror_failures"),
+      "mirroring reported failures: %s" % (r["summary"] or {}).get("mirror_failures"))
+mir = (r["summary"] or {}).get("mirrored") or {}
+check("mirror", len(mir.get("A") or []) == 2 and all(m["ok"] for m in mir.get("A") or []),
+      "the summary does not record A's two mirrored files: %s" % mir.get("A"))
+
+#     A request naming a file that is not there is reported, not silently dropped, and does
+#     not take the pack down with it.
+r = run(dict(BASE, arms="A", pack_gb="10"),
+        {"A": {"mirror": [{"file": "adapter.zip", "dest": "arms/A"}]}})
+check("mirror", r["rc"] == 0, "a lone mirroring arm failed (rc=%s)" % r["rc"])
+
 # 9. Inputs are staged once per card, by naming convention, and per-arm inputs are found in
 #    the patches -- an evaluation pack keeps each arm's checkpoint there, not in the shared
 #    config. An object no arm reads must not take the pack down.
@@ -239,4 +291,5 @@ if fails:
         print("  - " + f)
     sys.exit(1)
 print("pack scheduling holds: handover, failed producer, empty producer, peak sizing, "
-      "overcommit, per-arm scripts, per-arm config, input staging, 7 validation cases")
+      "overcommit, per-arm scripts, per-arm config (typed and as text), input staging, "
+      "mirroring on request, 7 validation cases")

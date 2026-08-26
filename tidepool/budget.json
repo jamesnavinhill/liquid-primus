@@ -622,7 +622,23 @@
       "durationHours": 2.355,
       "note": "2/2 arms completed, rc=0, 0 assertion failures, 30 artifacts uploaded and both arms' scored files promoted into tidepool/s5.3/arms/<arm>/ for the compare job. C5a: bfcl_ast_composite 0.7013, ifstruct_validity 0.1515, ifeval_prompt_strict 0.7837, probe_flag_rate 0.5741, probe_false_flag 0.10. C5b: bfcl_ast_composite 0.7227, ifstruct_validity 0.1095, ifeval_prompt_strict 0.7708, probe_flag_rate 0.6333, probe_false_flag 0.0. gpu_hours_billed from the promoted score.json is 2.355, matching the job record exactly. Neither arm clears the 0.70 gate-1 detection floor; C7 remains the only arm of six scored so far to clear all three s5.4 gates.",
       "recordedAt": "2026-08-26T23:12:00Z"
+    },
+    {
+      "jobId": "ade4c590-2e91-490d-8131-953015803a0c",
+      "experiment": "tidepool",
+      "substage": "s5.3",
+      "task": "s5-eval-pack",
+      "label": "s5.3 arm scoring, pass 3 -- C4 and C6 on all four components at full item counts, two arms on one L4",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "COMPLETE",
+      "spend": 2.58,
+      "start": "2026-08-26T20:39:56Z",
+      "end": "2026-08-26T23:20:04Z",
+      "durationHours": 2.58,
+      "note": "2/2 arms completed, rc=0, 0 assertion failures, 30 artifacts + pack_summary uploaded and both arms' scored files promoted into tidepool/s5.3/arms/<arm>/ for the compare job. C4: bfcl_ast_composite 0.7128, ifstruct_validity 0.1445, ifeval_prompt_strict 0.7468, probe_flag_rate 0.6519, probe_false_flag 0.0. C6: bfcl_ast_composite 0.7237, ifstruct_validity 0.1210, ifeval_prompt_strict 0.7024, probe_flag_rate 0.6222, probe_false_flag 0.0. Read off the promoted score.json and cross-checked field by field against the job record's own results block; the two agree exactly. gpu_hours_billed 2.58 against a ~2.5 h expectation from passes 1, 2 and 4. Neither arm clears the 0.70 gate-1 detection floor, which completes the eight-arm tally: C7 is the only arm in the sweep to clear it.",
+      "recordedAt": "2026-08-26T23:28:00Z"
     }
   ],
-  "total_spent": 31.183
+  "total_spent": 52.07
 }

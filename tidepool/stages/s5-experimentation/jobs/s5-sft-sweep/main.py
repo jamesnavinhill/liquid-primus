@@ -229,13 +229,47 @@ def dump(name, obj):
     return p
 
 
-def _storage_put(local, dest):
-    """Upload one local file to a shared-storage prefix. SDK first, CLI as the fallback.
+def _mirror_request(local, dest):
+    """Ask the supervisor to upload one file on this arm's behalf.
 
-    Both paths are needed and neither is redundant. A packed child has no SDK storage call by
-    design, so it always lands on the CLI; a solo run prefers the SDK because it is in-process.
-    Returns whether the object actually reached storage, because a caller that reports an
-    upload it did not make is the failure mode this project has already been bitten by."""
+    A packed child cannot reach shared storage itself. It has no SDK storage call by design,
+    and the CLI fallback that used to stand in for one does not exist on these machines: the
+    `lab` binary is not installed, so every attempt returned
+    `[Errno 2] No such file or directory: 'lab'`. Four trained adapters and every checkpoint
+    of a nine-hour pack were lost that way, in runs that otherwise looked clean, and it was
+    noticed only when the next stage went looking for the weights.
+
+    So the child writes a request and the supervisor, which does have the job API, performs
+    the upload on its next poll. Returns whether the request was lodged, which is the only
+    thing this process can honestly claim."""
+    try:
+        if not os.path.exists(local):
+            log("no mirror request for %s: it does not exist" % local)
+            return False
+        rel = os.path.relpath(local, OUT)
+        if rel.startswith(".."):
+            # The supervisor only reads inside this arm's own directory, so a file outside it
+            # is copied in rather than quietly not mirrored.
+            local = shutil.copy2(local, os.path.join(OUT, os.path.basename(local)))
+            rel = os.path.relpath(local, OUT)
+        with open(os.path.join(OUT, "mirror_pending.jsonl"), "a") as fh:
+            fh.write(json.dumps({"file": rel, "dest": dest}) + "\n")
+            fh.flush()
+        return True
+    except Exception as exc:
+        log("could not ask the supervisor to mirror %s (%s)" % (local, exc))
+        return False
+
+
+def _storage_put(local, dest):
+    """Get one local file into a shared-storage prefix, whichever way this process can.
+
+    Returns whether the file is on its way there: uploaded, for a solo run that owns the job
+    API, or lodged with the supervisor, for a packed child that does not. A caller that
+    reports an upload it did not make is the failure mode this project has been bitten by
+    twice, so neither path is allowed to answer True on a guess."""
+    if PACK_CHILD:
+        return _mirror_request(local, dest)
     try:
         up = getattr(lab, "storage_upload", None)
         if callable(up):
@@ -244,6 +278,9 @@ def _storage_put(local, dest):
     except Exception as exc:
         log("SDK storage_upload failed for %s (%s)" % (os.path.basename(local), exc))
     try:
+        # Last resort for a solo run on a machine that happens to have the CLI. It is not the
+        # packed path any more and must not be relied on: the images these jobs run on do not
+        # ship `lab`.
         import subprocess
         r = subprocess.run(["lab", "storage", "upload", local, "--dest", dest,
                             "--no-interactive"], capture_output=True, text=True, timeout=1800)
@@ -589,14 +626,18 @@ def save_checkpoint(state, slot):
     })
     torch.save(payload, path)
     if not _storage_put(path, CKPT_DEST):
-        log("checkpoint at step %d did not reach storage; the previous one still stands"
+        log("checkpoint at step %d is not on its way to storage; the previous one still stands"
             % state["step"])
         return False
     ptr = os.path.join(OUT, "ckpt-latest.json")
     with open(ptr, "w") as fh:
         json.dump({"slot": slot, "step": state["step"], "fingerprint": FINGERPRINT}, fh)
     _storage_put(ptr, CKPT_DEST)
-    log("checkpoint at step %d/%d saved to %s/%s" % (state["step"], steps, CKPT_DEST, slot))
+    # "on its way" rather than "saved": a solo run has uploaded it by here, a packed child has
+    # handed it to the supervisor, and only the supervisor's own log says it landed.
+    log("checkpoint at step %d/%d written for %s/%s (%s)"
+        % (state["step"], steps, CKPT_DEST, slot,
+           "handed to the supervisor" if PACK_CHILD else "uploaded"))
     return True
 
 
@@ -801,7 +842,15 @@ if not os.path.exists(zpath) or os.path.getsize(zpath) < 1024:
 # s5.4 loading a 30-step adapter and never knowing.
 DEST = "tidepool/s5.3/arms/%s%s" % (ARM, "-smoke" if SMOKE else "")
 mirrored = _storage_put(zpath, DEST)
-log("weights mirrored to %s: %s" % (DEST, mirrored))
+log("weights bound for %s: %s" % (DEST, "handed to the supervisor" if PACK_CHILD and mirrored
+                                  else mirrored))
+if not mirrored:
+    # Loud, and recorded in metrics below, but not an assertion failure. The job artifact is
+    # the guaranteed copy, and marking nine hours of clean training as a failed arm would
+    # also stop whatever was waiting on it. What must not happen is silence, which is exactly
+    # what happened for four arms before this.
+    log("WARNING: the weights are NOT on their way to %s. The job artifact is the only copy, "
+        "so a later stage that loads arms by storage path will not find this one." % DEST)
 
 dump("mix_calibration.json", {"arm": ARM, "recipe": RECIPE, "plan": plan, "selection": detail,
                               "mix": MIX, "sources": source_names,
@@ -830,6 +879,10 @@ metrics = {
     # Nonzero means this arm was finished by more than one job, so its wall-clock and its
     # tok/s are spliced from two machines and only the token count is comparable.
     "resumed_from_step": RESUMED_FROM, "checkpoint_every_steps": CKPT_EVERY,
+    # Whether the weights are on their way to shared storage, and where. False means the job
+    # artifact is the only copy; in a pack, True means the request was lodged and the pack
+    # summary's `mirrored` block is the record of whether it landed.
+    "weights_storage_dest": DEST, "weights_mirror_requested": bool(mirrored),
     "tokens_per_second": round(tok_per_s, 1),
     "val_loss_before": round(val_before, 4), "val_loss_after": round(val_after, 4),
     "val_loss_delta": round(val_after - val_before, 4),
@@ -851,7 +904,10 @@ score = {"arm": ARM, "val_loss": round(val_after, 4),
          "steps": step, "template_mode": enc.mode,
          "priority_share": plan["priority_share_achieved"],
          "gpu_hours": metrics["gpu_hours"], "assertion_failures": len(fails),
-         "packed": PACK_CHILD, "peak_gpu_gb": peak_gb, "card_total_gb": card_gb}
+         "packed": PACK_CHILD, "peak_gpu_gb": peak_gb, "card_total_gb": card_gb,
+         # So the pack summary's results table says, per arm, where the weights went. A row
+         # with a dest and no landing is the shape of the bug that lost four adapters.
+         "weights_storage_dest": DEST, "weights_mirror_requested": bool(mirrored)}
 dump("score.json", score)
 for f in fails:
     log("ASSERTION FAILURE: %s" % f)

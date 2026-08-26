@@ -55,6 +55,17 @@ parameters:
   # is the right unit here because it is the unit the measurements arrive in (a LoRA r16 arm
   # holds 7.5 GB as the driver sees it, the entropy-weighted arm 11.4, a full-parameter arm
   # about 22) and because relative shares divide the card between arms that never coexist.
+  #
+  # Those three figures are for TRAINING. Scoring is a different appetite and was measured
+  # separately, by job `97939c69`: four arms under 5.2 GB ceilings all died at the first BFCL
+  # batch, each with 4.41 GB allocated and 772 MB more wanted. Prefill holds the batch times
+  # the sequence length times the FFN width, and BFCL's tool schemas run to about 3k tokens,
+  # so at batch 16 an arm needs a little over 5.2 GB of allocator space plus ~0.3 GB of CUDA
+  # context. Two arms an L4 at 11 GB is the sized figure; four does not fit at this batch.
+  # Packing buys much less here than it does in training, because generation saturates the
+  # card while training leaves it idle between steps, so there is little to reclaim by
+  # crowding. `gen.py` halves a batch that does not fit rather than dying, which makes a
+  # ceiling set too low cost throughput; it does not make an undersized ceiling free.
   pack_gb: ""
   # The card the ceilings are measured against. An L40S reports 47.7 GB decimal.
   # `arm=script.py`. An arm does not have to be a trainer: the replay generator runs as one.

@@ -1,0 +1,54 @@
+# s5.4 — the sweep's arms against the reference, paired item by item, on CPU.
+#
+# The sweep's own selection metric cannot pick a direction: three of its four finished arms
+# sit within 0.0006 of each other on validation loss at one seed apiece. So s5.4 has to rest
+# on the task scores, and a table of task rates would repeat the same mistake at a larger
+# scale. Eight arms over several components produce dozens of small differences, and among
+# differences that small the ranking is as likely to be sampling noise as signal.
+#
+# This task is the correction for that. It joins the arms item by item, which removes item
+# difficulty from the comparison and is why a two-point gap over a few thousand shared items
+# can be resolved at all; it puts an interval and an exact paired test on every cell; and it
+# corrects across the whole family, because dozens of comparisons against one reference will
+# throw up a nominally significant cell by chance even when every arm is identical.
+#
+# It has no GPU line on purpose. Nothing here generates: the graders already wrote a verdict
+# per item, and a bootstrap over three counts is arithmetic. The reason it is a job rather
+# than a local script is provenance, not cost -- a bootstrap interval is a reported
+# statistic, so it carries a job id like every other number in this project.
+name: s5-compare
+run: python main.py
+setup: |
+  # Nothing. Standard library only, which is deliberate: a decision pass that pulled a
+  # numerical stack would be a decision pass whose numbers move when the stack does.
+  python -V
+resources:
+  # Reading a few dozen jsonl files and running ten thousand multinomial resamples over
+  # three cells. The memory is for holding every arm's per-item verdicts at once, which is
+  # what the paired join needs and is still only a few million booleans.
+  cpus: 4
+  memory: 16
+  disk_space: 50
+parameters:
+  # Comma-separated arm names, matching the directories under completions_prefix. The
+  # reference must be one of them: it is compared against, not alongside.
+  arms: ""
+  # C1 is the reference by construction. It is the recipe every other arm is a single
+  # deliberate change away from, so a difference against C1 is attributable to that change.
+  reference: C1
+  # Where each arm's scored files were moved after its scoring job finished. Per-item
+  # verdicts live in `scored_*.jsonl`; the sibling `completions_*.jsonl` holds the raw
+  # generations and carries no verdict, so pointing this at the wrong family of files
+  # produces an empty comparison rather than a wrong one.
+  completions_prefix: tidepool/s5.3/arms
+  # JSON: {"<name>": {"file": ..., "where": {...}, "check": "a.b.c", "group_field": ...}}.
+  # Empty uses the table in main.py, which splits the probe file into its four populations.
+  # Splitting is not cosmetic: an arm can raise its detection rate purely by flagging more
+  # often, and pooled with the clean arms that trade disappears into a single average.
+  components: ""
+  # 10,000 resamples puts the Monte Carlo error on a 95% bound at well under a tenth of a
+  # point, which is finer than any difference this sweep is going to produce. Raising it
+  # costs seconds and buys nothing.
+  resamples: 10000
+  seed: 20260826
+minutes_requested: 30

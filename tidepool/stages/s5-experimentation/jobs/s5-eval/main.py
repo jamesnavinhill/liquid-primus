@@ -526,17 +526,30 @@ def main():
         serving.update({"decoding": "greedy", "temperature": 0.0, "top_k": 1,
                         "cache_prompt": False})
     elif backend == "hf":
+        # Two shapes of trained weights arrive here and only one of them is an adapter. A
+        # full-parameter arm has no adapter to merge -- it is the model -- so it replaces the
+        # base rather than sitting on top of it. Which one it is comes from looking at the
+        # directory, not from a parameter, and it is recorded so a run cannot be misread later.
+        weights_kind, load_from = None, base
         if adapter_obj:
-            adapter_dir = adapters.resolve(storage(adapter_obj),
-                                           os.path.join(OUT, "adapter"))
-            log("adapter for %s resolved to %s" % (adapter_obj, adapter_dir))
-            check("adapter_loadable",
-                  os.path.exists(os.path.join(adapter_dir, "adapter_config.json")),
-                  "no adapter_config.json under %s" % adapter_dir)
-        model, tok, n_params = gen.load_model(base, adapter_dir, log=log)
+            wdir = adapters.resolve(storage(adapter_obj), os.path.join(OUT, "weights"))
+            weights_kind = adapters.kind(wdir)
+            check("weights_loadable", weights_kind is not None,
+                  "%s resolved to %s, which holds neither an adapter_config.json nor a model "
+                  "config" % (adapter_obj, wdir))
+            if weights_kind == adapters.FULL:
+                load_from, adapter_dir = wdir, None
+                log("%s is a full fine-tuned checkpoint, so it is loaded as the model itself "
+                    "and nothing is merged onto it" % adapter_obj)
+            else:
+                adapter_dir = wdir
+                log("adapter for %s resolved to %s" % (adapter_obj, adapter_dir))
+        model, tok, n_params = gen.load_model(load_from, adapter_dir, log=log)
         runner = gen.Runner(model, tok, log=log)
         serving = {"backend": "transformers", "dtype": "bfloat16", "decoding": "greedy",
-                   "padding_side": "left", "batch_size": int(cfg.get("batch_size", 16))}
+                   "padding_side": "left", "batch_size": int(cfg.get("batch_size", 16)),
+                   "weights_kind": weights_kind or "base",
+                   "loaded_from": load_from if load_from != base else base}
     else:
         raise RuntimeError("unknown backend %r: expected hf or gguf" % backend)
     if not PACK_CHILD:
@@ -589,10 +602,35 @@ def main():
             except Exception as exc:                               # noqa: BLE001
                 NOTES.append("could not save the server log: %r" % exc)
 
+    # Peak GPU memory, so the next eval pack is sized on a measurement. The first packed
+    # evaluation was sized by guessing 10 GB an arm on a 24 GB card, which fit two and would
+    # have refused a third with no evidence either way. Reserved rather than allocated,
+    # because reserved is what the arm's siblings cannot have.
+    try:
+        import torch as _t
+        peak_gb = (round(_t.cuda.max_memory_allocated(0) / 1e9, 2)
+                   if _t.cuda.is_available() else None)
+        peak_reserved_gb = (round(_t.cuda.max_memory_reserved(0) / 1e9, 2)
+                            if _t.cuda.is_available() else None)
+        card_total_gb = (round(_t.cuda.get_device_properties(0).total_memory / 1e9, 1)
+                         if _t.cuda.is_available() else None)
+    except Exception:                                              # noqa: BLE001
+        peak_gb = peak_reserved_gb = card_total_gb = None
+    if peak_gb is not None:
+        log("peak GPU memory %s GB allocated, %s GB reserved, of %s GB"
+            % (peak_gb, peak_reserved_gb, card_total_gb))
+        score["peak_gpu_gb"] = peak_gb
+        score["peak_gpu_reserved_gb"] = peak_reserved_gb
+        score["card_total_gb"] = card_total_gb
+
     summary = {
         "run_tag": run_tag,
         "base_model": base,
         "adapter_object": adapter_obj or None,
+        "weights_kind": serving.get("weights_kind"),
+        "peak_gpu_gb": peak_gb,
+        "peak_gpu_reserved_gb": peak_reserved_gb,
+        "card_total_gb": card_total_gb,
         "n_params": n_params,
         "serving": serving,
         "template": {"mode": prompter.mode, "note": prompter.note,

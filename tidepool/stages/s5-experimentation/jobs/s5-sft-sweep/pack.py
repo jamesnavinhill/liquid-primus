@@ -40,6 +40,7 @@ than asserted: C1 ran solo before packing existed, so any packed arm can be comp
 it on tokens seen, priority share and rows-in-order.
 """
 
+import ast
 import itertools
 import json
 import os
@@ -226,15 +227,29 @@ if PEAK_GB > LIMIT_GB + 1e-6:
 #
 # It is JSON so the values keep their types; a bare string parameter would turn every number
 # into text and every false into a true.
+#
+# The value may arrive already parsed. A `-p key=<json>` argument is typed on the way in, so
+# by the time the config reaches this process `pack_overrides` can be a dict rather than the
+# text that was typed -- and str() on a dict is a Python repr, which is not JSON (single
+# quotes) and fails the parse below. Accept a mapping as-is, and accept the repr too, so the
+# same command works whether the value was typed, round-tripped, or written by hand.
 CHILD_CFG = dict(CFG)
 OVERRIDES = {}
-_ov = str(C("pack_overrides", "")).strip()
+_ov_raw = C("pack_overrides", "")
+if isinstance(_ov_raw, dict):
+    OVERRIDES = dict(_ov_raw)
+    _ov = ""
+else:
+    _ov = str(_ov_raw).strip()
 if _ov:
     try:
         OVERRIDES = json.loads(_ov)
-    except Exception as exc:
-        lab.error(message="pack_overrides is not valid JSON (%s): %r" % (exc, _ov[:200]))
-        raise SystemExit(2)
+    except Exception:
+        try:
+            OVERRIDES = ast.literal_eval(_ov)
+        except Exception as exc:
+            lab.error(message="pack_overrides is not valid JSON (%s): %r" % (exc, _ov[:200]))
+            raise SystemExit(2)
     if not isinstance(OVERRIDES, dict):
         lab.error(message="pack_overrides must be an object of arm -> {key: value}")
         raise SystemExit(2)
@@ -444,6 +459,91 @@ def console_size(arm):
         return -1
 
 
+# ---------------------------------------------------------------- mirroring
+# The supervisor is the only process that uploads, for the same reason it is the only one that
+# reports: a child has no job API. The first version of this assumed a packed child could
+# shell out to `lab storage upload` instead, and it could not -- the CLI is not installed on
+# the machines these jobs run on, so every packed arm logged
+# `CLI storage upload failed ([Errno 2] No such file or directory: 'lab')`, reported False, and
+# finished looking clean. Four trained adapters and every checkpoint of a nine-hour pack never
+# reached shared storage, which was found only when the next stage went looking for the weights.
+#
+# So a child asks instead. It appends one JSON object per line to `out/<arm>/mirror_pending.jsonl`
+# naming a file inside its own directory and the storage prefix it belongs under, and the
+# supervisor drains that file on every poll with the job's own SDK. Draining during the run
+# rather than at the end is what makes a mid-run checkpoint worth writing: an arm killed at
+# hour six has its last checkpoint in storage already.
+MIRROR_FILE = "mirror_pending.jsonl"
+MIRROR_TRIES = 5
+_mirror_pos = {}       # arm -> lines of its request file already dealt with
+_mirror_fail = {}      # (arm, line) -> attempts so far
+MIRRORED = {}          # arm -> [{"file", "dest", "ok", "error"}]
+
+
+def drain_mirrors(arm):
+    """Upload whatever this arm has asked for since the last look. Never raises."""
+    adir = os.path.join(OUT, arm)
+    path = os.path.join(adir, MIRROR_FILE)
+    if not os.path.exists(path):
+        return
+    try:
+        lines = open(path).read().splitlines()
+    except Exception as exc:
+        log("could not read %s's mirror requests (%s)" % (arm, exc))
+        return
+    i = _mirror_pos.get(arm, 0)
+    while i < len(lines):
+        raw = lines[i].strip()
+        if not raw:
+            i += 1
+            continue
+        try:
+            rec = json.loads(raw)
+        except Exception:
+            # The child appends while this runs, so the last line can be half written. Leave
+            # it for the next poll; a line that is still unparseable with more behind it is
+            # genuinely corrupt and is dropped with a note.
+            if i == len(lines) - 1:
+                break
+            log("%s lodged an unreadable mirror request, skipping it: %r" % (arm, raw[:120]))
+            i += 1
+            continue
+        local = os.path.join(adir, str(rec.get("file", "")))
+        dest = str(rec.get("dest", ""))
+        ok, err = False, None
+        if not dest:
+            err = "no destination"
+        elif not os.path.exists(local):
+            err = "the file is not there"
+        else:
+            up = getattr(lab, "storage_upload", None)
+            if not callable(up):
+                err = "this SDK has no storage upload"
+            else:
+                try:
+                    up(local, dest=dest)
+                    ok = True
+                except Exception as exc:
+                    err = str(exc)[:200]
+        if ok:
+            log("mirrored %s/%s -> %s (%.1f MB)"
+                % (arm, rec.get("file"), dest, os.path.getsize(local) / 1e6))
+        else:
+            tries = _mirror_fail.get((arm, i), 0) + 1
+            _mirror_fail[(arm, i)] = tries
+            if tries < MIRROR_TRIES and err not in ("no destination",):
+                # Leave the cursor where it is and come back to it on the next poll.
+                log("mirroring %s/%s to %s did not work (%s); attempt %d of %d"
+                    % (arm, rec.get("file"), dest, err, tries, MIRROR_TRIES))
+                return
+            log("giving up on mirroring %s/%s to %s after %d attempt(s): %s"
+                % (arm, rec.get("file"), dest, tries, err))
+        MIRRORED.setdefault(arm, []).append({"file": rec.get("file"), "dest": dest,
+                                             "ok": ok, "error": err})
+        i += 1
+    _mirror_pos[arm] = i
+
+
 done = {}
 last_report = 0.0
 # A hung arm is the one failure the process boundary does not contain: it holds its slice of
@@ -475,7 +575,14 @@ def release(arm):
             up = getattr(lab, "storage_upload", None)
             if callable(up):
                 try:
-                    up(src, obj)
+                    # `dest` is a prefix and the file keeps its own name, so an object path is
+                    # split rather than passed whole: passing the full path as the destination
+                    # would have written .../replay.jsonl.gz/replay.jsonl.gz.
+                    pre, base = os.path.dirname(obj), os.path.basename(obj)
+                    up_src = src
+                    if os.path.basename(src) != base:
+                        up_src = shutil.copy2(src, os.path.join(OUT, arm, base))
+                    up(up_src, dest=pre) if pre else up(up_src)
                     log("placed %s in shared storage" % obj)
                 except Exception as exc:
                     # Not fatal to the pack. The dependants read the local copy either way;
@@ -525,6 +632,8 @@ while len(done) < N:
                 p.terminate()
             except Exception:
                 pass
+    for arm in [a for a in ARMS if a in children]:
+        drain_mirrors(arm)
     exited = []
     for arm, p in list(children.items()):
         if arm in done:
@@ -555,6 +664,9 @@ while len(done) < N:
                 except Exception as exc:
                     log("could not read %s's console: %s" % (arm, exc))
     for arm in exited:
+        # Everything the arm asked for, including anything written between the last poll and
+        # its final line, before its dependants start and before the pack moves on.
+        drain_mirrors(arm)
         release(arm)
     if time.time() - last_report > 60:
         last_report = time.time()
@@ -562,6 +674,9 @@ while len(done) < N:
         lab.update_progress(max(1, min(95, int(95.0 * frac))))
         if live:
             log("progress %.0f%% | " % (100 * frac) + " ".join(live))
+
+for arm in ARMS:
+    drain_mirrors(arm)
 
 for fh in logs.values():
     try:
@@ -644,6 +759,12 @@ summary = {
     "never_started": skipped,
     "missing_scores": missing,
     "artifacts_uploaded": uploaded,
+    # What actually reached shared storage, per arm, and what did not. Recorded rather than
+    # logged because a stage that goes looking for an arm's weights needs to know from the
+    # job record whether they are there, and the previous version of this reported nothing.
+    "mirrored": MIRRORED,
+    "mirror_failures": ["%s/%s -> %s: %s" % (a, m.get("file"), m.get("dest"), m.get("error"))
+                        for a, ms in MIRRORED.items() for m in ms if not m.get("ok")],
 }
 # What the next pack should be sized at, measured rather than guessed. The spare figure is
 # against the same headroom the children were held to, so it is directly actionable: an arm
@@ -674,6 +795,15 @@ if peaks and card:
         "the %.2f headroom, room for about %d more"
         % (used, card, len(peaks), worst, spare, HEADROOM,
            int(spare // worst) if worst > 0 else 0))
+
+if summary["mirror_failures"]:
+    log("%d file(s) never reached shared storage; later stages will not find them there:"
+        % len(summary["mirror_failures"]))
+    for line in summary["mirror_failures"]:
+        log("  " + line)
+elif MIRRORED:
+    log("mirrored %d file(s) to shared storage across %d arm(s)"
+        % (sum(len(v) for v in MIRRORED.values()), len(MIRRORED)))
 
 sp = os.path.join(OUT, "pack_summary.json")
 json.dump(summary, open(sp, "w"), indent=1, default=str)
