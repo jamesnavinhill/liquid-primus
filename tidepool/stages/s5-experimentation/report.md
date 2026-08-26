@@ -31,21 +31,17 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
-**Update, 2026-08-26 03:47 UTC — the restarted reference run never got a machine, and it is
-away on a second provider.** The reference arm C1 was stopped for stalling and re-queued at
-00:55 UTC. That re-queue never started: the cloud region it was sent to needs an account
-verification that has not cleared, so no machine was ever handed over and the attempt cost
-0.00 GPU-hours. Our provider guidance lists three sources for this card in order, and says AWS
-has capacity in two US regions only, so the fix was to move down the list rather than retry the
-same door. C1 is running on the second source with the recipe unchanged in every parameter,
-job 1728ed4a, and it got further in its first minute than the failed attempt managed at all.
-One caveat is recorded rather than assumed: C1 is the arm every other arm is compared against,
-and it is now the only one renting its card from a different vendor. The card model, recipe,
-seed and 64.0M-token budget are identical, so if its loss curve or throughput sits oddly
-against the packed arms, the vendor is a candidate explanation and re-running it costs about
-four GPU-hours to rule out. The other run, three arms packed onto one card, is at 60% and
-healthy. Both slots are busy, spend stands at **16.3 of 145 approved GPU-hours**, and the last
-five arms go out as one job the moment the packed run frees its card.
+**Update, 2026-08-26 07:05 UTC — the reference training run is done, and the packed run
+behind it is nearly there too.** C1, the recipe every other sweep arm gets compared against,
+finished cleanly on its second provider after 8,416 training steps: validation loss dropped
+from where the base model started to **0.152**, with no errors and every result file saved.
+It took three attempts to get a clean run (a silent stall, then a cloud region that refused
+the job before it started, then this one), but the number itself looks ordinary next to the
+other arms already running, so the earlier worry about comparing runs across two different
+cloud vendors looks unfounded. The three-arm packed run on the other card is at 93%, with two
+of its three arms already finished and the last one a few hundred steps from done. Spend
+stands at **19.3 of 145 approved GPU-hours**. The next five arms go out the moment that packed
+run frees its card, which should be within the next check-in or two.
 
 **Earlier, 2026-08-26 01:00 UTC — the stalled run was stopped, and what made it expensive was
 fixed.** C1 ran smoothly for three hours and then produced no progress for nearly three more,
