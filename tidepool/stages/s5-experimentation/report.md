@@ -2707,3 +2707,42 @@ gate 1 on the thirty synthetic items. I do not know what removed the directory; 
 run and carries no version history of its own, so there is no trace to read. Worth saying
 plainly, because it is the second time this stage that a result went missing and was recovered
 from somewhere else, and the mirror is the only reason it was recoverable at all.
+
+- 2026-08-27 04:20Z · s5.5 · **The replay ladder is queued as `31403d7d` on one AWS L40S, five
+  arms, an estimated 11 to 12 GPU-hours.** Two 32,000-prompt self-distillation buffers generate
+  side by side (`RBP` proportional, `RBC` reweighted to half constraint-bearing) and hand their
+  files to three C7-recipe trainers on the same card: `R1` at 5% of `RBC`, `R2` at 20% of `RBP`,
+  `R3` at 20% of `RBC`, all at the fixed 64M-token budget the C sweep used. Peak concurrent
+  demand 37.0 GB of a 43.9 GB limit. Cost stated before submission, per the standing operator
+  note; the larger version, a dose ladder at 0.10 and 0.35 plus a seed replicate, is priced at
+  about 8 more GPU-hours and deliberately not queued.
+- 2026-08-27 04:20Z · s5.5 · **The reweighted shares moved from 0.45/0.05 to 0.47/0.03, and the
+  reason is the s4 decontamination working.** `ifstruct_train_generated` reaches the prompt pool
+  with 1,279 of its 20,000 rows, because IFStruct is one of this project's evaluation sets and
+  the 13-gram index dropped the rest. At 32,000 prompts a 0.05 share is unfillable and the
+  sampler fails the run rather than sampling short. The buffer is still exactly half
+  constraint-bearing. Both counts are now pinned by a test built on a fixture at the real
+  per-sub-source supply.
+- 2026-08-27 04:20Z · s5.5 · **A two-generator pack needed a fix before it could be trusted.**
+  `pack_provides` resolves a produced object by config key, so two arms both naming
+  `replay_object` would have had the second overwrite the first and two of the three trainers
+  would have read a buffer that is not the one their arm is defined by, with nothing crashing
+  and the composition contrast measuring nothing. Separate keys, plus a scheduling test that
+  runs the real supervisor over this exact topology and asserts what each trainer resolved.
+- 2026-08-27 04:22Z · s5.5 · **`runs/s5.3-compare-with-base/` was missing from the project and is
+  restored from the mirror.** It is the 78-comparison paired table the s5.4 decision rests on;
+  the 70-comparison table still present is the earlier family without the base. Cause unknown
+  and there is no history to read, which is the point of the mirror.
+- 2026-08-27 04:23Z · mirror · Pushed commit `57edc20` to `github.com/jamesnavinhill/liquid-primus`
+  under `tidepool/`: the s5.5 pack configuration and queue script, the stratified sampler's new
+  supply test, the two-producer scheduling test, this report, `tasks.md`, and the restored
+  with-base comparison table. Nothing has reached the Hugging Face half of that note this wake;
+  s5.5 produces its first weights when the trainers finish.
+- 2026-08-27 04:26Z · s5.5 · **AWS refused the launch and the ladder moved to Nebius.** `31403d7d`
+  never started an arm: `RunInstances` in `ap-northeast-1a` came back `PendingVerification`, which
+  is the account's access to that region still being validated rather than anything about the
+  job, the card or the pack. Nothing was produced and 0.033 GPU-hours are charged, because the
+  used quota moved by two minutes. Re-queued unchanged as **`d4a7d46b`** on Nebius, which is the
+  next source in the provider note's L40S row (AWS g6e, then Nebius, then RunPod; note updated
+  2026-08-23T22:48Z). Card wanted L40S, card requested L40S, only the seller changed. Spend
+  52.430 of 145.

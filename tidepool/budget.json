@@ -702,7 +702,23 @@
    "durationHours": 0.043,
    "note": "9 arms, reference C1, 78 cells: 28 separate by interval, 14 survive Holm. Adding B1 did not weaken the one gain in the sweep -- C7 probes_flag_detect +0.1111 [+0.0556,+0.1667] moves from Holm p 1.13e-2 to 1.18e-2, because the cells B1 adds are all more significant and Holm's multiplier for that rank is unchanged. B1 vs C1 paired: C1 is ahead on BFCL native +3.15 pts (p=6.4e-4) and BFCL tools-text +12.38 pts (p=3.2e-42) and probe detection +11.85 pts on correct (p=3.4e-8) and +60.37 pts on flagged (p=1.3e-47); B1 is ahead on IFEval by +6.65 pts (p=4.8e-3); IFStruct is indistinguishable (-0.20 pts, p=1). The plan's +3.0-over-matched-base tool-calling target now has a paired test behind it, not just two summary numbers. B1's flag rate matches C2p's exactly (-0.6037 vs C1, same interval), which is independent evidence that the guardrail slice is what creates flagging rather than the tuning in general. 2 assertion failures, both the benign case of B1 having no clean_control_object so its corpus components hash the empty sequence; the cells were dropped for B1 anyway and the guard is now in main.py with a regression test.",
    "recordedAt": "2026-08-27T00:40:00Z"
+  },
+  {
+   "jobId": "31403d7d-1e0a-49a2-8561-788ceb893eb1",
+   "experiment": "tidepool",
+   "substage": "s5.5",
+   "task": "s5-sft-pack",
+   "label": "s5.5 replay ladder, first submission, refused at launch",
+   "accelerators": "L40S:1",
+   "provider": "aws",
+   "status": "FAILED",
+   "spend": 0.033,
+   "start": "2026-08-27T04:19:54Z",
+   "end": "2026-08-27T04:23:00Z",
+   "durationHours": 0.052,
+   "note": "AWS refused RunInstances in ap-northeast-1a with PendingVerification: account access to that region is still being validated and no additional resources can launch until it clears, normally minutes and up to four hours. No arm started and nothing was produced. Charged because the account's used quota moved from 305 to 307 GPU-minutes. Re-queued unchanged on Nebius as d4a7d46b, which is the next entry in the provider note's L40S try order (AWS g6e, then Nebius, then RunPod).",
+   "recordedAt": "2026-08-27T04:26:00Z"
   }
  ],
- "total_spent": 52.397
+ "total_spent": 52.43
 }
