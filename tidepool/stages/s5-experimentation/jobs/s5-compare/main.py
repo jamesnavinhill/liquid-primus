@@ -27,6 +27,7 @@ paired difference is reported beside the item-weighted one as a descriptive figu
 interval and no test attached, so the two are never mistaken for each other.
 """
 
+import hashlib
 import json
 import os
 
@@ -55,23 +56,28 @@ def reset():
     CFG = lab.get_config() or {}
     del NOTES[:]
     del FAILURES[:]
+    ID_SHA.clear()
 
 
 OUT = "out"
 NOTES = []
 FAILURES = []
+# (arm, component) -> sha1 of the id sequence the component selected, in file order. Only
+# consulted when a component has repeated ids, where it is what makes occurrence pairing
+# sound; see `read_items`.
+ID_SHA = {}
 
 # Component name -> where its per-item verdicts live, which rows count, what to cross-check
 # the recomputed rate against, and (optionally) the field to macro-average over.
 DEFAULT_COMPONENTS = {
     "bfcl_native": {
         "file": "scored_bfcl_native_tools.jsonl",
-        "check": "bfcl.styles.native_tools.item_weighted",
+        "check": "eval_summary.results.bfcl.styles.native_tools.item_weighted",
         "group_field": "category",
     },
     "bfcl_text": {
         "file": "scored_bfcl_tools_text.jsonl",
-        "check": "bfcl.styles.tools_text.item_weighted",
+        "check": "eval_summary.results.bfcl.styles.tools_text.item_weighted",
         "group_field": "category",
     },
     "ifstruct": {"file": "scored_ifstruct.jsonl"},
@@ -95,6 +101,28 @@ DEFAULT_COMPONENTS = {
     "probes_stack_idiom": {
         "file": "scored_probes.jsonl",
         "where": {"probe": ["stack_idiom"]},
+    },
+    # The two cells above read `correct`, which on a probe row means "did not fabricate a
+    # value" on the malformed arms and "did not flag AND used the value" on the clean ones.
+    # Useful, and not what the s5.4 reliability gate is written on: that gate is a detection
+    # rate and a false-alarm rate, both of them `detail.flagged`. The gate is a threshold on
+    # rates the graders already computed, but whether one arm genuinely detects more than
+    # the reference is a paired question like every other, so it gets a cell rather than a
+    # table row. Adding them enlarges the Holm family and therefore makes every claim in
+    # this run harder to make, which is the direction an amendment made after the rates were
+    # known should push.
+    "probes_flag_detect": {
+        "file": "scored_probes.jsonl",
+        "where": {"probe": ["tool_return"], "arm": ["corrupted", "contradicted"]},
+        "verdict": "detail.flagged",
+    },
+    # Inverted: on a clean return a raised flag is a false alarm, so not-flagged is the
+    # success. Without the inversion the sign of every clean-arm delta would be backwards.
+    "probes_flag_clean_corpus": {
+        "file": "scored_probes.jsonl",
+        "where": {"probe": ["tool_return"], "arm": ["clean_corpus"]},
+        "verdict": "detail.flagged",
+        "invert": True,
     },
 }
 
@@ -148,16 +176,35 @@ def dotted(obj, path):
 
 # --------------------------------------------------------------------------- inputs
 
-def read_items(path, where=None, group_field=None):
+def read_items(path, where=None, group_field=None, verdict="correct", invert=False):
     """id -> (verdict, group) for the rows a component selects.
 
     `correct` is the per-item verdict every grader writes: a matched call for BFCL, a valid
     parse for structured output, a satisfied instruction for IFEval, the detector's verdict
-    for probes. A row with no `correct` key is counted and skipped rather than coerced,
-    since a missing verdict is not a wrong answer. A repeated id is reported: it would
-    otherwise silently shrink the paired set by one and change the denominator.
+    for probes. A row with no verdict field is counted and skipped rather than coerced,
+    since a missing verdict is not a wrong answer.
+
+    A repeated id is kept, as `<id>#2`, `<id>#3`, and reported. BFCL v3 ships one: two
+    different `live_relevance` questions both carry the id `live_relevance_3-3-0`, and the
+    model answers them differently, so keying on the bare id would drop a real item from
+    every arm and leave the paired denominator one short of the rate each arm reports. The
+    kth occurrence in one arm is paired with the kth in another, which is exact as long as
+    both arms walked the corpus in the same order; the sha of the id sequence is returned
+    so the caller can assert that rather than assume it.
+
+    `verdict` is a dotted path, so a component can pair on a field the grader wrote inside
+    `detail` instead of on `correct`. That is not a convenience: on the probe file `correct`
+    answers "did the model avoid inventing a value", and the guardrail bar this sweep is
+    judged against is written on `detail.flagged`, "did the model say the return was
+    broken". They are different questions and they disagree by twenty points or more, so a
+    comparison that only read `correct` would leave the bar itself untested.
+
+    `invert` makes a true verdict the failure, for the clean populations where raising a
+    flag is the error. It is applied after the lookup so a missing field is still a missing
+    verdict rather than silently becoming a pass.
     """
     out, no_verdict, repeats, filtered = {}, 0, 0, 0
+    seen, order = {}, []
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -168,17 +215,26 @@ def read_items(path, where=None, group_field=None):
             except Exception:                                      # noqa: BLE001
                 no_verdict += 1
                 continue
-            if not isinstance(row, dict) or "id" not in row or "correct" not in row:
+            if not isinstance(row, dict) or "id" not in row:
+                no_verdict += 1
+                continue
+            v = row.get("correct") if verdict == "correct" else dotted(row, verdict)
+            if v is None:
                 no_verdict += 1
                 continue
             if where and not all(row.get(k) in vals for k, vals in where.items()):
                 filtered += 1
                 continue
-            if row["id"] in out:
+            rid = str(row["id"])
+            seen[rid] = seen.get(rid, 0) + 1
+            key = rid if seen[rid] == 1 else "%s#%d" % (rid, seen[rid])
+            if seen[rid] > 1:
                 repeats += 1
-            out[row["id"]] = (bool(row["correct"]),
-                              row.get(group_field) if group_field else None)
-    return out, {"no_verdict": no_verdict, "repeats": repeats, "filtered_out": filtered}
+            order.append(rid)
+            out[key] = (bool(v) != bool(invert),
+                        row.get(group_field) if group_field else None)
+    return out, {"no_verdict": no_verdict, "repeats": repeats, "filtered_out": filtered,
+                 "id_sha": hashlib.sha1("\n".join(order).encode("utf-8")).hexdigest()}
 
 
 def load_arm(arm, prefix, components):
@@ -192,12 +248,16 @@ def load_arm(arm, prefix, components):
             NOTES.append("%s has no %s in storage (%s)" % (arm, comp, exc))
             log("%s: %s missing (%s)" % (arm, comp, obj))
             continue
-        items, counts = read_items(path, spec.get("where"), spec.get("group_field"))
+        items, counts = read_items(path, spec.get("where"), spec.get("group_field"),
+                                   spec.get("verdict", "correct"),
+                                   bool(spec.get("invert", False)))
         if counts["no_verdict"]:
             NOTES.append("%s/%s: %d row(s) carried no verdict"
                          % (arm, comp, counts["no_verdict"]))
-        check("%s/%s has no repeated item ids" % (arm, comp), counts["repeats"] == 0,
-              "%d repeated id(s)" % counts["repeats"])
+        ID_SHA[(arm, comp)] = counts["id_sha"]
+        if counts["repeats"]:
+            NOTES.append("%s/%s: %d repeated id(s), kept as <id>#k and paired by occurrence"
+                         % (arm, comp, counts["repeats"]))
         if not items:
             NOTES.append("%s/%s selected no rows out of %s"
                          % (arm, comp, spec["file"]))
@@ -206,13 +266,23 @@ def load_arm(arm, prefix, components):
         log("%s: %-20s %5d items, %.4f correct"
             % (arm, comp, len(items),
                sum(1 for v, _g in items.values() if v) / len(items)))
-    try:
-        with open(lab.storage_download("%s/%s/score.json" % (prefix.rstrip("/"), arm)),
-                  encoding="utf-8") as fh:
-            meta = json.load(fh)
-    except Exception:                                              # noqa: BLE001
-        NOTES.append("%s has no score.json in storage, so its rates are not cross-checked"
-                     % arm)
+    # Both summaries, because they carry different things. `score.json` is the flat card the
+    # arm queue writes; `eval_summary.json` is the harness's own nested output and is the only
+    # place a per-style item-weighted BFCL rate exists. A component's `check` path is resolved
+    # against this merged view, so it has to name which one it means.
+    for name in ("score.json", "eval_summary.json"):
+        try:
+            with open(lab.storage_download("%s/%s/%s" % (prefix.rstrip("/"), arm, name)),
+                      encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except Exception:                                          # noqa: BLE001
+            NOTES.append("%s has no %s in storage, so any rate it carries is not "
+                         "cross-checked" % (arm, name))
+            continue
+        if name == "score.json":
+            meta.update(doc if isinstance(doc, dict) else {})
+        else:
+            meta["eval_summary"] = doc
     return data, meta
 
 
@@ -274,6 +344,18 @@ def main():
 
     loaded = {arm: load_arm(arm, prefix, components) for arm in arms}
     ref_data, _ref_meta = loaded[ref_arm]
+
+    # Pairing the kth occurrence of a repeated id against the kth in another arm is exact only
+    # if both arms walked the corpus in the same order. Every arm here was scored by the same
+    # harness over the same files, so this should hold everywhere and is asserted rather than
+    # assumed: it is also a free check that no arm was scored over a different corpus.
+    for (arm, comp), sha in sorted(ID_SHA.items()):
+        if arm == ref_arm or (ref_arm, comp) not in ID_SHA:
+            continue
+        check("%s and %s read %s in the same item order" % (arm, ref_arm, comp),
+              sha == ID_SHA[(ref_arm, comp)],
+              "%s reads %s, %s reads %s"
+              % (arm, sha[:12], ref_arm, ID_SHA[(ref_arm, comp)][:12]))
 
     # ---- paired comparison, one cell per arm and component
     cells, pvals = [], []
@@ -339,8 +421,8 @@ def main():
                 continue
             reported = dotted(meta, path)
             if not isinstance(reported, (int, float)):
-                NOTES.append("%s/%s: score.json has no %s, so the rate is not cross-checked"
-                             % (arm, comp, path))
+                NOTES.append("%s/%s: no %s in either summary, so the rate is not "
+                             "cross-checked" % (arm, comp, path))
                 continue
             mine = sum(1 for v, _g in items.values() if v) / len(items)
             check("%s/%s recomputed rate matches the arm's own" % (arm, comp),

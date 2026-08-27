@@ -31,6 +31,25 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-27 00:21 UTC: the paired comparison is in, and the sweep produced exactly
+one real gain across seventy comparisons. It belongs to the raw-mixture recipe, and that
+recipe fails a different pre-registered gate, so no variant passes all three.** Comparing
+each variant against the reference item by item, nine differences survive correction for
+testing seventy things at once, and eight of the nine are the variant doing *worse*. The one
+gain is the raw-mixture recipe catching 11 more points of fabricated tool returns, a solid
+effect; it pays about 2.5 to 2.9 points of tool-calling accuracy for it, and those losses are
+solid too. The no-guardrail ablation loses 60 points of catch rate, which settles that the
+guardrail training data is what does the catching rather than the base model. Two earlier
+readings were wrong and are corrected here: the gate that caps how far any single
+tool-calling category may fall was checked on aggregate scores rather than per category, and
+read correctly the raw-mixture recipe drops 6.8 points on the benchmark's largest category,
+so it fails; and its instruction-following score is 0.7338, not the 0.7411 recorded earlier.
+That gate is written against the base model, whose per-category scores were lost to an
+earlier save bug, so it has been unevaluable as written for this whole stage. A scoring-only
+replay of the base model's saved outputs is running now, roughly a fifth of a GPU-hour, which
+also lets the base enter the comparison as a proper arm and finally puts a test behind the
+project's headline claim. Spend stands at **52.3 of 145 approved GPU-hours**.
+
 **Update, 2026-08-26 23:28 UTC: all eight sweep recipes are now scored, and exactly one of
 them clears the guardrail bar.** The last two finished at 23:20; neither catches enough
 fabricated tool calls to pass (65% and 62% against the 70% bar), which leaves the raw-mixture
@@ -2233,3 +2252,75 @@ probes pass now running exists to fix.
   untouched, and the superseded bytes are kept for a determinism check over the shared items.
   Both GPU slots are full; the account cap is 2 and 194 h 55 m of the enforced allowance remains.
   After these land: the comparison job over all eight arms in one call, then `s5.4`.
+- 2026-08-26 23:34Z · mirror · Pushed commit `180c9fe` to `github.com/jamesnavinhill/liquid-primus`:
+  `tasks.md`, `budget.json`, this report and `runs/s5.3-sweep.md` for pass 3's completion and
+  the eight-arm gate tally, plus the C5a/C5b correction. The push also carries code that had
+  never been mirrored: the whole `s5-compare` job (comparison driver, paired statistics,
+  promotion tool and both test files) and the `s5-eval` queue scripts and OOM-split test. The
+  remote was several commits ahead of every local checkout in this sandbox, so the checkout was
+  reset to `origin/main` before copying rather than rebased.
+- 2026-08-26 23:41Z · s5.3 · **Comparison driver re-checked locally before the probes land.**
+  `test_stats.py` and `test_main.py` run as plain scripts, the way `sync_compare_task.sh` runs
+  them before it builds the staging directory, not under pytest (pytest is not installed in this
+  sandbox and the tests do not need it). 36 checks, 0 failed. The statistics side confirms the
+  exact test matches binomial tails computed by hand, the interval matches its own analytic
+  standard error and reproduces from its seed, and 28 comparisons against one reference are
+  corrected as a family. The driver side confirms the three failure modes it was written for: a
+  filter selecting no rows drops its cell rather than reporting a rate over zero items, an empty
+  population is named in the notes, and the corrected family shrinks to the cells that actually
+  carried rows. No numbers here are results; the fixtures have their answers known in advance,
+  and the comparison itself runs as a job.
+
+## The wider clean arm settles gate 1, and the first comparison failed its own checks (s5.3)
+
+The probes pass is in on all eight arms: `9ba23f0c` (C1, C2p, C3, C4) and `2c91ab0d`
+(C5a, C5b, C6, C7), both success, 4/4 arms `rc=0` apiece, 28 artifacts verified, 0 assertion
+failures, 0.123 and 0.130 GPU-h. Every arm now carries 602 probe rows against 464 before: the
+138-item corpus clean arm is scored on all eight at once, so `s5.4`'s false-alarm reading no
+longer rests on thirty synthetic items.
+
+**The false-alarm worry was an artefact of the small arm.** C5a read 0.10 there, three items
+out of thirty; on the corpus arm the same recipe reads 0.0217. No arm comes close to the 0.15
+ceiling, and **every failing arm fails on detection alone**. C7 is still the only arm to clear
+gate 1, now at 0.7222 detection with 3 false alarms out of 138 clean returns. The rescope
+trigger needed all eight arms to fail and does not fire.
+
+**Re-running the scoring reproduced it exactly.** Before the new files overwrote the old, the
+two versions were joined on `id`: 464 shared items per arm, **zero verdict changes on all
+eight arms**. The re-run happened on different machines under a rebuilt pack script, so the
+join is an end-to-end determinism result the project had not previously demonstrated, and it
+is the reason the promotion could go ahead with `--force` without hedging.
+
+**The comparison ran twice, and the first run is not cited.** `08ab59c0` completed with 16 of
+its own assertions failing and 16 notes saying a rate had not been cross-checked, which turned
+out to be two independent defects that compound. BFCL v3 ships two different `live_relevance`
+questions under one id, so joining on the bare id dropped one real item from every arm and
+both calling styles; and the cross-check that reconciles the joined rate against the arm's own
+reported rate was aimed at `score.json`, which is a flat card with no per-style figure in it,
+while the number lives in `eval_summary.json`. The check that was pointed at nothing is
+exactly the check that would have caught the duplicate, since 3,489 joined items against a
+rate over 3,490 does not reconcile. Both are fixed: repeats are kept as `<id>#2` and paired by
+occurrence, the order that makes occurrence pairing exact is asserted per arm rather than
+assumed, and the check paths name which summary they mean. 51 driver checks, none failing.
+The rerun is `3fec1ed8`.
+
+The honest reading of `08ab59c0` is that it was a test of the harness that the harness failed,
+and it failed loudly. Assertions that only ever pass have not been shown to work.
+
+- 2026-08-27 00:06Z · s5.3 · **Probes pass lands on all eight arms; gate 1 settled on the
+  138-item corpus arm; comparison requeued after its first run failed 16 of its own
+  assertions.** `9ba23f0c` and `2c91ab0d` both success, 8/8 arms `rc=0`, 0.253 GPU-h combined,
+  28 artifacts verified. Determinism check before promotion: 464 shared items per arm, **zero
+  verdict changes on every arm**, 138 added. Promoted `--include scored_probes.jsonl --force`
+  only, deliberately excluding `score.json` and `eval_summary.json` so the full pass's
+  summaries are not replaced by probes-only ones. Gate 1 on the corpus arm: **C7 alone passes**
+  (detection 0.7222, false alarm 3/138 = 0.0217); C4 0.6519, C5b 0.6333, C6 0.6222, C1 0.6111,
+  C3 0.6037, C5a 0.5741, C2p 0.0074, all failing on detection and none near the false-alarm
+  ceiling. **The rescope trigger does not fire.** Comparison `08ab59c0` completed but is
+  superseded and uncited: 16 assertion failures (BFCL's duplicated `live_relevance_3-3-0` id)
+  and 16 un-cross-checked cells (check path aimed at `score.json` instead of
+  `eval_summary.json`). Three amendments to the driver, all recorded in `runs/s5.3-sweep.md`:
+  two `detail.flagged` probe cells so the reliability gate itself gets a paired test, repeated
+  ids kept and paired by occurrence with an id-order assertion behind it, and the cross-check
+  paths repointed. 51 driver checks, 0 failed. Rerun queued as `3fec1ed8`, CPU only, no
+  GPU-hours. Spend 52.323 of 145.

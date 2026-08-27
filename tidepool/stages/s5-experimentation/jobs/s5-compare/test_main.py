@@ -94,10 +94,18 @@ put("REF", "scored_bfcl_native_tools.jsonl",
     bfcl_rows([1, 1, 1, 1, 1, 0, 0, 0, 0, 0], CATS))
 put("CAND", "scored_bfcl_native_tools.jsonl",
     bfcl_rows([0, 1, 1, 1, 1, 1, 1, 0, 0, 0], CATS))
+# Both summaries, shaped the way the real arms carry them. `score.json` is the flat card the
+# arm queue writes and holds only a macro composite; the per-style item-weighted rate the
+# cross-check needs exists in `eval_summary.json` and nowhere else. Splitting them here is the
+# point of the fixture: a check path aimed at `score.json` silently found nothing on the real
+# files, and the comparison shipped sixteen un-cross-checked cells before anyone noticed.
 for arm, rate in (("REF", 0.5), ("CAND", 0.6)):
     d = os.path.join(STORE, "tidepool/s5.3/arms", arm)
     with open(os.path.join(d, "score.json"), "w", encoding="utf-8") as fh:
-        json.dump({"bfcl": {"styles": {"native_tools": {"item_weighted": rate}}}}, fh)
+        json.dump({"arm": arm, "bfcl_ast_composite": 0.4321}, fh)
+    with open(os.path.join(d, "eval_summary.json"), "w", encoding="utf-8") as fh:
+        json.dump({"results": {"bfcl": {"styles": {"native_tools":
+                                                   {"item_weighted": rate}}}}}, fh)
 
 # ---------------------------------------------------------------- fixture: one probe file
 #
@@ -135,7 +143,8 @@ CONFIG.update({
     "seed": 7,
     "components": json.dumps({
         "bfcl_native": {"file": "scored_bfcl_native_tools.jsonl",
-                        "check": "bfcl.styles.native_tools.item_weighted",
+                        "check": ("eval_summary.results.bfcl.styles"
+                                  ".native_tools.item_weighted"),
                         "group_field": "category"},
         "ifeval": {"file": "scored_ifeval.jsonl"},
         "probes_detect": {"file": "scored_probes.jsonl",
@@ -198,9 +207,11 @@ ok("Holm p is at least the raw p everywhere",
    all(c2["p_holm"] >= c2["p_mcnemar_exact"] - 1e-12 for c2 in S["cells"])) 
 ok("nothing this small survives family correction",
    S["n_significant_family_corrected"] == 0, S["n_significant_family_corrected"])
-ok("the recomputed rates reconciled with both arms' score.json",
+ok("the recomputed rates reconciled with the rate in eval_summary.json",
    not any("recomputed rate" in f for f in S["assertion_failures"]),
    S["assertion_failures"])
+ok("no cell was left un-cross-checked",
+   not any("not cross-checked" in n for n in S["notes"]), S["notes"])
 ok("both artifacts were saved",
    set(ARTIFACTS) == {"comparison.json", "comparison.md"}, ARTIFACTS)
 ok("the completion message counts the family and the failures",
@@ -226,19 +237,46 @@ try:
 except SystemExit as exc:
     ok("a single arm is refused", "at least two" in str(exc), str(exc))
 
-# ---- a repeated id is reported rather than silently shrinking the denominator
-CONFIG["arms"] = "REF,DUP"
+# ---- a repeated id is kept and paired by occurrence, not dropped
+#
+# BFCL v3 ships exactly this: two different `live_relevance` questions under the id
+# `live_relevance_3-3-0`, answered differently. Keying on the bare id kept whichever row came
+# last and left the paired denominator one short of the rate the arm itself reports, in every
+# arm and both styles, which is the mismatch the cross-check exists to catch.
+CONFIG["arms"] = "REFD,DUP"
+CONFIG["reference"] = "REFD"
+DUPROWS = [{"id": "e0", "correct": True}, {"id": "e0", "correct": False},
+           {"id": "e1", "correct": True}, {"id": "e2", "correct": True}]
+put("REFD", "scored_ifeval.jsonl", DUPROWS)
 put("DUP", "scored_ifeval.jsonl",
-    [{"id": "e0", "correct": True}, {"id": "e0", "correct": False},
-     {"id": "e1", "correct": True}, {"id": "e2", "correct": True},
-     {"id": "e3", "correct": True}])
+    [{"id": "e0", "correct": True}, {"id": "e0", "correct": True},
+     {"id": "e1", "correct": True}, {"id": "e2", "correct": True}])
 CONFIG["components"] = json.dumps({"ifeval": {"file": "scored_ifeval.jsonl"}})
 S2 = main.main()
-ok("a repeated item id is an assertion failure",
-   any("repeated item ids" in f for f in S2["assertion_failures"]),
-   S2["assertion_failures"])
-ok("the later row wins, so the duplicate scores as its second value",
-   S2["cells"][0]["only_reference_correct"] == 1, S2["cells"][0])
+ok("both occurrences of a repeated id are kept",
+   S2["cells"][0]["n_matched"] == 4, S2["cells"][0])
+ok("a repeated id is no longer an assertion failure",
+   not S2["assertion_failures"], S2["assertion_failures"])
+ok("the repeat is reported as paired by occurrence",
+   any("paired by occurrence" in n for n in S2["notes"]), S2["notes"])
+ok("the second occurrence is what separates the two arms",
+   S2["cells"][0]["only_arm_correct"] == 1
+   and S2["cells"][0]["only_reference_correct"] == 0, S2["cells"][0])
+ok("the reference rate counts the duplicate row too",
+   abs(S2["cells"][0]["reference_rate"] - 0.75) < 1e-9, S2["cells"][0])
+
+# ---- occurrence pairing rests on both arms reading the corpus in the same order, so it is
+# asserted. Same ids, same verdicts, different order: nothing else in the run would notice.
+CONFIG["arms"] = "REFD,SHUF"
+put("SHUF", "scored_ifeval.jsonl",
+    [{"id": "e1", "correct": True}, {"id": "e0", "correct": True},
+     {"id": "e0", "correct": True}, {"id": "e2", "correct": True}])
+S3 = main.main()
+ok("an arm that read the items in a different order is an assertion failure",
+   any("same item order" in f for f in S3["assertion_failures"]),
+   S3["assertion_failures"])
+CONFIG["arms"] = "REF,CAND"
+CONFIG["reference"] = "REF"
 
 # ---- a filter that selects nothing is the expected real case, not an error
 #
@@ -269,6 +307,90 @@ ok("the corrected family shrank to the one real cell", S3["n_comparisons"] == 1,
    S3["n_comparisons"])
 ok("an empty population is not an assertion failure", not S3["assertion_failures"],
    S3["assertion_failures"])
+
+# ---- pairing on a field inside `detail`, which is where the reliability gate lives
+#
+# On a real probe row `correct` and `detail.flagged` answer different questions and can move
+# in opposite directions: a model that never flags anything still scores well on `correct`
+# for the malformed arms as long as it does not invent a value. These four rows are built so
+# that reading `correct` would report no difference at all while the flag field shows the
+# candidate detecting two more, which is the failure the verdict path exists to prevent.
+def flagrows(pairs, arm, prefix):
+    return [{"id": "%s%d" % (prefix, i), "probe": "tool_return", "arm": arm,
+             "correct": bool(c), "detail": {"flagged": bool(f)}}
+            for i, (c, f) in enumerate(pairs)]
+
+# malformed: `correct` identical on both sides; flagged differs on two items.
+# clean_corpus: the candidate raises one false alarm the reference does not.
+put("REF", "scored_probes.jsonl",
+    flagrows([(1, 0), (1, 0), (1, 1), (1, 1)], "corrupted", "m")
+    + flagrows([(1, 0), (1, 0), (1, 0)], "clean_corpus", "k"))
+put("CAND", "scored_probes.jsonl",
+    flagrows([(1, 1), (1, 1), (1, 1), (1, 1)], "corrupted", "m")
+    + flagrows([(1, 0), (1, 0), (1, 1)], "clean_corpus", "k"))
+CONFIG["arms"] = "REF,CAND"
+CONFIG["components"] = json.dumps({
+    "probes_detect": {"file": "scored_probes.jsonl",
+                      "where": {"probe": ["tool_return"], "arm": ["corrupted"]}},
+    "probes_flag_detect": {"file": "scored_probes.jsonl",
+                           "where": {"probe": ["tool_return"], "arm": ["corrupted"]},
+                           "verdict": "detail.flagged"},
+    "probes_flag_clean_corpus": {"file": "scored_probes.jsonl",
+                                 "where": {"probe": ["tool_return"],
+                                           "arm": ["clean_corpus"]},
+                                 "verdict": "detail.flagged", "invert": True},
+})
+S4 = main.main()
+C4 = {c["component"]: c for c in S4["cells"]}
+ok("reading `correct` finds nothing on these rows", C4["probes_detect"]["delta"] == 0.0,
+   C4["probes_detect"]["delta"])
+ok("reading `detail.flagged` finds the two extra detections",
+   abs(C4["probes_flag_detect"]["delta"] - 0.5) < 1e-9,
+   C4["probes_flag_detect"]["delta"])
+ok("the flag cell counts the discordant pairs in the right direction",
+   (C4["probes_flag_detect"]["only_reference_correct"],
+    C4["probes_flag_detect"]["only_arm_correct"]) == (0, 2),
+   C4["probes_flag_detect"])
+ok("a false alarm on a clean return is a loss, not a gain",
+   C4["probes_flag_clean_corpus"]["delta"] < 0,
+   C4["probes_flag_clean_corpus"]["delta"])
+ok("the inverted cell rates not-flagged as the success",
+   abs(C4["probes_flag_clean_corpus"]["reference_rate"] - 1.0) < 1e-9,
+   C4["probes_flag_clean_corpus"]["reference_rate"])
+
+# A row missing the nested field is a missing verdict, not a silent pass.
+put("REF", "scored_probes.jsonl",
+    flagrows([(1, 0), (1, 0)], "corrupted", "m") + [
+        {"id": "m9", "probe": "tool_return", "arm": "corrupted", "correct": True}])
+put("CAND", "scored_probes.jsonl",
+    flagrows([(1, 1), (1, 1)], "corrupted", "m") + [
+        {"id": "m9", "probe": "tool_return", "arm": "corrupted", "correct": True}])
+CONFIG["components"] = json.dumps({
+    "probes_flag_detect": {"file": "scored_probes.jsonl",
+                           "where": {"probe": ["tool_return"], "arm": ["corrupted"]},
+                           "verdict": "detail.flagged"}})
+S5 = main.main()
+ok("a row with no detail.flagged is dropped rather than counted as not-flagged",
+   S5["cells"][0]["n_matched"] == 2, S5["cells"][0]["n_matched"])
+ok("the dropped row is reported as carrying no verdict",
+   any("no verdict" in n for n in S5["notes"]), S5["notes"])
+
+# The shipped default table has to carry both readings, or the run is back where it started.
+ok("the default component table includes both probe readings",
+   {"probes_detect", "probes_flag_detect", "probes_flag_clean_corpus"}
+   <= set(main.DEFAULT_COMPONENTS),
+   sorted(main.DEFAULT_COMPONENTS))
+ok("the default flag cells read detail.flagged",
+   main.DEFAULT_COMPONENTS["probes_flag_detect"]["verdict"] == "detail.flagged"
+   and main.DEFAULT_COMPONENTS["probes_flag_clean_corpus"]["invert"] is True)
+
+# The fixture proves the mechanism; the shipped table is what actually runs, and its check
+# paths are the thing that was wrong on the real files.
+ok("the default bfcl cells cross-check against eval_summary.json",
+   all(main.DEFAULT_COMPONENTS[c]["check"]
+       == "eval_summary.results.bfcl.styles.%s.item_weighted" % st
+       for c, st in (("bfcl_native", "native_tools"), ("bfcl_text", "tools_text"))),
+   {c: main.DEFAULT_COMPONENTS[c].get("check") for c in ("bfcl_native", "bfcl_text")})
 
 print("\n%d checks, %d failed" % (N, len(FAILED)))
 shutil.rmtree(ROOT, ignore_errors=True)

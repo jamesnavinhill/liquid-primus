@@ -638,7 +638,39 @@
       "durationHours": 2.58,
       "note": "2/2 arms completed, rc=0, 0 assertion failures, 30 artifacts + pack_summary uploaded and both arms' scored files promoted into tidepool/s5.3/arms/<arm>/ for the compare job. C4: bfcl_ast_composite 0.7128, ifstruct_validity 0.1445, ifeval_prompt_strict 0.7468, probe_flag_rate 0.6519, probe_false_flag 0.0. C6: bfcl_ast_composite 0.7237, ifstruct_validity 0.1210, ifeval_prompt_strict 0.7024, probe_flag_rate 0.6222, probe_false_flag 0.0. Read off the promoted score.json and cross-checked field by field against the job record's own results block; the two agree exactly. gpu_hours_billed 2.58 against a ~2.5 h expectation from passes 1, 2 and 4. Neither arm clears the 0.70 gate-1 detection floor, which completes the eight-arm tally: C7 is the only arm in the sweep to clear it.",
       "recordedAt": "2026-08-26T23:28:00Z"
+    },
+    {
+      "jobId": "9ba23f0c-5deb-4168-a39a-6bb792e7d0bb",
+      "experiment": "tidepool",
+      "substage": "s5.3",
+      "task": "s5-eval-pack",
+      "label": "s5.3 guardrail re-score, probes only with the 138-item corpus clean arm -- C1, C2p, C3, C4, four arms on one L4",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "COMPLETE",
+      "spend": 0.123,
+      "start": "2026-08-26T23:24:59Z",
+      "end": "2026-08-26T23:38:01Z",
+      "durationHours": 0.123,
+      "note": "4/4 arms rc=0, 0 assertion failures, 28 artifacts. Closes the gap recorded at 08:34Z: clean_control_object was empty in pack.yaml for all four scoring passes, so no arm had been scored against the corpus clean arm the rescope trigger is read against. 602 probe rows an arm (434 graded + 30 synthetic clean + 138 corpus clean) against 464 before. probe_flag_rate reproduces the scoring passes exactly on every arm (C1 0.6111, C2p 0.0074, C3 0.6037, C4 0.6519). Corpus false-flag: C1 2/138, C2p 0/138, C3 3/138, C4 4/138. The 464 items shared with the earlier pass came back with ZERO verdict changes on a different machine, which is a determinism check the project had not previously run end to end.",
+      "recordedAt": "2026-08-26T23:50:00Z"
+    },
+    {
+      "jobId": "2c91ab0d-a561-4fa8-bbd5-5e3a79278417",
+      "experiment": "tidepool",
+      "substage": "s5.3",
+      "task": "s5-eval-pack",
+      "label": "s5.3 guardrail re-score, probes only with the 138-item corpus clean arm -- C5a, C5b, C6, C7, four arms on one L4",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "COMPLETE",
+      "spend": 0.13,
+      "start": "2026-08-26T23:25:10Z",
+      "end": "2026-08-26T23:37:19Z",
+      "durationHours": 0.13,
+      "note": "4/4 arms rc=0, 0 assertion failures, 28 artifacts, byte-identical settings to 9ba23f0c so all eight arms carry the same clean arm. probe_flag_rate reproduces the scoring passes exactly (C5a 0.5741, C5b 0.6333, C6 0.6222, C7 0.7222) and the 464 shared items again show zero verdict changes. Corpus false-flag: C5a 3/138, C5b 0/138, C6 0/138, C7 3/138. C7 is the only arm clearing gate 1 (detection 0.7222 >= 0.70) and does it at a corpus false-alarm rate of 0.0217, well inside the 0.15 ceiling, so the pre-registered rescope trigger does not fire.",
+      "recordedAt": "2026-08-26T23:50:00Z"
     }
   ],
-  "total_spent": 52.07
+  "total_spent": 52.323
 }

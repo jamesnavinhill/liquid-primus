@@ -11,6 +11,7 @@
 set -e
 ARMS=${1:?usage: queue_compare.sh C1,C2p,C3,C7[,...]}
 lab task queue ecd12a36-da98-4a18-bc38-2889905746e9 -e tidepool --no-interactive \
+  --provider "${PROVIDER:-aws}" \
   -p arms="$ARMS" \
   -p reference=C1 \
   -m "Paired per-item comparison of the s5.3 sweep arms ($ARMS) against the C1 reference, on
