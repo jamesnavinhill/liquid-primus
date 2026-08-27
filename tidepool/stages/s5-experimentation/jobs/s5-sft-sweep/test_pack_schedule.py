@@ -83,7 +83,11 @@ if spec.get("rc"):
     sys.exit(int(spec["rc"]))
 cfg = json.loads(os.environ["TIDEPOOL_PACK_CFG"])
 json.dump({"tokens_per_second": 100.0, "peak_gpu_reserved_gb": 1.0, "card_total_gb": 47.7,
-           "saw_batch_size": cfg.get("batch_size"), "saw_arm": cfg.get("arm")},
+           "saw_batch_size": cfg.get("batch_size"), "saw_arm": cfg.get("arm"),
+           # The objects this child could actually resolve locally. The supervisor snapshots
+           # the map at spawn time, so this is the only place a consumer's view of a
+           # handover is visible from outside.
+           "saw_local": sorted(json.loads(os.environ["TIDEPOOL_PACK_LOCAL"]))},
           open(os.path.join(out, "score.json"), "w"))
 '''
 
@@ -285,6 +289,46 @@ check("staging", out.count("fetched ") == 3,
 check("staging", r["summary"] and not r["summary"]["failed"],
       "staging per-arm objects failed the pack: %s" % (r["summary"] or {}).get("failed"))
 
+# 10. Two producers on one card, each standing in for a DIFFERENT object. s5.5 needs this:
+#     one replay buffer sampled proportionally and one reweighted towards verifiable
+#     constraints, generated side by side and then read by three trainers. The failure it
+#     guards against is quiet and expensive -- `pack_provides` resolves the object PATH out of
+#     the pack config by key, so if both generators named the key `replay_object` the second
+#     registration would overwrite the first and two of the three trainers would train on a
+#     buffer that is not the one their arm is defined by. Nothing would crash; the composition
+#     contrast would simply be measuring nothing, after twelve hours on a card.
+r = run(dict(BASE, arms="GP,GC,T1,T2,T3", pack_gb="18,18,9.5,9.5,9.5", pack_headroom=0.92,
+             pack_after="T1=GC,T2=GP,T3=GC",
+             pack_provides="GP=replay_object_proportional:replay.jsonl.gz,"
+                           "GC=replay_object_constraint:replay.jsonl.gz",
+             replay_object_proportional="tidepool/s5.5/replay_proportional/replay.jsonl.gz",
+             replay_object_constraint="tidepool/s5.5/replay_constraint/replay.jsonl.gz"),
+        {"GP": {"sleep": 1.2, "produce": "replay.jsonl.gz"},
+         "GC": {"sleep": 0.6, "produce": "replay.jsonl.gz"},
+         "T1": {"sleep": 0.3}, "T2": {"sleep": 0.3}, "T3": {"sleep": 0.3}})
+s = r["summary"]
+check("two buffers", s and not s["failed"] and s["never_started"] == {},
+      "the two-producer pack did not complete: failed=%s never_started=%s"
+      % ((s or {}).get("failed"), (s or {}).get("never_started")))
+ups = sorted(e["obj"] for e in r["events"] if e["kind"] == "upload")
+check("two buffers", ups == ["tidepool/s5.5/replay_constraint/replay.jsonl.gz",
+                             "tidepool/s5.5/replay_proportional/replay.jsonl.gz"],
+      "the two buffers did not both reach storage under their own names: %s" % ups)
+# What each trainer was actually handed, as the child itself saw it. A consumer spawns with a
+# snapshot of the resolved map, so T1 and T3 -- released by the faster GC while GP is still
+# generating -- must see the constraint buffer and only that one, and T2 must see both by the
+# time GP releases it. The wrong-key bug shows up here as T2 resolving the constraint path.
+PROP = "tidepool/s5.5/replay_proportional/replay.jsonl.gz"
+CONS = "tidepool/s5.5/replay_constraint/replay.jsonl.gz"
+res = (s or {}).get("results") or {}
+for arm, want in (("T1", [CONS]), ("T3", [CONS]), ("T2", sorted([CONS, PROP]))):
+    got = [o for o in (res.get(arm) or {}).get("saw_local") or [] if "replay" in o]
+    check("two buffers", got == want,
+          "%s resolved %s, expected %s" % (arm, got, want))
+check("two buffers", s and s.get("peak_concurrent_demand_gb") == 37.0,
+      "peak came out %s, expected 37.0 (GP still running while GC's two consumers start)"
+      % (s or {}).get("peak_concurrent_demand_gb"))
+
 if fails:
     print("FAIL")
     for f in fails:
@@ -292,4 +336,5 @@ if fails:
     sys.exit(1)
 print("pack scheduling holds: handover, failed producer, empty producer, peak sizing, "
       "overcommit, per-arm scripts, per-arm config (typed and as text), input staging, "
-      "mirroring on request, 7 validation cases")
+      "mirroring on request, two producers providing two distinct objects, "
+      "7 validation cases")

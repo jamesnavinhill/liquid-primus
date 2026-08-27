@@ -102,20 +102,80 @@ local = lab.storage_download(POOL_OBJ)
 # sample is a pure function of the pool and the salt, so a rerun draws the same prompts and
 # a larger N is a superset of a smaller one.
 SALT = str(C("sample_salt", "tidepool-replay-v1"))
-best, n_rows = [], 0
+
+# `strata` reweights the sample by sub-source. Added at s5.5, for a reason the sweep only made
+# visible once someone read the pool: `antidoom-mix-v1.0` carries 46,734 rows of
+# `open_perfectblend_autoif`, verifiable-constraint instruction following of exactly the kind
+# IFEval scores, and a proportional sample puts it at 10.5% of the buffer. At a replay fraction
+# of 1% that is about a tenth of one percent of the training tokens, which is why the replay
+# axis moved IFEval by two points and stopped. Reweighting buys the same protective dose for a
+# fifth of the replay tokens, so it is a lever on composition rather than on budget.
+#
+# Format: {"<substring of the row id>": <share of N>, ...}. Shares must sum to at most 1.0; the
+# remainder is one "other" stratum drawn from every row that matched nothing. An empty map is
+# the default and reproduces the unstratified sample exactly, which is what keeps the frozen
+# s5.3 buffer reproducible from this code.
+STRATA = json.loads(str(C("strata", "{}")) or "{}")
+if sum(STRATA.values()) > 1.0 + 1e-9:
+    raise SystemExit("strata shares sum to %.4f, which is more than the whole sample"
+                     % sum(STRATA.values()))
+TARGET = {k: int(round(v * N_PROMPTS)) for k, v in STRATA.items()}
+TARGET["__other__"] = N_PROMPTS - sum(TARGET.values())
+if TARGET["__other__"] < 0:
+    raise SystemExit("rounding the strata shares overshot N; asked for %d of %d"
+                     % (sum(TARGET.values()) - TARGET["__other__"], N_PROMPTS))
+
+
+def stratum_of(row):
+    """Which stratum a pool row belongs to. First match wins, in the map's own order."""
+    rid = str(row.get("i", ""))
+    for k in STRATA:
+        if k in rid:
+            return k
+    return "__other__"
+
+
+best, n_rows = {k: [] for k in TARGET}, 0
+seen = dict.fromkeys(TARGET, 0)
 with gzip.open(local, "rt") as fh:
     for line in fh:
         r = json.loads(line)
         n_rows += 1
+        st = stratum_of(r)
+        seen[st] += 1
+        want = TARGET[st]
+        if want <= 0:
+            continue
         key = hashlib.blake2b(("%s|%s|%s" % (r.get("c"), r.get("i"), SALT)).encode(),
                               digest_size=8).hexdigest()
-        best.append((key, r))
-        if len(best) > N_PROMPTS * 4:
-            best.sort(key=lambda kv: kv[0])
-            del best[N_PROMPTS:]
-best.sort(key=lambda kv: kv[0])
-picked = [r for _, r in best[:N_PROMPTS]]
-log("pool has %d rows; sampled %d by hash rank" % (n_rows, len(picked)))
+        bucket = best[st]
+        bucket.append((key, r))
+        if len(bucket) > want * 4:
+            bucket.sort(key=lambda kv: kv[0])
+            del bucket[want:]
+picked, short = [], []
+for st in TARGET:
+    bucket = best[st]
+    bucket.sort(key=lambda kv: kv[0])
+    got = bucket[:TARGET[st]]
+    picked.extend(r for _, r in got)
+    log("stratum %-28s wanted %5d  pool has %7d  took %5d"
+        % (st, TARGET[st], seen[st], len(got)))
+    # Two different faults, and the stratum has to name which. A stratum the pool cannot
+    # supply is a configuration error in the strata map; a stratum that came up short of what
+    # the pool does hold is a bug in the sampler. Either way the buffer's composition is not
+    # the one the arm was specified against, so neither is allowed to pass quietly.
+    if len(got) < TARGET[st]:
+        short.append("%s (wanted %d, pool holds %d, took %d)"
+                     % (st, TARGET[st], seen[st], len(got)))
+# One deterministic order for the whole sample, so a reweighted run and a proportional run of
+# the same N are directly diffable and generation order does not depend on the strata map.
+picked.sort(key=lambda r: hashlib.blake2b(
+    ("%s|%s|%s" % (r.get("c"), r.get("i"), SALT)).encode(), digest_size=8).hexdigest())
+log("pool has %d rows; sampled %d by hash rank across %d stratum/strata"
+    % (n_rows, len(picked), len(TARGET)))
+if short:
+    fails.append("strata could not be filled from the pool: %s" % "; ".join(short))
 if len(picked) < min(N_PROMPTS, n_rows):
     fails.append("sampled %d prompts from a pool of %d, wanted %d"
                  % (len(picked), n_rows, N_PROMPTS))

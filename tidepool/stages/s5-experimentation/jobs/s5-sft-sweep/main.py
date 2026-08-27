@@ -150,6 +150,32 @@ ARMS = {
     "C5b": {"replay_frac": 0.05},
     "C6":  {"lora_r": 64, "lora_alpha": 128},
     "C7":  {"mix": "raw"},
+
+    # ---- s5.5. C7's recipe with replay, separating the two levers the C sweep confounded.
+    #
+    # C5a and C5b varied the replay fraction with the buffer's composition left proportional,
+    # and moved IFEval two to three points before stalling. Reading the pool afterwards showed
+    # why: `open_perfectblend_autoif` is 10.5% of `antidoom-mix-v1.0` and is verifiable-constraint
+    # instruction following of exactly IFEval's kind, so a proportional buffer delivers it at
+    # 0.1% of the training tokens at 1% replay and 0.5% at 5%. Dose and composition were never
+    # separable in the C sweep because only one of them ever moved.
+    #
+    # Both buffers are sized so that the arm reading them at its own fraction makes at most one
+    # pass. C5b's 5% dose was 3.2M tokens against a 3.21M-token buffer, which is one epoch by
+    # construction; 20% of the same 64M budget is 12.8M tokens, so a 20% arm needs a buffer four
+    # times the size or it replays the same 7,945 completions four times and measures
+    # memorization. Hence 32,000 prompts rather than 8,000 for both.
+    #
+    # The three contrasts, with C7 as the origin at zero replay:
+    #   R3 - R2   composition, at a fixed 20% dose and a fixed budget
+    #   R3 - R1   dose, over one and the same reweighted buffer
+    #   R1 - C7   whether a small reweighted dose moves the axis at all
+    "R1":  {"mix": "raw", "replay_frac": 0.05,
+            "replay_object": "tidepool/s5.5/replay_constraint/replay.jsonl.gz"},
+    "R2":  {"mix": "raw", "replay_frac": 0.20,
+            "replay_object": "tidepool/s5.5/replay_proportional/replay.jsonl.gz"},
+    "R3":  {"mix": "raw", "replay_frac": 0.20,
+            "replay_object": "tidepool/s5.5/replay_constraint/replay.jsonl.gz"},
 }
 ARM = str(os.environ.get("TIDEPOOL_PACK_ARM") or C("arm", "C1"))
 if ARM not in ARMS:
@@ -168,7 +194,9 @@ BASE = C("base_model", "LiquidAI/LFM2.5-1.2B-Instruct")
 TRAIN_OBJ = C("train_object", "tidepool/s4.4/train.jsonl.gz")
 VAL_OBJ = C("val_object", "tidepool/s4.4/val.jsonl.gz")
 GUARD_OBJ = C("guardrail_object", "tidepool/s5.3/tooldata/tooldata_train.jsonl.gz")
-REPLAY_OBJ = C("replay_object", "")
+# `A` rather than `C`, so an arm can name its own buffer. s5.5 runs two buffers at once
+# and the arm table is where the sweep says which is which.
+REPLAY_OBJ = str(A("replay_object", ""))
 
 MIX = str(A("mix", "role_balanced"))            # role_balanced (C1) | raw (C7)
 TUNING = str(A("tuning", "lora"))               # lora | full (C3)

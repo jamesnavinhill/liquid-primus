@@ -72,6 +72,17 @@ parameters:
   val_object: tidepool/s4.4/val.jsonl.gz
   guardrail_object: tidepool/s5.3/tooldata/tooldata_train.jsonl.gz
   replay_object: ""
+  # Two replay buffers, and therefore two config keys. `pack_provides` names the object a
+  # producing arm stands in for by CONFIG KEY, and reads the path out of the pack's own config,
+  # so two generator arms on one card cannot both provide `replay_object`: the second would
+  # overwrite the first's registration and one of the trainers would read the wrong buffer.
+  # Giving each buffer its own key keeps the two registrations distinct, and the paths here are
+  # the same strings the s5.5 arm table names in main.py, which is what makes the handover
+  # resolve locally. Neither key ends in `_object`, deliberately: the supervisor pre-fetches
+  # every `*_object` from shared storage, and an object this pack is about to generate must
+  # not be fetched.
+  replay_object_proportional: tidepool/s5.5/replay_proportional/replay.jsonl.gz
+  replay_object_constraint: tidepool/s5.5/replay_constraint/replay.jsonl.gz
   budget_tokens: 64000000
   guardrail_epochs: 2.0
   replay_frac: 0.0
@@ -102,6 +113,21 @@ parameters:
   batch_size: 48
   max_prompt_tokens: 1024
   sample_salt: tidepool-replay-v1
+  # Stratified sampling by sub-source, added at s5.5. An empty map is the default and draws the
+  # unstratified hash-rank sample the s5.3 buffer was built with, byte for byte. A non-empty map
+  # reweights: {"<substring of the row id>": <share of n_prompts>}, remainder to everything that
+  # matched nothing.
+  #
+  # s5.5 uses {"open_perfectblend_autoif": 0.47, "ifstruct_train_generated": 0.03}, which lifts
+  # the verifiable-constraint slice from 10.5% of the buffer to exactly half. The split between
+  # the two is set by supply, not by preference. The decontaminated pool holds 46,734 autoif
+  # rows and 1,279 ifstruct rows: `ifstruct_train_generated` began at 20,000 and lost 18,721 of
+  # them to the s4 contamination filter, because IFStruct is also an evaluation set here and
+  # almost all of its training rows collide with it. At n_prompts 32,000 a 0.05 share would ask
+  # for 1,600 rows the pool cannot supply and replay.py would fail the run, correctly; 0.03 asks
+  # for 960 and leaves a quarter of the stratum in reserve. The 0.02 that moves to autoif buys
+  # the same constraint-bearing half either way.
+  strata: "{}"
   c5b_dose_tokens: 3200000
   # Checkpointing, same meaning as in the solo task. Each child namespaces its objects
   # by arm as well as by run tag, so several arms on one card cannot collide.

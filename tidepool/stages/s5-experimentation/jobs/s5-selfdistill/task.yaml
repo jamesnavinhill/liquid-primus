@@ -30,6 +30,12 @@ parameters:
   batch_size: 48
   max_prompt_tokens: 1024
   sample_salt: tidepool-replay-v1
+  # Stratified sampling by sub-source, added at s5.5. An empty map is the default and draws the
+  # unstratified hash-rank sample the s5.3 buffer was built with, byte for byte. A non-empty map
+  # reweights: {"<substring of the row id>": <share of n_prompts>}, remainder to everything that
+  # matched nothing. s5.5 uses {"open_perfectblend_autoif": 0.45, "ifstruct_train_generated": 0.05}
+  # to lift the verifiable-constraint slice from 10.5% of the buffer to half of it.
+  strata: "{}"
   run_tag: s5.3-selfdistill-full
   # Where the sweep reads it from. C5a and C5b load replay from shared storage, not from a
   # job artifact, so a run that generates the buffer and fails to place it has produced

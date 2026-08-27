@@ -31,6 +31,18 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-27 04:20 UTC: the s5.5 replay ladder is on a card, and the fix s5.4 asked
+for turned out to be capped by the project's own decontamination.** Five arms on one L40S:
+two 32,000-prompt self-distillation buffers generated side by side, one sampled proportionally
+and one reweighted to half verifiable-constraint rows, then three C7-recipe trainers at 5% and
+20% replay that separate composition from dose at the same fixed 64M-token budget. Counting
+the pool by sub-source showed the reweighting has a hard ceiling: `ifstruct_train_generated`
+lost 18,721 of its 20,000 rows to the 13-gram contamination index, because IFStruct is also an
+evaluation set here, so the second constraint stratum can supply 1,279 rows and not the 1,600
+the design first asked for. Shares moved to 0.47 autoif and 0.03 ifstruct, which is the same
+half-constraint buffer from a source the pool actually has. Estimated 11 to 12 GPU-hours of
+the 92.6 remaining.
+
 **Update, 2026-08-27 01:00 UTC: the base model is back, and it ends the sweep. Every one of
 the eight variants beats the untuned base on tool calling by 3.6 to 5.9 points, and every one
 of them is 3.5 to 11.7 points *below* it on instruction following, against a 2-point
@@ -45,11 +57,13 @@ loses to it by 6.7 points on instruction following, all of them surviving correc
 78 comparisons. The sweep's one real gain holds: the raw-mixture recipe catches 11 more
 points of fabricated returns than the reference. The cause of the instruction-following loss
 is identifiable from the sweep's own design. The replay data meant to protect general quality
-was drawn from this project's own agentic prompts, so it was never carrying
-instruction-following behaviour to protect. Stage 5.4 is decided here under autonomous mode
-with nobody reviewing it: no winner is picked, the falsification is recorded as the finding
-the plan says it is, and stage 5.5 is redirected at the regression, running the raw mixture
-at the cheapest adapter size with a replay ladder built from general-instruction data instead.
+does contain constraint-following examples of exactly the kind the benchmark tests, about a
+tenth of it, but the variants saw that slice at roughly a tenth of one percent of their
+training. The protection was in the recipe at a dose two orders of magnitude too small to do
+anything. Stage 5.4 is decided here under autonomous mode with nobody reviewing it: no winner
+is picked, the falsification is recorded as the finding the plan says it is, and stage 5.5 is
+redirected at the regression with three variants that separate how much replay from what kind
+of replay.
 Spend is 52.4 GPU-hours of the 145 approved.
 
 **Update, 2026-08-27 00:21 UTC: the paired comparison is in, and the sweep produced exactly
@@ -2496,32 +2510,66 @@ detection. Choosing on what survives once the regression is fixed points somewhe
 
 The binding constraint is the IFEval regression, and the sweep contains its own diagnosis.
 
-Replay was the axis meant to protect general quality, and it could never have done so here.
-The s4 decision, recorded at the time, is that replay draws on B1's greedy completions over
-**the project's own prompt pool**, because the pool ships no responses and there is no
-general-instruction data anywhere in the mixture. Self-distillation over agentic prompts is
-on-policy for the task and carries no instruction-following distribution at all. The numbers
-agree: C5a at 1% reaches 0.7837 and C5b at 5% reaches 0.7708, both around 2 to 3 points above
-C1 and not improving with fraction. The axis moved a little and then stopped, which is what a
-replay buffer aimed at the wrong distribution looks like.
+Replay was the axis meant to protect general quality, and it moved IFEval by 2 to 3 points and
+then stopped: C5a at 1% reaches 0.7837, C5b at 5% reaches 0.7708, and raising the fraction
+fivefold made it slightly worse rather than better. Reading the replay pool rather than
+assuming what is in it explains why, and it is a dose problem rather than a distribution one.
 
-So s5.5 runs **C7's raw mixture at rank 16 with a general-instruction self-distillation replay
-ladder**, built the same way B1's existing replay was built and over a general-instruction
-prompt set disjoint from IFEval's, so the eval stays held out.
+**Correcting my own reading from an hour ago.** I wrote that replay draws on the project's
+agentic prompt pool and therefore carried no instruction-following behaviour at all. That is
+wrong. The pool is `antidoom-mix-v1.0`, 447,053 prompts, and it is a general-quality corpus:
+PubMedQA, UltraChat, MMLU auxiliary, LMSYS arena, MetaMathQA, EvolCodeAlpaca, UltraInteract,
+MathQA. It is also decontaminated against IFEval by the 13-gram index built at s4.
 
-Each piece of that has a reason from this sweep:
+What it contains, which nothing in the project had looked at until now, is a slice of
+`open_perfectblend_autoif` at **46,734 rows, 10.5% of the pool**. AutoIF is verifiable-constraint
+instruction following, and its prompts read exactly like IFEval's: *do not use the word
+'important' anywhere in your response*, *your response should contain at least 200 characters*,
+*your response must be presented in a report format*. There is a second, much smaller slice of
+`ifstruct_train_generated` at 0.3%.
+
+So the protective distribution was there all along, and the arms saw almost none of it. The
+frozen replay buffer is a hash-rank sample of 8,000 prompts drawn proportionally from the pool,
+so about 840 of them are constraint-bearing. At a replay fraction of 1% that slice is roughly
+0.1% of the training tokens, and at 5% it is roughly 0.5%. An axis that moves 2 to 3 points on
+a tenth of a percent of the run has not been tested; it has been sampled once, at a dose two
+orders of magnitude below anything that would be expected to hold a capability in place.
+
+s5.5 therefore separates the two levers the sweep confounded, keeping compute per arm fixed at
+the same 64M tokens every C arm got:
+
+- **Dose.** Raise the replay fraction with the buffer's composition left proportional.
+- **Composition.** Reweight the buffer toward the constraint-bearing sources, which buys the
+  same dose of protection for a fifth of the replay tokens.
+
+Three arms against C7 as the origin, since C7 is already the raw mixture at rank 16 with no
+replay:
+
+| arm | replay fraction | replay buffer | isolates |
+|-----|----------------:|---------------|----------|
+| R1 | 0.05 | reweighted, about half constraint-bearing | composition |
+| R2 | 0.20 | proportional, as C5a/C5b | dose |
+| R3 | 0.20 | reweighted | both |
+
+Each piece of the surrounding recipe has a reason from this sweep:
 
 - **C7's raw mixture**, because role balancing is the one thing the sweep resolved. C7's
   +0.1111 [+0.0556, +0.1667] on flag detection is the only family-corrected gain among 78
   cells, and C7 is the only arm at 0.70.
 - **Rank 16**, because rank 64 bought nothing measurable and cost the most IFEval of any arm
   (C6, −11.65). Cheapest recipe, per the tie-break's own cost ordering.
-- **A replay ladder rather than a single fraction**, because the existing 1% and 5% points
-  are on the wrong distribution and carry no information about where the right one saturates.
+- **A fresh self-distillation pass** for the reweighted buffer, because reweighting changes
+  which prompts are sampled and the completions have to be B1's own over those prompts. Built
+  by the same frozen greedy generator, over the same decontaminated pool.
 - **Pass condition**: IFEval within 2.0 of B1 while holding detection at or above C7's 0.7222
   and false-flag at or below 0.15. Failing that, the forced trade-off is the paper's result
   and the delivered checkpoint is chosen on the operator's stated priority order, with tool
   calling first.
+
+The confound this design is careful about: raising replay at fixed token budget displaces
+guardrail and tool-calling data, so R2 and R3 are expected to give some detection back. How
+much is the number s5.5 exists to produce, and R1 is in the design precisely because it buys
+protection at a fifth of the displacement.
 
 Spend stands at 52.4 GPU-hours of the 145 approved, so 92.6 remain. The ladder is sized
 inside that and its cost is stated before it is spent.
@@ -2536,6 +2584,126 @@ inside that and its cost is stated before it is spent.
   and its rescope trigger needs every arm to fail gate 1, so neither branch covers an empty
   set, and the rule is extended here to say what happens: no winner, no stop, and s5.5 aimed
   at the binding constraint. Direction chosen: C7's raw mixture at rank 16 with a
-  general-instruction self-distillation replay ladder, because the existing replay draws on
-  the project's own agentic prompt pool and was never able to protect instruction following.
-  Decided under autonomous mode; nobody reviewed it.
+  replay buffer reweighted toward the constraint-bearing slice the existing buffer contains at
+  only 10.5%, plus a dose arm that raises the fraction with composition left alone. Decided
+  under autonomous mode; nobody reviewed it.
+- 2026-08-27 01:20Z · s5.4 · **Correction to the entry above.** I recorded the replay pool as
+  the project's agentic prompt pool. It is not: `antidoom-mix-v1.0` is a general-quality
+  corpus, decontaminated against IFEval, and 10.5% of it (46,734 rows of
+  `open_perfectblend_autoif`) is verifiable-constraint instruction following of exactly
+  IFEval's kind. The frozen replay buffer samples the pool proportionally, so at 1% and 5%
+  replay the constraint-bearing dose is roughly 0.1% and 0.5% of the training tokens. The
+  direction for s5.5 is unchanged in substance and sharper in mechanism: the fix is dose and
+  composition of a buffer the project already has, not a corpus it lacks.
+
+## Operator input: a second decline, and what I did with it (s5.5)
+
+The backend raised a no-checkpoint prompt against this project, quoting a status message, and
+the operator declined it: *"Full Self Driving: no operator is answering this. Proceed on your
+own recommendation, and record in the stage report which option you took and why."* Recorded
+here so the decline is in the stage record rather than only in a retired marker.
+
+What I took it to authorise is the branch autonomous mode already describes: choose the option
+I would have recommended, write down that nobody reviewed it, and keep working. The choice it
+lands on is the one below, building and queueing the s5.5 ladder exactly as s5.4 specified it,
+without pausing at the substage for a sign-off nobody is there to give. The three things that
+still stop the run are unchanged: a blocker I cannot clear, spending past the approved 145
+GPU-hours, and any proposal to rescope.
+
+## The replay pool's constraint slice is capped by decontamination, and the shares moved (s5.5)
+
+s5.4 specified a reweighted buffer "about half constraint-bearing" and the code was written
+with shares of 0.45 `open_perfectblend_autoif` and 0.05 `ifstruct_train_generated`. The second
+of those cannot be filled, and the reason is worth recording because it is the s4 pipeline
+working correctly.
+
+Counting the decontaminated pool by sub-source, from the s4 split manifest and the antidoom
+contamination flags rather than by downloading 447,053 rows into the authoring box:
+
+| sub-source | in the corpus | in the pool | share of pool |
+|---|---:|---:|---:|
+| `open_perfectblend_autoif` | 49,995 | 46,734 | 10.45% |
+| `ifstruct_train_generated` | 20,000 | 1,279 | 0.29% |
+| everything else | 408,234 | 399,040 | 89.26% |
+| **total** | **478,229** | **447,053** | |
+
+`ifstruct_train_generated` loses 18,721 of its 20,000 rows, which is 93.6% of the sub-source
+and the overwhelming majority of the 20,166 rows the whole corpus dropped. IFStruct is one of
+this project's own evaluation sets, so its training split collides with the 13-gram index
+almost everywhere. The survivors are a hard ceiling: at 32,000 prompts a 0.05 share asks for
+1,600 rows against 1,279 available, and the sampler treats an unfillable stratum as a run
+failure rather than as a short sample.
+
+So the queued shares are **0.47 autoif and 0.03 ifstruct**. The buffer is still exactly half
+constraint-bearing, which is the property s5.4 specified; the 0.02 that moves between the two
+strata buys the same thing from a source the pool can actually supply, and leaves a quarter of
+the ifstruct stratum in reserve. Both numbers are now pinned by a test that builds a fixture
+at the real per-sub-source counts, so a later change to the pool fails in five seconds here
+rather than forty minutes into a generation arm on a rented card.
+
+## The s5.5 ladder is one card, five arms, and here is what it costs before it is spent (s5.5)
+
+| arm | script | ceiling | waits on | what it is |
+|---|---|---:|---|---|
+| RBP | `replay.py` | 18 GB | — | 32,000-prompt buffer, sampled proportionally |
+| RBC | `replay.py` | 18 GB | — | 32,000-prompt buffer, half constraint-bearing |
+| R1 | `main.py` | 9.5 GB | RBC | C7 recipe, 5% replay of the reweighted buffer |
+| R2 | `main.py` | 9.5 GB | RBP | C7 recipe, 20% replay of the proportional buffer |
+| R3 | `main.py` | 9.5 GB | RBC | C7 recipe, 20% replay of the reweighted buffer |
+
+Peak concurrent demand is 37.0 GB against a 43.9 GB limit, and it is not the flat sum of the
+five: it is RBP still generating while RBC has already handed its file to R1 and R3. Both
+buffers are 32,000 prompts rather than s5.3's 8,000 so that a 20% dose, 12.8M tokens of the
+same fixed 64M-token budget every C arm got, makes at most one pass. At 8,000 prompts R2 and
+R3 would replay the same 7,945 completions four times over and would be measuring memorization
+of a small set alongside replay. The generator's own repeat-count gate is raised to 12.8M to
+match, so it checks the dose these arms will actually take.
+
+**Cost.** The s5.3 generator did 8,000 prompts solo in 0.372 GPU-hours, so 32,000 is about 1.5
+hours of card time each and roughly 3 hours wall for two sharing one card. The C-sweep LoRA
+arms came in at 2.35 to 2.58 GPU-hours apiece at this budget, and three sharing a card run at
+about 1.5x aggregate throughput, so the training block is 7 to 9 hours wall. **Estimate: 11 to
+12 GPU-hours on one L40S, inside the 1,200-minute wall the task requests.** Spend stands at
+52.4 of the 145 approved, so this leaves roughly 80 hours for `s5.6` and the `s6` evaluation
+pass. No approval is being spent past; the number is stated first because that is this
+project's standing instruction.
+
+**A larger version, for the record.** The obvious extension is a dose ladder at 0.10 and 0.35
+over the reweighted buffer, plus a seed replicate of R3, which is three more trainer arms. They
+do not fit beside these on one card at 37.0 GB peak, so they are a second pack: about 8 more
+GPU-hours. I am not queuing it. Three arms answer the two contrasts s5.4 asked for, and the
+right time to buy a finer dose curve is after seeing whether the coarse one moves IFEval at
+all.
+
+**Provider and hardware.** One L40S on AWS, per the team's provider note, which pins L40S
+sourcing to AWS g6e ahead of Nebius and RunPod. Every s5.3 pack ran the same way.
+
+**Two producers on one card needed a fix.** `pack_provides` resolves the object a producing arm
+stands in for by *config key*, reading the path out of the pack's own config, so two generators
+both naming `replay_object` would have had the second registration overwrite the first and two
+of the three trainers would have trained on a buffer that is not the one their arm is defined
+by. Nothing would have crashed and the composition contrast would have measured nothing, after
+twelve hours on a card. The pack now declares `replay_object_proportional` and
+`replay_object_constraint` as separate keys, and a scheduling test runs the real supervisor
+over this exact five-arm topology and checks what each trainer resolved.
+
+## The with-base comparison table was missing from the project and is restored (s5.5)
+
+`runs/s5.3-compare-with-base/` was gone from the project directory. It holds the 78-comparison
+paired table that includes `B1`, which is the evidence the entire s5.4 decision rests on: the
+IFEval half of gate 2, H2's falsification, and the "one real gain in seventy comparisons"
+reading all cite it, and the 70-comparison table that was still present is the earlier family
+without the base. Nothing in the report noticed, because the report quotes the numbers rather
+than reading the file.
+
+It survived in the operator's mirror at `github.com/jamesnavinhill/liquid-primus`, pushed
+there when it was produced, and both files are copied back into `runs/s5.3-compare-with-base/`
+unchanged. Verified on the way in: `n_comparisons` 78 over the nine arms `C1, B1, C2p, C3, C4,
+C5a, C5b, C6, C7`, and the B1 rows present. It carries two assertion failures and they are the
+documented ones, not new damage: B1 reads `probes_clean_corpus` and `probes_flag_clean_corpus`
+at the empty-set checksum, because the clean-control corpus arm was added after B1 ran. That is
+why the family is 78 and not 80, and it is the same fact s5.4 already recorded when it read
+gate 1 on the thirty synthetic items. I do not know what removed the directory; the project directory is copied in and out around every
+run and carries no version history of its own, so there is no trace to read. Worth saying
+plainly, because it is the second time this stage that a result went missing and was recovered
+from somewhere else, and the mirror is the only reason it was recoverable at all.
