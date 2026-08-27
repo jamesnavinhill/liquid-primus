@@ -349,8 +349,15 @@ def main():
     # if both arms walked the corpus in the same order. Every arm here was scored by the same
     # harness over the same files, so this should hold everywhere and is asserted rather than
     # assumed: it is also a free check that no arm was scored over a different corpus.
+    #
+    # An arm that legitimately has no rows for a component is skipped. B1 is scored without a
+    # `clean_control_object`, so its corpus components select nothing and hash to the sha of the
+    # empty sequence; the cell is already dropped for that arm with a note, and asserting order
+    # against an empty selection only manufactures a failure out of an absence.
     for (arm, comp), sha in sorted(ID_SHA.items()):
         if arm == ref_arm or (ref_arm, comp) not in ID_SHA:
+            continue
+        if not loaded[arm][0].get(comp) or not ref_data.get(comp):
             continue
         check("%s and %s read %s in the same item order" % (arm, ref_arm, comp),
               sha == ID_SHA[(ref_arm, comp)],

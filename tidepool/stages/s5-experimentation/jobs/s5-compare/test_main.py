@@ -308,6 +308,21 @@ ok("the corrected family shrank to the one real cell", S3["n_comparisons"] == 1,
 ok("an empty population is not an assertion failure", not S3["assertion_failures"],
    S3["assertion_failures"])
 
+# ---- and the asymmetric case, which is the one that actually shipped
+#
+# B1 is scored without a `clean_control_object`, so it selects nothing for the corpus
+# components while every tuned arm selects 138 rows. The sha of an empty id sequence is a
+# perfectly good sha and will never equal a non-empty one, so the order assertion fired
+# twice on a run whose only fault was that the base model has no corpus arm to read.
+put("REF", "scored_probes.jsonl", probes([1, 0, 0, 0], [1, 1, 1], [1, 1], [1, 0]))
+S3b = main.main()
+ok("one arm missing a component is not an order-assertion failure",
+   not S3b["assertion_failures"], S3b["assertion_failures"])
+ok("the asymmetric cell still drops with a note",
+   [c["component"] for c in S3b["cells"]] == ["probes_detect"]
+   and any("selected no rows" in n for n in S3b["notes"]),
+   ([c["component"] for c in S3b["cells"]], S3b["notes"]))
+
 # ---- pairing on a field inside `detail`, which is where the reliability gate lives
 #
 # On a real probe row `correct` and `detail.flagged` answer different questions and can move

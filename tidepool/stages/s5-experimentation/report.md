@@ -31,6 +31,27 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-27 01:00 UTC: the base model is back, and it ends the sweep. Every one of
+the eight variants beats the untuned base on tool calling by 3.6 to 5.9 points, and every one
+of them is 3.5 to 11.7 points *below* it on instruction following, against a 2-point
+allowance. No variant passes all three gates, and the hypothesis that this trade could be
+avoided is falsified in the exact words the plan wrote for it.** The gate is written against
+the base, whose scores had been lost to an earlier save bug, so it had been getting checked
+against the reference variant instead, which flattered every arm. A scoring-only replay
+recovered the base from its saved outputs in four minutes on one card, and the paired
+comparison now covers it: the reference variant beats the base by 3.2 and 12.4 points on the
+two tool-calling conventions and by 11.9 points on catching fabricated tool returns, and
+loses to it by 6.7 points on instruction following, all of them surviving correction across
+78 comparisons. The sweep's one real gain holds: the raw-mixture recipe catches 11 more
+points of fabricated returns than the reference. The cause of the instruction-following loss
+is identifiable from the sweep's own design. The replay data meant to protect general quality
+was drawn from this project's own agentic prompts, so it was never carrying
+instruction-following behaviour to protect. Stage 5.4 is decided here under autonomous mode
+with nobody reviewing it: no winner is picked, the falsification is recorded as the finding
+the plan says it is, and stage 5.5 is redirected at the regression, running the raw mixture
+at the cheapest adapter size with a replay ladder built from general-instruction data instead.
+Spend is 52.4 GPU-hours of the 145 approved.
+
 **Update, 2026-08-27 00:21 UTC: the paired comparison is in, and the sweep produced exactly
 one real gain across seventy comparisons. It belongs to the raw-mixture recipe, and that
 recipe fails a different pre-registered gate, so no variant passes all three.** Comparing
@@ -2324,3 +2345,197 @@ and it failed loudly. Assertions that only ever pass have not been shown to work
   ids kept and paired by occurrence with an id-order assertion behind it, and the cross-check
   paths repointed. 51 driver checks, 0 failed. Rerun queued as `3fec1ed8`, CPU only, no
   GPU-hours. Spend 52.323 of 145.
+
+## One real gain in seventy comparisons, and the gate that rules it out (s5.3)
+
+`3fec1ed8` compared all eight arms against C1 in one call: 70 cells, 10 components an arm,
+**0 assertion failures**, every joined rate reconciled against the arm's own
+`eval_summary.json`. 22 cells separate by interval; **9 survive Holm across the whole family,
+and 8 of the 9 are the arm doing worse than the reference.**
+
+**The one family-corrected gain in the entire sweep is C7's detection rate**, +0.1111 with a
+95% interval of [+0.0556, +0.1667] and a Holm-corrected p of 0.011. It costs BFCL 0.0255 on
+native tools and 0.0287 on tools-text, both also family-corrected. Nothing else gains
+anywhere. C3, C5a and C6 have no surviving cell in either direction: on this evidence they
+are the reference recipe with a knob turned and nothing to show for it.
+
+**The amendment that added the flag cells is what made the finding sayable at all.** Read on
+`correct`, C7's probe delta is +0.0111 at Holm p = 1.0, indistinguishable from C1. Read on
+`detail.flagged`, the same 270 items give +0.1111 at p = 0.011. One file, two readings, and
+only one of them is the axis the gate is written on.
+
+**C2p is the stage's cleanest ablation.** Removing the guardrail block costs 60.4 points of
+detection and 3.5 points of tool calling as well. The guardrail data is not a tax on tool
+calling; it does the detection work and takes tool calling with it when removed.
+
+**Two earlier readings were wrong.** Gate 2 is a *worst-category* floor and was checked at
+13:15Z on composites. Read as written, C7's `live_irrelevance` sits 6.80 points below C1 on
+its own better convention and 6.46 below on native, with five native categories past the 3.0
+floor, so **C7 fails gate 2**. The direction is coherent rather than noisy: `irrelevance` and
+`live_irrelevance` reward declining to call a tool, and a recipe trained to distrust tool
+returns is evidently also readier to call a tool it should have refused. The guardrail axis
+and the abstention axis are not independent, which nothing in the design anticipated.
+Separately, C7's IFEval is **0.7338**, not the 0.7411 recorded at 13:15Z; the gap to C1 is
+1.85 against a 2.0 allowance, so that clause passes with far less room than recorded.
+
+**So no arm passes all three gates**, and the pre-registered rule does not cover that: its
+tie-break needs an arm that passes all three, and its rescope trigger needs every arm to fail
+gate 1. Closing that gap is s5.4's job and will be recorded as the departure it is.
+
+**Gate 2 is written against the matched base, and the matched base has no per-category
+table.** B1's per-item files were lost to the typed-save bug, so gate 2 has been unevaluable
+as written for the whole stage; the composite reading that replaced it happened to pass,
+which is why the gap went unnoticed. One earlier framing also needs correcting: B1's scored
+files are not unretrievable. They are listed in its job record under `eval_results`; what is
+true is that no command available here can fetch them, since `job download` reaches artifacts
+only. `f611bb2b` replays B1's saved completions through the same graders, about 0.2 GPU-h,
+and promotes to `tidepool/s5.3/arms/B1/` so gate 2 becomes evaluable against its own base and
+B1 enters the comparison as an arm, putting a paired test behind the plan's
++3.0-over-matched-base claim.
+
+- 2026-08-27 00:25Z · s5.3 · **Comparison lands: one family-corrected gain in the sweep, and
+  the arm that has it fails gate 2.** `3fec1ed8` complete, 70 cells, 0 assertion failures, 22
+  separating by interval, 9 surviving Holm, 8 of the 9 losses. C7 detection +0.1111
+  [+0.0556, +0.1667] Holm p=0.011 is the only gain; C7 BFCL native −0.0255 and tools-text
+  −0.0287 are the price, both family-corrected. C2p detection −0.6037. C5b IFStruct −0.0280.
+  C4 BFCL native −0.0146. First run `08ab59c0` superseded and uncited after failing 16 of its
+  own assertions. Gate 2 re-read as the worst-category floor it is: **C7 fails**,
+  `live_irrelevance` −6.80 on 882 items. C7 IFEval corrected to 0.7338 from 0.7411. Gate 3
+  unaffected. **No arm passes all three gates**, which neither the tie-break nor the rescope
+  trigger covers. B1 replay `f611bb2b` queued so gate 2 can be read against the base it names.
+  Mirrored to `github.com/jamesnavinhill/liquid-primus` as `1d6357c`. Spend 52.323 of 145.
+
+## The s5.4 decision: H2 is falsified as written, and s5.5 goes at the one thing that broke (s5.4)
+
+Autonomous mode is on, so this checkpoint was decided here and **no operator reviewed it**.
+Everything below is the rule being executed, including the places where the rule does not
+cover the case and I had to extend it.
+
+### The two gate-1 bars disagree, and it does not matter
+
+The project carries two pre-registered bars for the same quantity, both written before any
+arm had a score.
+
+The **plan's stop/go into D**, amended at s5.2 on 2026-08-25, asks for a probe flag rate of
+**≥ 0.35** at false-flag ≤ 0.15. It set 0.35 rather than 0.70 with an explicit reason: 0.70
+is the s6 criterion on the finished checkpoint, and demanding it of a screening-profile
+supervised arm would kill the preference rung for failing to already be the answer.
+
+The **s5.4 rule**, written 2026-08-26 08:20Z, asks for **≥ 0.70**, describing it as coming
+from the project's own success criteria. It restated the s6 criterion without addressing the
+s5.2 amendment that had deliberately lowered the screening bar the day before.
+
+Recording the conflict rather than quietly picking one. Both are applied:
+
+- at **0.35**, seven of eight arms pass. Only C2p fails, at 0.0074, which is the ablation
+  working as designed.
+- at **0.70**, one arm passes: C7, at 0.7222 detection and 0.0217 corpus false-flag.
+
+Neither bar decides anything, because gate 2 removes every arm either way.
+
+### Gate 2, read against the matched base for the first time
+
+The category half is fine. Within `tools_text`, the better convention for seven of the eight
+arms, five arms breach nothing: C1 (worst −2.27), C3 (+0.23), C4 (−1.70), C5b (+0.11), C6
+(−2.15). C5a, C7 and C2p each breach one category, always `live_irrelevance`.
+
+The IFEval half removes all eight.
+
+| arm | IFEval | vs B1 (0.8189) |
+|-----|-------:|---------------:|
+| C3  | 0.7837 | −3.51 |
+| C5a | 0.7837 | −3.51 |
+| C5b | 0.7708 | −4.81 |
+| C1  | 0.7523 | −6.65 |
+| C4  | 0.7468 | −7.21 |
+| C7  | 0.7338 | −8.50 |
+| C2p | 0.7283 | −9.06 |
+| C6  | 0.7024 | −11.65 |
+
+The allowance is 2.0. The best arm misses by 1.5 points and the worst by 9.7. The result is
+not an artifact of the base's own scoring pass: C1 against B1 is −6.65 as a paired,
+per-item, Holm-corrected loss on 541 shared items (p = 4.8e−3).
+
+One escape route exists and is refused. IFEval reports four sub-metrics, and on the loosest
+of them, `instruction_level_loose`, C3 comes in at −1.92 and would pass. Every IFEval figure
+this project has recorded, at every stage, is `prompt_level_strict`. Changing convention now,
+after seeing which convention lets exactly one arm through, is fitting the rule to the data.
+The convention stands and C3 fails with the rest.
+
+### H2 is falsified, in its own words
+
+The plan states H2 as falsified if *no arm holds all five guardrails within 2.0 points while
+gaining ≥ 3.0 on BFCLv3*. Every arm gains between +3.64 and +5.88 on BFCLv3 over the matched
+base. No arm holds IFEval within 2.0. Both halves of the falsification condition are met, and
+the plan already says what to do with that: **a forced trade-off is a reported finding, not a
+failure of the project.**
+
+H3 takes a hit in the other direction and it is worth recording as a positive. H3 predicted
+that flag-rather-than-assert is a preference-rung behaviour that SFT alone does not produce
+at 0.70. C7 reaches 0.7222 by supervised fine-tuning alone. The preference rung may still add
+to it, and the claim that it is *required* is contradicted by one arm in this sweep.
+
+### The rule has a hole, and here is how it is closed
+
+No arm passes all three gates. The tie-break clause presupposes a non-empty passing set and
+says nothing about an empty one. The rescope trigger fires only if **every** arm fails gate
+1, and C7 passes at either bar, so it does not fire. The rule as written has no branch for
+where the sweep actually landed.
+
+**Closure, recorded as an extension of the rule and not as an application of it.** When the
+passing set is empty and the rescope trigger has not fired, s5.4 picks no winner and does not
+stop. It records the falsification, names the single binding constraint, and points s5.5 at
+that constraint. The direction is chosen by which recipe is closest to passing *conditional
+on the constraint being removed*, not by which is closest to passing now.
+
+Choosing on today's ranking would hand the stage to C3 or C5a, the two arms nearest the
+IFEval line, and both of those fail gate 1 at 0.70 and sit in the middle of the pack on
+detection. Choosing on what survives once the regression is fixed points somewhere else.
+
+### The direction for s5.5
+
+The binding constraint is the IFEval regression, and the sweep contains its own diagnosis.
+
+Replay was the axis meant to protect general quality, and it could never have done so here.
+The s4 decision, recorded at the time, is that replay draws on B1's greedy completions over
+**the project's own prompt pool**, because the pool ships no responses and there is no
+general-instruction data anywhere in the mixture. Self-distillation over agentic prompts is
+on-policy for the task and carries no instruction-following distribution at all. The numbers
+agree: C5a at 1% reaches 0.7837 and C5b at 5% reaches 0.7708, both around 2 to 3 points above
+C1 and not improving with fraction. The axis moved a little and then stopped, which is what a
+replay buffer aimed at the wrong distribution looks like.
+
+So s5.5 runs **C7's raw mixture at rank 16 with a general-instruction self-distillation replay
+ladder**, built the same way B1's existing replay was built and over a general-instruction
+prompt set disjoint from IFEval's, so the eval stays held out.
+
+Each piece of that has a reason from this sweep:
+
+- **C7's raw mixture**, because role balancing is the one thing the sweep resolved. C7's
+  +0.1111 [+0.0556, +0.1667] on flag detection is the only family-corrected gain among 78
+  cells, and C7 is the only arm at 0.70.
+- **Rank 16**, because rank 64 bought nothing measurable and cost the most IFEval of any arm
+  (C6, −11.65). Cheapest recipe, per the tie-break's own cost ordering.
+- **A replay ladder rather than a single fraction**, because the existing 1% and 5% points
+  are on the wrong distribution and carry no information about where the right one saturates.
+- **Pass condition**: IFEval within 2.0 of B1 while holding detection at or above C7's 0.7222
+  and false-flag at or below 0.15. Failing that, the forced trade-off is the paper's result
+  and the delivered checkpoint is chosen on the operator's stated priority order, with tool
+  calling first.
+
+Spend stands at 52.4 GPU-hours of the 145 approved, so 92.6 remain. The ladder is sized
+inside that and its cost is stated before it is spent.
+
+- 2026-08-27 00:55Z · s5.4 · **No arm passes all three gates, H2 is falsified as
+  pre-registered, and s5.5 is redirected at the regression.** Gate 2 read against the matched
+  base for the first time, now that `f611bb2b` has recovered B1's table: every arm is 3.5 to
+  11.7 IFEval points below the base against a 2.0 allowance, while every arm gains 3.6 to 5.9
+  BFCLv3 points over it. Both halves of H2's falsification condition are met. Gate 1's two
+  pre-registered bars, 0.35 in the plan and 0.70 in the s5.4 rule, are in conflict and both
+  are reported; neither decides anything. The rule's tie-break assumes a non-empty passing set
+  and its rescope trigger needs every arm to fail gate 1, so neither branch covers an empty
+  set, and the rule is extended here to say what happens: no winner, no stop, and s5.5 aimed
+  at the binding constraint. Direction chosen: C7's raw mixture at rank 16 with a
+  general-instruction self-distillation replay ladder, because the existing replay draws on
+  the project's own agentic prompt pool and was never able to protect instruction following.
+  Decided under autonomous mode; nobody reviewed it.
