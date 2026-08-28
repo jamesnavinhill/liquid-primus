@@ -31,6 +31,25 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-28 19:05 UTC: all six 4-bit-and-reference serving points are measured and
+clean, every 4-bit build misses the quality bar, and the first recovery attempt is scoring
+now.** The best build keeps 94.6% of its full-precision score on average with its weakest axis
+at 85.7%, against a bar of 97% average and 93% on every axis that we fixed before seeing any
+numbers. Size and speed pass with room to spare: 0.70 to 0.73 GB against a 1.5 GB ceiling, at
+285 to 302 tokens a second. Every failing cell sits on one of the two axes where the
+full-precision model itself scores under 24%, so a drop of one or two items in a hundred reads
+as a 15% loss; corrected for how many comparisons we ran, the only differences that hold up are
+tool-calling ones, and those clear the floor. The recovery attempt spends part of the unused
+half-gigabyte of disk exactly where the failures are, without retraining anything. Both of its
+arms are generating now, one per card. The operator's GitHub and Hugging Face mirrors are
+current as of this wake, and the published model card now carries the failing retention numbers
+rather than the promise of them. Both scoring arms are through the two tool-calling components
+with real progress at every check. The second recovery rung, calibrated quantization, is now a
+one-flag job rather than a code change, and it still runs only if the first rung leaves the
+gap its stop rule describes. Spend stands at 71.657 of 145 GPU-hours.
+
+---
+
 **Update, 2026-08-28 18:05 UTC: the first checkpoint's 4-bit quality is measured and scored,
 and bare export alone does not hold the quality bar.** Tool calling keeps 94-96% of the
 full-precision score and instruction following keeps 98-100%, both comfortable.
@@ -3254,3 +3273,70 @@ the one place it is safe here: parallelism across cards cannot reproduce the sin
 compute contention that corrupted the packed attempts.
 
 Export detail and the dropped variant: runs/s5.6-g4a-quant-type.md.
+
+- 2026-08-28 18:50Z · mirror · **Both halves of the standing mirror note are live, and the
+  claim that neither was is wrong.** The 18:10Z entry above says nothing had reached Hugging
+  Face, and the `s7.3` line in `tasks.md` said nothing had been mirrored at all. Checking
+  rather than repeating the annotation: `github.com/jamesnavinhill/liquid-primus` was last
+  pushed at 14:31Z (`ac922eb4`, the export path through attempt 3), and
+  `huggingface.co/jamesnavinhill/liquid-primus` received the four 4-bit GGUFs at 15:00Z under
+  the operator's own account. Both annotations were stale, and both are corrected here and in
+  `tasks.md` rather than carried forward.
+- 2026-08-28 18:50Z · mirror · Pushed commit `8fb09cc0` to
+  `github.com/jamesnavinhill/liquid-primus`, bringing the code half current from 14:31Z: the
+  six-arm quality record, both retention comparison jobs with their tables and JSON, the G4a
+  export record and the recovery ladder, the completion-content gate (`asserts.py`
+  `check_completions` plus `test_completion_gate.py`), the solo-per-arm queue scripts, the
+  retention comparison task with `test_retention.py`, and the updated ledger and task list.
+  28 files, +3427 / −469.
+- 2026-08-28 18:52Z · mirror · Updated the Hugging Face model card at `tidepool/s5.6/README.md`
+  (commit `5806e7e6`). **The card had promised the retention table and promised that any build
+  failing the bar would be marked rather than quietly left up.** It now carries both: the
+  per-build mean and weakest axis, the per-axis table, the reading that every failing cell sits
+  on an axis whose full-precision base is under 0.24, and the Holm-corrected result that the
+  only cells surviving correction are tool-calling cells that clear the floor anyway. All four
+  published files are labelled as failing the bar as written, with `C7-Q4_K_M` named as the
+  best of them at 94.6% mean. The files stay up, labelled: a measured near miss is more useful
+  to someone building on this than a silent gap. Weights themselves were not re-uploaded — the
+  four GGUFs on the page are current, and the G4a `Q4_K_XL` builds go up once scored.
+
+## Operator input: a third decline, and the calibrated rung is now buildable (s5.6 G4a)
+
+The turn-boundary prompt written at 18:54Z came back declined, with the standing instruction to
+proceed on my own recommendation and record which option I took. There was no open question to
+settle: the prompt was the tail of a status message, not a request, and the recommendation it
+described (spend the unused disk headroom on the embedding and output tensors before spending
+anything on retraining) was already queued and running. So the recorded decision is to continue
+the recovery ladder exactly as `runs/s5.6-recovery-plan.md` orders it, with no change of course
+from the decline.
+
+Both G4a scoring arms are healthy. `d3ee0d7a` (R3-Q4_K_XL) and `bd52b7bc` (C7-Q4_K_XL) launched
+at 18:39Z, one arm per card, and are through the two 3,490-item tool-calling components with
+real generation progress at every check: R3 at 3,120 of the second component and C7 at 3,440,
+having each passed 560, 960, 1,440, 1,840 on the first. Neither has repeated a step count
+between check-ins, so neither is wedged. Structured output (2,000), instruction following (541)
+and the probes (602) remain.
+
+### What was prepared while they ran, and why it is a parameter rather than an edit
+
+G4b is second in the ladder for one reason: `llama-imatrix` was not among the four targets the
+b10622 build compiled, so calibrated quantization cannot be attempted without a rebuild. That
+rebuild is now a one-flag job rather than a code change. `s5-llama-build` takes a new
+`extra_targets` parameter, empty by default, and the G4b rung queues it with
+`-p extra_targets=llama-imatrix`.
+
+The care is in the naming, not the targets. Every 4-bit number this project has recorded was
+served from `tidepool/llama-b10622-sm89.tar.gz`, which every Q4 job downloads by that exact
+name, so a rebuild that quietly overwrote it would move the serving path under numbers already
+taken. The suffix is therefore derived from the extra targets inside the job rather than passed
+in: asking for `llama-imatrix` writes `llama-b10622-sm89-imatrix.tar.gz` and cannot write the
+pinned object, and there is no parameter value that lets a caller request extra binaries under
+the old name. Re-listing one of the four base targets is a deliberate no-op, so the same object
+is not forked into a second identical copy. Checked on a local fixture over four argument
+shapes, including the empty default, which reproduces the pinned build's target list and object
+name byte for byte.
+
+None of that commits the project to spending on G4b. The stop rule in the recovery plan is
+unchanged and still reads against the G4a numbers: G4b runs only if G4a clears the mean and
+misses one low-base axis by under two absolute points, and is skipped as more of the same if
+G4a moves the low-base axes by less than one absolute point.

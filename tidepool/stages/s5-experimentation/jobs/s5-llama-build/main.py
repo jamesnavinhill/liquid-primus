@@ -193,6 +193,24 @@ log("  nvcc        %s" % FACTS["nvcc_version"])
 
 tag = str(cfg.get("llama_tag", "b10622"))
 arch = str(cfg.get("cuda_arch", "89"))
+
+# Extra cmake targets, comma separated, empty by default. The four base targets below are what
+# every recorded Q4 number in this project was served by, and they are not touched. G4b needs
+# `llama-imatrix`, which was not in the b10622 build this project made -- that omission is the
+# only reason the calibrated rung is second in the recovery ladder rather than first.
+#
+# A build that adds targets writes a DIFFERENT tarball. The suffix is derived from the extras
+# rather than passed in, so there is no way to ask for extra binaries and silently overwrite
+# `llama-b10622-sm89.tar.gz`, which every earlier job downloads by that exact name. Rebuilding
+# the serving path under numbers already taken is the one failure this parameter must not allow.
+BASE_TARGETS = ("llama-server", "llama-cli", "llama-quantize", "llama-bench")
+_asked = [t.strip() for t in str(cfg.get("extra_targets", "") or "").split(",") if t.strip()]
+# Only targets that are genuinely NEW count, so re-listing one of the four base targets is a
+# no-op that rebuilds the same binaries under the same object name rather than forking a
+# second, identical tarball into shared storage under a different name.
+extra_targets = [t for t in _asked if t not in BASE_TARGETS]
+targets = list(BASE_TARGETS) + extra_targets
+build_suffix = ("-" + "-".join(t.replace("llama-", "") for t in extra_targets)) if extra_targets else ""
 src = "llama.cpp-%s" % tag
 url = "https://github.com/ggml-org/llama.cpp/archive/refs/tags/%s.tar.gz" % tag
 log("== fetching llama.cpp %s ==" % tag)
@@ -241,18 +259,18 @@ sh("cmake -S %s -B build -G Ninja %s" % (src, " ".join(flags)), env=env, timeout
 log("== compiling (this is the long part) ==")
 lab.update_progress(15)
 t0 = time.time()
-sh("cmake --build build --config Release -j %d --target llama-server llama-cli llama-quantize "
-   "llama-bench" % (os.cpu_count() or 8), env=env, timeout=5400)
+sh("cmake --build build --config Release -j %d --target %s"
+   % (os.cpu_count() or 8, " ".join(targets)), env=env, timeout=5400)
 FACTS["build_seconds"] = round(time.time() - t0, 1)
 log("compiled in %.0f s" % FACTS["build_seconds"])
 lab.update_progress(45)
 
 # ---------------------------------------------------------------- 4. collect
 
-bindir = os.path.join(OUT, "llama-%s-sm%s" % (tag, arch))
+bindir = os.path.join(OUT, "llama-%s-sm%s%s" % (tag, arch, build_suffix))
 os.makedirs(os.path.join(bindir, "bin"), exist_ok=True)
 found = []
-for name in ("llama-server", "llama-cli", "llama-quantize", "llama-bench"):
+for name in targets:
     hits = glob.glob("build/**/" + name, recursive=True)
     hits = [h for h in hits if os.path.isfile(h) and os.access(h, os.X_OK)]
     if not hits:
@@ -307,7 +325,7 @@ log("server reports: %s" % FACTS["server_version"])
 # nothing may serve from it until a run reports `verified: true` in this summary.
 
 def keep_binaries():
-    tarball = os.path.join(OUT, "llama-%s-sm%s.tar.gz" % (tag, arch))
+    tarball = os.path.join(OUT, "llama-%s-sm%s%s.tar.gz" % (tag, arch, build_suffix))
     with tarfile.open(tarball, "w:gz") as tf:
         tf.add(bindir, arcname=os.path.basename(bindir))
     FACTS["tarball_mb"] = round(os.path.getsize(tarball) / 1e6, 1)

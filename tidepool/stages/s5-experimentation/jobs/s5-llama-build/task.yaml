@@ -35,6 +35,12 @@ envs:
 parameters:
   # Pinned. A serving backend that moves under the project changes every Q4 number taken with it.
   llama_tag: b10622
+  # Extra cmake targets beyond the four this project has always built, comma separated.
+  # Empty here so a re-run of this task reproduces the pinned serving path exactly. The G4b
+  # recovery rung queues it with `-p extra_targets=llama-imatrix`, which lands as a separate
+  # `llama-b10622-sm89-imatrix.tar.gz` and leaves the tarball every recorded Q4 number was
+  # served from untouched.
+  extra_targets: ""
   cuda_arch: "89"
   # The verification model: the vendor's own quantization-aware Q4_0 build, which is also
   # baseline row B2.
