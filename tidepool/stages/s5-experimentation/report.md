@@ -31,6 +31,29 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-28 18:05 UTC: the replay ladder is finished, scored and compared, and it
+comes back null. Raising the replay dose fourfold does not move instruction following.
+Reweighting the buffer to half constraint-bearing does not move it either. Replay against no
+replay at all does not move it.** All three pre-registered comparisons land inside their
+confidence intervals, and the only arm in the family that separates on instruction following
+is the untrained base model, which beats every trained arm by 3.5 to 9.1 points. s5.4 blamed
+the earlier failure on a replay dose two orders of magnitude too small; the ladder raised it
+by two orders of magnitude and the metric did not respond, so that diagnosis is retired. The
+pass condition fails on all three arms and the fallback the plan wrote for exactly this case
+now governs: the forced trade-off is the result, and the checkpoint is chosen on tool calling
+first, which selects **R3**. Replay is not inert everywhere. It buys the project's best
+text-convention tool calling, 2.8 points over the sweep winner and family-corrected, and it
+costs 5.2 points of first-attempt schema validity, also family-corrected, the only regression
+in the ladder. The instruction-following cost of this specialization is a property of the
+training mixture rather than a tuning knob, and s6 should report it as one. Spend 65.9 of 145.
+
+**Update, 2026-08-27 06:33 UTC: the replay ladder is over a third done and on track.** One
+of the two self-distillation buffers has finished (110 minutes, clean) and both of its
+training runs have started; the second buffer is close behind. No results yet, no problems
+either. One thing to fix later, not now: a step that was supposed to copy the finished buffer
+into shared storage failed quietly, so the training runs on this card still have it, but a
+separate future job would not find it there.
+
 **Update, 2026-08-27 04:20 UTC: the s5.5 replay ladder is on a card, and the fix s5.4 asked
 for turned out to be capped by the project's own decontamination.** Five arms on one L40S:
 two 32,000-prompt self-distillation buffers generated side by side, one sampled proportionally
@@ -2708,6 +2731,84 @@ run and carries no version history of its own, so there is no trace to read. Wor
 plainly, because it is the second time this stage that a result went missing and was recovered
 from somewhere else, and the mirror is the only reason it was recoverable at all.
 
+## The replay ladder is a null result, and the trade-off is the finding (s5.5)
+
+Five arms on one L40S, `d4a7d46b`, all exit codes 0, 30 artifacts, 10.896 GPU-hours against
+an 11-to-12 estimate. Scoring ran as two packed L4 cards on AWS, `e4dbed40` (R1, R2, full
+suite, 1.688 h) and `08dab391` (R3 full suite plus B1's clean-corpus probe re-score, 0.902 h).
+The paired comparison is `c072da81`: R3 as reference, 40 cells, 14 separating by interval,
+9 surviving Holm, zero assertion failures.
+
+### Three contrasts, three nulls
+
+s5.4 pre-registered exactly which differences the ladder was built to measure. Every one of
+them is indistinguishable on IFEval `prompt_level_strict`.
+
+| contrast | what it isolates | delta | 95% CI | Holm p |
+|---|---|--:|---|--:|
+| R2 − R3 | buffer composition at a fixed 0.20 dose | +0.0129 | [−0.0074, +0.0333] | 1 |
+| R1 − R3 | dose, over one and the same reweighted buffer | +0.0129 | [−0.0111, +0.0370] | 1 |
+| C7 − R3 | replay against no replay at all | −0.0222 | [−0.0573, +0.0129] | 1 |
+
+The pass condition asked for IFEval within 2.0 of the base while holding detection at C7's
+0.7222 and false-flag under 0.15. Detection holds for R2 and R3 (0.7111 and 0.7148, both
+statistically level with C7) and false-flag is nowhere near its ceiling (3, 1 and 2 items of
+138). The IFEval half fails outright: B1 0.8189 against R1 0.7689, R2 0.7689 and R3 0.7560,
+and the paired test puts B1 − R3 at +0.0628 [+0.0351, +0.0906] with Holm p = 5.9e-4, so even
+the optimistic end of the interval is 3.51 points past a 2.0 allowance.
+
+The token accounting explains the shape. Constraint-bearing share is about 2.5% for R1
+(0.05 × 0.50), about 2.1% for R2 (0.20 × 0.105) and 10% for R3 (0.20 × 0.50). R1 and R2 sit
+within half a point of each other on that share and score *identically* on IFEval to four
+decimals; R3 carries four times more and comes last of the three. Whatever protection replay
+offers is already saturated near 2% of training tokens, which is roughly where the sweep's
+own arms already were once the pool's 10.5% constraint slice is counted properly.
+
+### What replay does do
+
+Three cells in this family survive correction on the replay contrasts, and none of them is
+about instruction following.
+
+- **Structured output pays.** C7 − R3 on IFStruct validity is +0.0515 [+0.0360, +0.0670],
+  Holm p = 3.5e-9. R1 0.0820, R2 0.0850, R3 0.0885 against C7's 0.1400 and the base's 0.1355.
+  Against the project's `+5.0 over matched base` structured-output criterion, C7 was already
+  only +0.45; every replay arm is 4.7 to 5.4 points *below* the base.
+- **Text-convention tool calling improves.** C7 − R3 on `bfcl_text` is −0.0284
+  [−0.0381, −0.0186], Holm p = 8.4e-7, and R2 − R3 is −0.0172, Holm p = 4.6e-3. R3 is the best
+  arm this project has on the calling convention s4 defined, and the ordering follows
+  constraint-bearing share, which is the one axis behaving as the design predicted.
+- **A small dose costs detection.** R1 − R3 on the flagged-probe rate is −0.1000
+  [−0.1556, −0.0444], Holm p = 0.019, which is 29 fewer probes flagged of 270. R2 and R3, at
+  four times the dose, are level with C7. The displacement confound stated before the run
+  predicted the opposite ordering and the data invert it.
+
+### The checkpoint choice, and what it costs
+
+The pass condition fails, so s5.4's fallback governs and the checkpoint is chosen on the
+operator's priority order with tool calling first. BFCL composites: R3 0.7136, C7 0.7049,
+R1 0.7034, R2 0.7011. R3 also holds the only family-corrected tool-calling gain over C7, is
+level with C7 on detection, and is indistinguishable from C7 and from both other rungs on
+IFEval. **R3 is selected.**
+
+Recorded plainly rather than buried: R3 is selected while carrying the ladder's only
+family-corrected regression, 5.15 points of schema validity against C7. C7 is retained as
+the fallback into s5.6 for that reason, and s5.6's first job is to try to recover structured
+output on top of R3's recipe. Chosen under autonomous mode; nobody reviewed it.
+
+### Departures
+
+Four, all recorded in `runs/s5.5-replay-ladder.md` with their reasoning. The training job's
+own score cards were overwritten with `--force` after being inspected and preserved, since
+they were training-time cards no comparison depended on. B1's re-score was promoted
+probes-only, so the driver correctly reports that its probe rates are not cross-checked; its
+determinism was verified first, 464 shared rows and zero verdict changes. R3 was chosen as
+the comparison reference because two of the three contrasts are written against it, which
+leaves R1 − C7 read off the score cards rather than from a corrected cell. And `08dab391`
+reports FAILED on a third arm, B4, which ran out of memory inside Granite's MoE-hybrid rotary
+embedding with 13.62 GB free on the card and 5.05 GB allowed: the 5.5 GB ceiling was measured
+on a dense 1.2B model and does not carry across. B4 is supplementary filler and is re-queued
+alone at 20 GB as `02d522d1`.
+
 - 2026-08-27 04:20Z · s5.5 · **The replay ladder is queued as `31403d7d` on one AWS L40S, five
   arms, an estimated 11 to 12 GPU-hours.** Two 32,000-prompt self-distillation buffers generate
   side by side (`RBP` proportional, `RBC` reweighted to half constraint-bearing) and hand their
@@ -2746,3 +2847,15 @@ from somewhere else, and the mirror is the only reason it was recoverable at all
   next source in the provider note's L40S row (AWS g6e, then Nebius, then RunPod; note updated
   2026-08-23T22:48Z). Card wanted L40S, card requested L40S, only the seller changed. Spend
   52.430 of 145.
+- 2026-08-27 04:28Z · mirror · Pushed commit `881991b` to `github.com/jamesnavinhill/liquid-primus`:
+  the provider fallback, the ledger entry for the refused launch, and `tasks.md` carrying the
+  live job id so the next wake picks up `d4a7d46b` rather than the dead one.
+- 2026-08-28 18:05Z · s5.5 · **The ladder is scored and compared, and it is a null.** `d4a7d46b`
+  verified non-empty and all five arms rc=0 before anything was recorded. Scoring `e4dbed40`
+  (R1, R2) and `08dab391` (R3, B1) at 1.688 and 0.902 GPU-h; comparison `c072da81`, R3 reference,
+  40 cells, 14 separating, 9 surviving Holm, 0 assertion failures. All three pre-registered
+  contrasts are indistinguishable on IFEval; the base separates upward from every trained arm.
+  The pass condition fails, R3 is selected on tool calling first, and the 5.15-point schema
+  validity regression it carries is recorded rather than smoothed over. B4 OOM'd under a 5.5 GB
+  ceiling sized for a dense model and is re-queued alone at 20 GB as `02d522d1`. Ledger updated
+  with both scoring jobs; spend 65.916 of 145.
