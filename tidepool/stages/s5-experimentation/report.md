@@ -3300,6 +3300,12 @@ Export detail and the dropped variant: runs/s5.6-g4a-quant-type.md.
   to someone building on this than a silent gap. Weights themselves were not re-uploaded — the
   four GGUFs on the page are current, and the G4a `Q4_K_XL` builds go up once scored.
 
+- 2026-08-28 19:10Z · mirror · Pushed commit `11d44e1` to
+  `github.com/jamesnavinhill/liquid-primus`: the `extra_targets` parameter that makes the
+  calibrated-quantization rung a flag rather than a code change, its local fixture check, the
+  third decline, and this wake's G4a progress. Hugging Face is unchanged this wake and correctly
+  so: the G4a builds are still scoring, and nothing goes up before its retention numbers do.
+
 ## Operator input: a third decline, and the calibrated rung is now buildable (s5.6 G4a)
 
 The turn-boundary prompt written at 18:54Z came back declined, with the standing instruction to
@@ -3340,3 +3346,36 @@ None of that commits the project to spending on G4b. The stop rule in the recove
 unchanged and still reads against the G4a numbers: G4b runs only if G4a clears the mean and
 misses one low-base axis by under two absolute points, and is skipped as more of the same if
 G4a moves the low-base axes by less than one absolute point.
+
+### 19:04Z check-in — second decline, same reading, and both arms into structured output
+
+The 19:02Z turn-boundary prompt came back declined with the same standing instruction: no
+operator is answering, proceed on my own recommendation and record which option I took. There
+was again nothing open to settle. The option taken is unchanged and is the one already running:
+finish the G4a scoring arms, then read them against the stop rule in
+`runs/s5.6-recovery-plan.md` exactly as that rule was written before the numbers existed. No
+new compute was committed on the strength of the decline, and the ladder's order is untouched.
+
+Both arms have since cleared the expensive half of the harness. `d3ee0d7a` (R3-Q4_K_XL) and
+`bd52b7bc` (C7-Q4_K_XL) have each finished both 3,490-item tool-calling components — the native
+one and the text-convention one — and are now inside the 2,000-item structured-output
+component, R3 at 960 and C7 at 640. Every reading since 18:48Z has moved: R3 through
+640 → 1,280 → 1,840 → 2,320 → 3,120 → 3,440 on the second component and then 240 → 400 → 560 →
+800 → 960 on structured output, C7 on the same shape one step behind. Three consecutive
+check-ins, no repeated step count on either job, so neither is wedged and no relaunch is in
+play. Instruction following (541) and the guardrail probes (602) remain on both.
+
+Structured output is the axis this whole rung exists to move: it is one of the two low-base
+axes where every G1 4-bit arm failed, at a full-precision rate of 0.086 on R3 and 0.138 on C7.
+Its 2,000 items are being generated now, so the number that decides G4a is the one currently
+being produced rather than one still queued behind other work.
+
+The analysis path behind those numbers needs nothing new built. When both jobs are terminal the
+sequence is fixed and already exercised: check `lab job artifacts` per job and inspect the
+downloaded completions per arm, since a scored-but-empty arm is the exact failure that corrupted
+the two packed attempts; `promote_scores.py` moves each arm's verdicts into
+`tidepool/s5.6/arms/<arm>/`; then `queue_s56_retention.sh r3 Q4_K_XL` and
+`queue_s56_retention.sh c7 Q4_K_XL` run the paired comparison on CPU, one job per checkpoint,
+each against that checkpoint's own already-scored F16 export. Those two scripts refuse to queue
+against an incomplete family, which is the guard that keeps a partial rescore from being
+recorded under the name of a complete one.
