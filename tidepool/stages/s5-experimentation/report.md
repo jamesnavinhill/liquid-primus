@@ -2883,3 +2883,12 @@ alone at 20 GB as `02d522d1`.
   `put()` tries the SDK's call shapes in order and records which one worked. s5.6 is sized at
   20 to 25 GPU-hours of the 79.1 remaining; the larger version is priced in
   `runs/s5.6-export-recovery.md` and is not queued.
+- 2026-08-28 18:35Z · s5.2 · **B4 is in, the ceiling was the whole story, and the supplementary
+  re-score list is now empty.** `02d522d1` ran the arm alone at 20 GB and it peaked at 6.26 GB
+  with 6.55 reserved, so the 5.5 GB share it died under in `08dab391` was short by 0.76 GB.
+  rc=0, 0 assertion failures, 0.101 GPU-h. The numbers confirm the s5.2 reading rather than
+  changing it: Granite 4.0-1b flags 0 of 270 malformed returns and false-flags 0 of both clean
+  arms, which is uninformative rather than clean, because a model that never flags cannot
+  false-flag. `scored_probes.jsonl` promoted to `tidepool/s5.2/B4/`. Every published baseline
+  row now carries the 138-item corpus clean arm, which is what s6 needs to read an arm's
+  false-alarm rate against the base's on the same items. Spend 66.017 of 145.

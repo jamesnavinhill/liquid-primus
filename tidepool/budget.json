@@ -766,7 +766,23 @@
       "durationHours": 0.982,
       "note": "Job status FAILED on one of three arms; the two that matter both finished. R3 rc=0 at an 11 GB ceiling with the full four-component suite and zero assertion failures, B1 rc=0 at 5.5 GB on the probes-only re-score that added the 138-item clean corpus. B4 rc=1: torch.OutOfMemoryError inside granitemoehybrid apply_rotary_pos_emb, 13.62 GB free on the card but only 5.05 GB allowed under its 5.5 GB share of pack_gb=11,5.5,5.5. The ceiling is the cause, not the card -- Granite 4.0-1b's MoE-hybrid attention needs more than a 1.2B dense model at the same sequence length. B4 is a supplementary clean-arm re-score of a baseline and is off the critical path, so it is requeued as filler at a larger ceiling rather than rerun here.",
       "recordedAt": "2026-08-28T17:55:00Z"
+    },
+    {
+      "jobId": "02d522d1-a5f0-4fea-843f-a2644ac70260",
+      "experiment": "tidepool",
+      "substage": "s5.2",
+      "task": "s5-eval-pack",
+      "label": "B4 clean-arm re-score, alone on an L4 at a 20 GB ceiling",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "COMPLETE",
+      "spend": 0.101,
+      "start": "2026-08-28T18:07:00Z",
+      "end": "2026-08-28T18:17:00Z",
+      "durationHours": 0.167,
+      "note": "Re-queue of the arm that failed in 08dab391 under a 5.5 GB share of pack_gb=11,5.5,5.5. Alone at 20 GB it peaked at 6.26 GB and reserved 6.55, so the original ceiling was short by 0.76 GB and the diagnosis holds exactly: the 5.5 GB figure was measured on a dense 1.2B model and Granite 4.0-1b's MoE-hybrid attention needs more at the same sequence length. rc=0, 0 assertion failures, 358 s of generation, 36,928 tokens. Result confirms the s5.2 reading rather than changing it: flag rate 0.0000 on 270 probes and 0.0000 false-flag on both the 30-item synthetic and the 138-item corpus clean arms, which is uninformative rather than clean, since a model that never flags cannot false-flag. scored_probes.jsonl promoted to tidepool/s5.2/B4/. The supplementary clean-arm re-score list is now empty.",
+      "recordedAt": "2026-08-28T18:35:00Z"
     }
   ],
-  "total_spent": 65.916
+  "total_spent": 66.017
 }
