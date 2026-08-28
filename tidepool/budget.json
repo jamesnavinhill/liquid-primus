@@ -782,7 +782,55 @@
       "durationHours": 0.167,
       "note": "Re-queue of the arm that failed in 08dab391 under a 5.5 GB share of pack_gb=11,5.5,5.5. Alone at 20 GB it peaked at 6.26 GB and reserved 6.55, so the original ceiling was short by 0.76 GB and the diagnosis holds exactly: the 5.5 GB figure was measured on a dense 1.2B model and Granite 4.0-1b's MoE-hybrid attention needs more at the same sequence length. rc=0, 0 assertion failures, 358 s of generation, 36,928 tokens. Result confirms the s5.2 reading rather than changing it: flag rate 0.0000 on 270 probes and 0.0000 false-flag on both the 30-item synthetic and the 138-item corpus clean arms, which is uninformative rather than clean, since a model that never flags cannot false-flag. scored_probes.jsonl promoted to tidepool/s5.2/B4/. The supplementary clean-arm re-score list is now empty.",
       "recordedAt": "2026-08-28T18:35:00Z"
+    },
+    {
+      "jobId": "e7dd289e-b5d4-4e8e-943e-f753df34e151",
+      "experiment": "tidepool",
+      "substage": "s5.6",
+      "task": "s5-export",
+      "label": "s5.6 G1 attempt 1: export and price R3 and C7 -- crashed in the first conversion",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "FAILED",
+      "spend": 0.117,
+      "start": "2026-08-28T13:55:12Z",
+      "end": "2026-08-28T14:02:00Z",
+      "durationHours": 0.117,
+      "note": "No artifacts, no result, charged in full because the compute was spent. The job set up, pulled the 175 MB pinned serving path, merged R3's rank-16 adapter onto the base and wrote the merged checkpoint, then died two seconds into `convert_hf_to_gguf.py` on `ModuleNotFoundError: No module named 'conversion'`. Cause is packaging, not design: at tag b10622 the converter is a front end that imports its per-architecture writers -- `lfm2.py` among them -- from a sibling `conversion/` package, and s5-llama-build's copy list took `convert_hf_to_gguf.py`, `gguf-py` and the requirements file without it, so the serving path in shared storage has never been able to convert anything. Nobody had exercised that path until now: every 4-bit number before this came from a GGUF published on the Hub. The end timestamp is the first observation of FAILED rather than a recorded end time; the job record carries no end field, so the duration is an upper bound of about seven minutes.",
+      "recordedAt": "2026-08-28T14:09:00Z"
+    },
+    {
+      "jobId": "22a2d914-95b1-4332-a278-a473bcf4e5b9",
+      "experiment": "tidepool",
+      "substage": "s5.6",
+      "task": "s5-export",
+      "label": "s5.6 G1 attempt 2: export and price R3 and C7 -- converted, then could not load the quantizer",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "FAILED",
+      "spend": 0.144,
+      "start": "2026-08-28T14:06:52Z",
+      "end": "2026-08-28T14:15:30Z",
+      "durationHours": 0.144,
+      "note": "Partial progress and one durable artifact: the carried-in `conversion/` package imported cleanly (89 writers), R3's adapter merged onto the base, and `convert_hf_to_gguf.py` wrote R3-F16.gguf at rc=0 in 20 seconds, which was uploaded to tidepool/s5.6/R3/ at 2.343 GB. The run then failed on a SECOND defect in the same archive, independent of the first: the serving tarball carries the executables without the CUDA shared objects they are linked against, so on this L4 image `llama-bench` and `llama-quantize` both exited 127 with `libnccl.so.2: cannot open shared object file`. The bench failure is recorded and survivable; the quantizer failure is fatal, and the job stopped at R3's first quantization. Charged in full. The end timestamp is the first observation of FAILED rather than a recorded end time; the job record carries no end field, so the duration is an upper bound of about nine minutes.",
+      "recordedAt": "2026-08-28T14:19:00Z"
+    },
+    {
+      "jobId": "39ccd302-404d-4cc6-814a-5f90637cdf3d",
+      "experiment": "tidepool",
+      "substage": "s5.6",
+      "task": "s5-export",
+      "label": "s5.6 G1 attempt 3: export and price R3 and C7 -- converted and benched F16, then crashed decoding the quantizer's output",
+      "accelerators": "L4:1",
+      "provider": "aws",
+      "status": "FAILED",
+      "spend": 0.161,
+      "start": "2026-08-28T14:16:41Z",
+      "end": "2026-08-28T14:26:19Z",
+      "durationHours": 0.161,
+      "note": "REAL PROGRESS, THIRD DEFECT. Both attempt-2 fixes held: the loader repair worked (`converter, quantizer and bench all load on this host (loader repair: site-packages CUDA wheels)`), the carried-in `conversion/` package imported cleanly at 89 writers, R3's rank-16 adapter merged onto the base, `convert_hf_to_gguf.py` wrote R3-F16.gguf at rc=0 in 22 s, and -- new this attempt -- `llama-bench` RAN, giving R3 F16 at 2.343 GB and 105.1 tok/s with the ceiling correctly recorded as `n/a (intermediate)` rather than BREACHED, which closes the second fix too. The run then died in the first quantization, at main.py:368 `sh([QUANT, f16, path, fmt])`, on `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc4 in position 2721` inside subprocess's own newline translation. THE CHILD HAD ALREADY SUCCEEDED: llama-quantize emits a raw 0xc4 byte partway through the tensor table it prints, `text=True` decodes strictly, and the exception is raised in the parent while READING about a file that is on disk. Not a science defect and not about this experiment; it would have hit any consumer of these binaries. FIX: `errors=\"replace\"` on the capture, in s5-export and in s5-llama-build, which has the identical helper. Reproduced locally on a fixture that emits the same byte, confirmed raising before and returning rc=0 after. Attempt 4 is ed70819c. Attempts against s5.6: 4, of which 1 made no progress; attempts 2 and 3 each got measurably further and reset the count. DURATION IS AN UPPER BOUND, NOT A MEASUREMENT: this lab server exposes no end timestamp on any job (`updated_at`, `ended_at`, `end_time` are all null across the experiment), so the figure is start-to-next-launch, the same basis attempts 1 and 2 were charged on. It over-charges rather than under-charges, which is the direction to err in.",
+      "recordedAt": "2026-08-28T14:27:00Z"
     }
   ],
-  "total_spent": 66.017
+  "total_spent": 66.278
 }

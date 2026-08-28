@@ -37,7 +37,8 @@ def sh(cmd, cwd=None, env=None, timeout=3600, check=True, quiet=False):
     """Run a command, keep its tail, raise with that tail on failure."""
     t0 = time.time()
     p = subprocess.run(cmd, cwd=cwd, env=env, timeout=timeout, shell=isinstance(cmd, str),
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True, errors="replace")
     tail = "\n".join((p.stdout or "").strip().splitlines()[-40:])
     if not quiet:
         log("$ %s  (%.0fs, rc=%d)" % (cmd if isinstance(cmd, str) else " ".join(cmd),
@@ -262,7 +263,23 @@ for so in glob.glob("build/**/*.so", recursive=True):
     shutil.copy2(so, os.path.join(bindir, "bin", os.path.basename(so)))
 # The HF->GGUF converter and its library travel with the binaries: converting our own finetuned
 # checkpoint is the same serving path and has to be the same version as the runtime.
-for rel in ("convert_hf_to_gguf.py", "gguf-py", "requirements/requirements-convert_hf_to_gguf.txt"):
+#
+# `conversion` WAS MISSING FROM THIS LIST AND THAT COST A JOB. At tag b10622
+# `convert_hf_to_gguf.py` is a front end that does `from conversion import ...`, and every
+# per-architecture writer -- `lfm2.py` among them -- lives in that sibling package. The tarball
+# built without it converts nothing: s5.6's first export attempt (e7dd289e) died on
+# `ModuleNotFoundError: No module named 'conversion'` two seconds into the first conversion, and
+# the running project had to carry the package in as a separate object rather than rebuild the
+# runtime under numbers already recorded. A tarball built from here now carries it.
+# A SECOND THING THIS ARCHIVE IS SHORT OF: the CUDA shared objects the executables are linked
+# against, `libnccl.so.2` among them. They are not copied at all, so the archive only runs on a
+# host that already has them on the loader path. The build host does; job 22a2d914 met an L4
+# image that did not, and both `llama-bench` and `llama-quantize` failed to load. `s5-export`
+# now repairs that at consume time by putting the environment's CUDA wheel directories on the
+# loader path, and looks in `<root>/lib` first -- so a build that wants to be self-contained
+# should copy the resolved non-system `.so` files there.
+for rel in ("convert_hf_to_gguf.py", "conversion", "gguf-py",
+            "requirements/requirements-convert_hf_to_gguf.txt"):
     s = os.path.join(src, rel)
     d = os.path.join(bindir, os.path.basename(rel))
     if os.path.isdir(s):

@@ -31,6 +31,29 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-28 14:27 UTC: the export step is on its fourth attempt, and each of the three
+failures found a different, real defect that the project would otherwise have shipped with.** The
+third attempt repaired the two toolkit gaps below, converted, and for the first time **measured**
+something: the best tool-calling checkpoint at full precision came out at **2.343 GB and 105.1
+tokens/second**. It then crashed one step later reading the 4-bit compressor's own progress
+output, which contains a byte that is not valid text, while the file it was describing sat
+finished on disk. That last one is a fault in our code rather than in the toolkit, it is fixed and
+the fix is verified against the exact byte, and it would have hit anything that ran these tools.
+The three crashes cost 0.422 GPU-hours together, all charged to the ledger; spend stands at 66.439
+of 145.
+
+**Update, 2026-08-28 14:20 UTC: the export step has hit two separate gaps in the toolkit we
+pinned back at the baselines, both now closed, and the third attempt is on a card.** The first
+crash was a missing library of format writers, so nothing could be converted at all. With that
+carried in, the second run converted the first checkpoint cleanly in twenty seconds, which
+proves the fix, and then failed because the same archive ships the command-line tools without
+the graphics libraries they are built against, and this machine's image does not carry them
+either. Neither gap had ever been exercised: every 4-bit number in the project so far came from
+a file published by a vendor. The job now repairs both from what is already on the machine and
+checks that the tools actually start before it spends anything on a checkpoint. One real artifact
+survived, the first full-precision converted checkpoint, at 2.343 GB. The two crashes cost 0.261
+GPU-hours together, charged to the ledger; spend stands at 66.278 of 145.
+
 **Update, 2026-08-28 18:30 UTC: s5.6 is open and its first row is on a card.** The stage now moves to export and recovery, which is where the 4-bit promise gets tested: a build at 1.5 GB or less that holds 97% of its own full-precision quality with no axis below 93%. The export job is running on both surviving checkpoints. The order of the remaining work was deliberately reversed, so the cheap measurement comes before the expensive recovery: there is no point paying for a repair until the damage is measured. Sized at 20 to 25 GPU-hours of the 79.1 left, which leaves the final evaluation stage whole.
 
 **Update, 2026-08-28 18:05 UTC: the replay ladder is finished, scored and compared, and it
@@ -319,7 +342,6 @@ rate to reach 0.35 from a baseline of 0.0074, and without `C2'` the sweep would 
 gate with no evidence about which part of the recipe moved it.
 
 Spend is **4.442 of 145 GPU-hours**, of which 0.68 bought nothing at all.
-
 ## Work log
 
 - 2026-08-25 · s5.1 · Two smoke jobs queued on L4 cards, deliberately on different
@@ -583,6 +605,36 @@ Spend is **4.442 of 145 GPU-hours**, of which 0.68 bought nothing at all.
   server, so the two transformers rows run under real ceilings and the four 4-bit rows are sized
   by four slots of 4,096 context. Ports do not collide, since each child adds its pack position
   to `gguf_port`. Supplementary to s5.4, which reads sweep arms only.
+
+- 2026-08-28 14:27Z · s5.6 · **G1 attempt 3 proved both of attempt 2's fixes and died on a third
+  defect, this one ours.** `39ccd302`: the loader repair worked first time, the carried-in
+  `conversion` package imported at 89 writers, R3's adapter merged, the converter wrote
+  `R3-F16.gguf` at rc=0 in 22 s, and — the step no earlier attempt reached — `llama-bench` ran,
+  giving the stage its first measured row, **R3 F16 at 2.343 GB and 105.1 tok/s**, with the
+  ceiling correctly recorded as `n/a (intermediate)` rather than the spurious BREACHED of attempt
+  2. It then raised `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc4 in position 2721`
+  at `main.py:368`, in the first quantization. **The child had already succeeded**:
+  `llama-quantize` writes a raw `0xc4` byte into the tensor table it prints, `sh()` captured that
+  with `text=True`, and Python raised in the parent while reading about a file that was finished
+  on disk. Not a science defect and not specific to this experiment — it would hit any consumer
+  of these binaries that captures their output as text. **Fixed** with `errors="replace"` in
+  `s5-export/main.py` and in `s5-llama-build/main.py`, which carries the identical helper, with
+  the reason in `sh()`'s docstring so it is not later tidied away as defensive noise. Reproduced
+  locally first on a fixture emitting the same byte: strict decode raises, the fix returns rc=0.
+  The replacement character can only ever reach a log line, never a measurement — every number
+  this job records comes from `os.path.getsize` or from a regex over `llama-bench`'s ASCII table.
+  Charged 0.161 GPU-h. **Attempt 4 is `ed70819c`**, same task with `main.py` re-uploaded, same
+  card, same parameters; quota checked first at 194 h 43 m available and 0 of 2 GPU slots held.
+  Attempts against s5.6: 4, of which 1 made no progress; attempts 2 and 3 each got measurably
+  further and reset the count, ceiling 10. Full attempt log in `runs/s5.6-export-recovery.md`.
+- 2026-08-28 14:27Z · s5.6 · **Two accounting notes.** First, this lab server exposes no end
+  timestamp on any job — `updated_at`, `ended_at` and `end_time` are null across the whole
+  experiment — so every failed attempt's GPU-hours are start-to-next-launch **upper bounds**, not
+  measurements. They over-charge rather than under-charge, and each `budget.json` entry says so.
+  Second, the `s5.6` line in `tasks.md` had grown to 8,000 characters of internal narrative, and
+  that line is what the operator reads on the stage rail. It is now a readable title; every fact
+  it carried, including the G4 group-size gap and the `resolve_gguf`/`put()` harness changes, is
+  preserved in `runs/s5.6-export-recovery.md`.
 
 ## s5.1 What the smoke runs are for
 
@@ -2892,3 +2944,49 @@ alone at 20 GB as `02d522d1`.
   false-flag. `scored_probes.jsonl` promoted to `tidepool/s5.2/B4/`. Every published baseline
   row now carries the 138-item corpus clean arm, which is what s6 needs to read an arm's
   false-alarm rate against the base's on the same items. Spend 66.017 of 145.
+- 2026-08-28 14:07Z · s5.6 · **G1 attempt 1 died on a packaging defect in the serving path, and
+  the fix costs no rebuild.** `e7dd289e` set up, pulled the 175 MB pinned tarball, merged R3's
+  rank-16 adapter onto the base and wrote the merged checkpoint, then raised
+  `ModuleNotFoundError: No module named 'conversion'` two seconds into the conversion. No
+  artifacts, 0.117 GPU-h, charged in full. **The cause predates s5.6 and is not about this
+  experiment.** At tag b10622 `convert_hf_to_gguf.py` is a front end that imports its
+  per-architecture writers from a sibling `conversion/` package, and `s5-llama-build`'s copy list
+  took the front end, `gguf-py` and the requirements file without it, so the serving path in
+  shared storage has never been able to convert anything. It went unnoticed because nothing had
+  tried: B2, B3 and B5 were all published GGUFs, and the tarball's own verification checked that
+  the binaries run rather than that the converter imports. **Fixed without rebuilding**, because
+  recompiling the CUDA runtime would move the backend under every 4-bit number already recorded:
+  the package is carried as its own object cut from the same tag
+  (`tidepool/llama-b10622-conversion.tar.gz`, 89 writers, sha256 `233af659…`), and `s5-export`
+  unpacks it into the serving root only when the root does not already carry `conversion/`, then
+  import-checks it before touching a checkpoint, so the same defect would now cost seconds rather
+  than a merge. `lfm2.py` in that package registers `Lfm2ForCausalLM`, which is what the base
+  model's `config.json` declares, so the converter can write this architecture. `s5-llama-build`'s
+  copy list is fixed in the project tree for the next rebuild; the fix is not retroactive and the
+  current tarball is unchanged. **Attempt 2 is `22a2d914`**, same task, same L4:1 on aws, same
+  parameters plus `conversion_object`. Two attempts against the substage, one of them making no
+  progress. Spend 66.134 of 145.
+- 2026-08-28 14:20Z · s5.6 · **The conversion fix worked and uncovered a second gap underneath
+  it; both are closed and attempt 3 is running.** `22a2d914` imported the carried-in writer
+  library cleanly (89 writers), merged R3's rank-16 adapter onto the base, and wrote
+  `R3-F16.gguf` at rc=0 in 20 seconds, which reached `tidepool/s5.6/R3/` at 2.343 GB. **The
+  packaging defect from attempt 1 is therefore proven closed**, and the substage's no-progress
+  count resets. It then failed on an independent defect in the same archive: the serving tarball
+  carries the executables and none of the CUDA shared objects they link against, so on this L4
+  image `llama-bench` and `llama-quantize` both exited 127 on `libnccl.so.2: cannot open shared
+  object file`. The bench failure is recorded and survivable; the quantizer's is fatal, and the
+  run stopped at R3's first quantization. **The build host had those libraries**, which is why
+  `s5-llama-build`'s own verification passed, and no consumer had exercised the binaries
+  elsewhere: s5.2's 4-bit work ran the vendor's published GGUF through a serving path launched on
+  a different image. **Repaired at consume time, again without a rebuild**: the job puts this
+  environment's CUDA wheel directories on the loader path (`site-packages/nvidia/*/lib`, plus
+  `<serving-root>/lib` and `/usr/local/cuda/lib64` when they exist), falls back to installing
+  `nvidia-nccl-cu12`, and load-checks both binaries **before the first merge**, reading rc 127 and
+  the loader's own message as the signal so an argument-level non-zero exit is not mistaken for a
+  link failure. **A second fix went in with it**: the 1.5 GB ceiling was being applied to F16 as
+  well, which is 2.343 GB by arithmetic for a 1.2B model, so a flawless run would still have ended
+  FAILED on its own intermediate. The ceiling is now judged on the quantized formats and F16's
+  size is recorded without a verdict. `s5-llama-build` carries a note that a self-contained
+  archive should copy the resolved non-system `.so` files into `<root>/lib`. **Attempt 3 is
+  `39ccd302`**, same task, same card, same parameters. Three attempts against the substage, one
+  of them making no progress. Spend 66.278 of 145.

@@ -39,6 +39,12 @@ parameters:
   # Pinned to the tag the runtime was built at. The converter and the quantizer travel inside
   # this archive, so all three are the same version by construction.
   llama_object: tidepool/llama-b10622-sm89.tar.gz
+  # The converter's per-architecture writers, cut from the same tag. `s5-llama-build` copied
+  # `convert_hf_to_gguf.py` without the `conversion/` package it imports, which is what killed
+  # attempt 1 (e7dd289e). Carried as its own object rather than by rebuilding the runtime, since
+  # a rebuild would move the backend under every 4-bit number already recorded. Ignored when the
+  # serving path already carries the package.
+  conversion_object: tidepool/llama-b10622-conversion.tar.gz
   formats: "F16,Q4_0,Q4_K_M"
   size_ceiling_gb: 1.5
   # The efficiency floor's reference: the vendor's own quantization-aware Q4_0 build, which is

@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import time
 
@@ -52,9 +53,18 @@ def C(key, default=None):
 
 
 def sh(cmd, cwd=None, timeout=7200, check=True, quiet=False):
+    """Run a command and capture its combined output as text.
+
+    `errors="replace"` is load-bearing, not defensive. 39ccd302 got the whole
+    conversion path working and then died decoding llama-quantize's own progress
+    output: it writes a raw 0xc4 byte partway through the tensor table, which is not
+    valid UTF-8, and a strict decode raises AFTER the child has already finished
+    successfully. The quantized file was on disk; the run failed reading about it.
+    """
     t0 = time.time()
     p = subprocess.run(cmd, cwd=cwd, timeout=timeout, shell=isinstance(cmd, str),
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True, errors="replace")
     tail = "\n".join((p.stdout or "").strip().splitlines()[-40:])
     if not quiet:
         log("$ %s  (%.0fs, rc=%d)" % (cmd if isinstance(cmd, str) else " ".join(cmd),
@@ -129,6 +139,148 @@ for p in (QUANT, BENCH, CONVERT):
 for p in (QUANT, BENCH):
     os.chmod(p, 0o755)
 os.environ["PYTHONPATH"] = os.path.join(ROOT, "gguf-py") + os.pathsep + os.environ.get("PYTHONPATH", "")
+
+# THE BINARIES ARE NOT SELF-CONTAINED EITHER. `llama-bench` and `llama-quantize` are linked
+# against the CUDA runtime stack -- including `libnccl.so.2` -- and the serving-path archive
+# carries the executables without those shared objects, on the assumption that the host running
+# them has them on the loader path. The build host did; this card's image does not, and attempt 2
+# of this job (22a2d914) converted R3 to F16 cleanly and then hit `error while loading shared
+# libraries: libnccl.so.2` on the very next call, twice: once on a bench, where the failure is
+# recorded and survivable, and once on the quantizer, where it is fatal.
+#
+# The libraries are almost always already on the box, inside the Python environment: the pip
+# CUDA wheels install them under `site-packages/nvidia/*/lib`, and torch pulls those wheels in.
+# So the repair is to put those directories on the loader path rather than to install anything.
+# Falling back to a wheel is the second move, and raising BEFORE the first merge is the third,
+# for the same reason the converter is import-checked above: an arm that is merged and then
+# cannot be quantized costs the merge for nothing.
+def _nvidia_lib_dirs():
+    bases = set()
+    for key in ("purelib", "platlib"):
+        d = sysconfig.get_paths().get(key)
+        if d:
+            bases.add(d)
+    try:
+        import site
+        for d in site.getsitepackages():
+            bases.add(d)
+    except Exception:
+        pass
+    out = []
+    for b in sorted(bases):
+        out.extend(sorted(glob.glob(os.path.join(b, "nvidia", "*", "lib"))))
+    # A serving path built after this defect may carry its own shared objects; look there first.
+    for d in (os.path.join(ROOT, "lib"), os.path.join(ROOT, "lib64"),
+              "/usr/local/cuda/lib64", "/usr/local/cuda/targets/x86_64-linux/lib"):
+        if os.path.isdir(d):
+            out.append(d)
+    seen, uniq = set(), []
+    for d in out:
+        if d not in seen:
+            seen.add(d)
+            uniq.append(d)
+    return uniq
+
+
+def _add_to_loader_path(dirs):
+    if not dirs:
+        return
+    cur = [d for d in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep) if d]
+    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(dirs + [d for d in cur if d not in dirs])
+
+
+def _loads(binary):
+    """Can the dynamic loader satisfy this binary? rc 127 and the loader's own message are the
+    signal; any other non-zero exit is the tool talking about its arguments, not about linking."""
+    rc, out = sh([binary, "-h"], timeout=180, check=False, quiet=True)
+    if rc == 127 or "error while loading shared libraries" in out:
+        missing = re.findall(r"([\w.+-]+\.so[\w.]*): cannot open shared object", out)
+        return False, (missing[0] if missing else "an unresolved shared library")
+    return True, None
+
+FACTS["loader_repair"] = "none needed"
+ok, missing = _loads(BENCH)
+if not ok:
+    dirs = _nvidia_lib_dirs()
+    log("the serving path's binaries cannot load %s; adding %d CUDA library directories from "
+        "this environment to the loader path" % (missing, len(dirs)))
+    _add_to_loader_path(dirs)
+    ok, missing = _loads(BENCH)
+    FACTS["loader_repair"] = "site-packages CUDA wheels"
+if not ok:
+    log("still short of %s; installing the NCCL wheel" % missing)
+    rc, _o = sh([sys.executable, "-m", "pip", "install", "-q", "nvidia-nccl-cu12"],
+                timeout=900, check=False, quiet=True)
+    _add_to_loader_path(_nvidia_lib_dirs())
+    ok, missing = _loads(BENCH)
+    FACTS["loader_repair"] = "nvidia-nccl-cu12 wheel (pip rc=%s)" % rc
+if not ok:
+    raise RuntimeError("the serving path's binaries cannot be loaded on this host: %s is "
+                       "missing and neither this environment's CUDA wheels nor a fresh "
+                       "nvidia-nccl-cu12 supplied it. Nothing has been merged." % missing)
+for name, path in (("llama-quantize", QUANT),):
+    good, miss = _loads(path)
+    if not good:
+        raise RuntimeError("%s cannot be loaded even after the loader repair: %s" % (name, miss))
+FACTS["loader_path"] = os.environ.get("LD_LIBRARY_PATH", "")
+log("converter, quantizer and bench all load on this host (loader repair: %s)"
+    % FACTS["loader_repair"])
+if FACTS["loader_repair"] != "none needed":
+    NOTES.append("the serving-path archive carries the executables without their CUDA shared "
+                 "objects and this host had none on the default loader path; repaired in-job "
+                 "via %s, no rebuild" % FACTS["loader_repair"])
+
+# THE CONVERTER IS NOT ONE FILE. At tag b10622 `convert_hf_to_gguf.py` is a thin front end that
+# does `from conversion import ...`; the per-architecture writers, including `lfm2.py`, live in a
+# sibling `conversion/` package. `s5-llama-build` copied the front end, `gguf-py` and the
+# requirements file out of the source tree and not that package, so the serving path in shared
+# storage has always been short of it -- attempt 1 of this job (e7dd289e) died on
+# `ModuleNotFoundError: No module named 'conversion'` two seconds into the first conversion,
+# after paying for the merge. The build script is fixed for the next rebuild, but rebuilding the
+# CUDA runtime to recover 1.2 MB of pure Python would change the backend under every 4-bit number
+# already recorded, so the package is carried as its own object cut from the SAME PINNED TAG and
+# dropped in beside the front end.
+#
+# It is a repair, not a substitution: if a future serving path already carries `conversion/`,
+# the archive is not fetched and nothing is overwritten.
+CONVERSION = os.path.join(ROOT, "conversion")
+conversion_object = str(C("conversion_object", ""))
+if os.path.isdir(CONVERSION):
+    FACTS["conversion_source"] = "serving path"
+elif not conversion_object:
+    raise RuntimeError("the serving path carries no `conversion/` package and no "
+                       "`conversion_object` was given; `convert_hf_to_gguf.py` at this tag "
+                       "cannot import its per-architecture writers without it")
+else:
+    log("the serving path carries no `conversion/` package; fetching %s" % conversion_object)
+    got = lab.storage_download(conversion_object)
+    if os.path.isdir(got):
+        hits = sorted(glob.glob(os.path.join(got, "**", "*.tar.gz"), recursive=True))
+        if len(hits) != 1:
+            raise RuntimeError("`conversion_object` resolved to a directory holding %d archives"
+                               % len(hits))
+        got = hits[0]
+    with tarfile.open(got) as tf:
+        tf.extractall(ROOT)
+    if not os.path.isdir(CONVERSION):
+        raise RuntimeError("%s did not unpack a `conversion/` directory into the serving path"
+                           % conversion_object)
+    FACTS["conversion_source"] = conversion_object
+    NOTES.append("`conversion/` was carried in from %s because the serving path predates the "
+                 "converter's split into a package; same tag, no rebuild" % conversion_object)
+
+# Fail here rather than inside the first conversion. The import is the whole point of the
+# package, and an arm that is merged and then cannot be written costs the merge for nothing.
+rc, _out = sh([sys.executable, "-c", "import conversion; conversion.get_model_class"],
+              cwd=ROOT, check=False, quiet=True)
+if rc != 0:
+    raise RuntimeError("`conversion` does not import from the serving path (rc=%s); the "
+                       "converter cannot run" % rc)
+writers = len(glob.glob(os.path.join(CONVERSION, "*.py")))
+FACTS["conversion_writers"] = writers
+log("the converter's `conversion` package imports cleanly (%d writers, from %s)"
+    % (writers, FACTS["conversion_source"]))
+
 FACTS["llama_object"] = llama_object
 FACTS["backend_root"] = os.path.basename(ROOT)
 log("converter, quantizer and bench are all present under %s" % os.path.basename(ROOT))
@@ -224,14 +376,22 @@ for i, arm in enumerate(arms):
             path = os.path.join(OUT, arm, "%s-%s.gguf" % (arm, fmt))
             sh([QUANT, f16, path, fmt], timeout=3600)
         gb = round(os.path.getsize(path) / 1e9, 3)
-        cell = {"gb": gb, "under_ceiling": gb <= ceiling_gb,
+        # F16 is an intermediate on the way to the 4-bit builds, not something anyone ships: a
+        # 1.2B model at 16 bits is ~2.3 GB by arithmetic and can never sit under a 1.5 GB
+        # ceiling. The pre-registered criterion is about the delivered build, so the ceiling is
+        # judged on the quantized formats and F16's size is recorded without a verdict.
+        deliverable = fmt.upper() != "F16"
+        cell = {"gb": gb, "deliverable": deliverable,
+                "under_ceiling": (gb <= ceiling_gb) if deliverable else None,
                 "object": "%s/%s/%s" % (dest_prefix, arm, os.path.basename(path))}
         cell["tok_s"] = bench(path, "%s %s" % (arm, fmt))
         cell["uploaded"] = put(path, cell["object"])
         lab.save_artifact(path)
         row["formats"][fmt] = cell
         log("%s %s: %.3f GB, %s tok/s, ceiling %s"
-            % (arm, fmt, gb, cell["tok_s"], "ok" if cell["under_ceiling"] else "BREACHED"))
+            % (arm, fmt, gb, cell["tok_s"],
+               ("ok" if cell["under_ceiling"] else "BREACHED") if deliverable
+               else "n/a (intermediate)"))
 
     shutil.rmtree(merged, ignore_errors=True)
     lab.update_progress(int(80 * (i + 1) / len(arms)))
@@ -268,7 +428,7 @@ for arm, row in FACTS["arms"].items():
         if ref_tok and cell.get("tok_s") and fmt.upper() != "F16":
             cell["tok_s_vs_reference"] = round(cell["tok_s"] / ref_tok - 1.0, 4)
             cell["within_5pct"] = cell["tok_s_vs_reference"] >= -0.05
-        if not cell["under_ceiling"]:
+        if cell.get("deliverable") and not cell["under_ceiling"]:
             FAILURES.append("%s %s is %.3f GB, over the %.2f GB ceiling"
                             % (arm, fmt, cell["gb"], ceiling_gb))
 
