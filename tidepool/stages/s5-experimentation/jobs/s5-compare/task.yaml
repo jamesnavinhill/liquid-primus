@@ -46,6 +46,22 @@ parameters:
   # Splitting is not cosmetic: an arm can raise its detection rate purely by flagging more
   # often, and pooled with the clean arms that trade disappears into a single average.
   components: ""
+  # Whether to compute the H4 retention table at all. Off by default on purpose: retention
+  # is a ratio against the arm's OWN full-precision self, and against any other reference
+  # the same arithmetic prices the fine-tune while calling it quantization damage. Set it
+  # only on a run whose `reference` is that checkpoint's full-precision arm.
+  retention: false
+  # The H4 retention table: axis name -> dotted path into the arm's merged summary
+  # (score.json's flat fields, plus the harness's nested output under `eval_summary`).
+  # Empty uses the four headline axes H4 was written on, fixed in main.py so that which
+  # axes count is a property of the code rather than of whichever table was to hand.
+  # Retention is always against the arm's OWN full-precision self, so a run comparing
+  # quantized forms must set `reference` to that checkpoint's F16 arm.
+  retention_axes: ""
+  # The pre-registered stop/go from s3: every axis at >= 93% of full precision and the mean
+  # at >= 97%. Left at the registered values; a run that moves them has to say why.
+  retention_min_axis: 0.93
+  retention_min_mean: 0.97
   # 10,000 resamples puts the Monte Carlo error on a 95% bound at well under a tenth of a
   # point, which is finer than any difference this sweep is going to produce. Raising it
   # costs seconds and buys nothing.

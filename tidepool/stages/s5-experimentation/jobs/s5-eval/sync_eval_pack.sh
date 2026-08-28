@@ -27,6 +27,10 @@ python3 "$SWEEP/test_pack_isolation.py" >/dev/null
 python3 "$SWEEP/test_pack_schedule.py" >/dev/null
 python3 "$SRC/test_resolve_adapter.py" >/dev/null
 python3 "$SRC/test_resolve_gguf.py" >/dev/null
+# The serving path has to LOAD before an arm may serve: the first s5.6 quality pass lost
+# six arms to a missing CUDA shared object at startup, so the repair and the whole-function
+# unbound-name scan of load_gguf are build-time checks like the rest.
+(cd "$SRC" && python3 -m unittest -q -b test_loader_repair) >/dev/null 2>&1
 rm -rf "$DST/__pycache__"
 echo "contract and scheduling checks pass"
 echo "built $DST from $SRC + $SWEEP/pack.py:"

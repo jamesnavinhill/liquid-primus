@@ -1,2 +1,0 @@
-{"scope": "user", "note": "A concurrency cap on GPU instances is not a cap on parallel work. Pack each GPU with as many runs as fit and engineer the isolation so one run failing, stopping or being cancelled does not disturb the others; do not treat an instance limit as a reason to run one job per card or to serialize work."}
-{"scope": "user", "note": "Prefers being told when a constraint is being worked around rather than accepted. If a limit looks binding, check whether it is actually binding before planning around it, and say plainly when an earlier framing was wrong."}

@@ -11,12 +11,13 @@ SRC=$(cd "$(dirname "$0")" && pwd)
 DST=${1:-/tmp/s5-compare}
 python3 "$SRC/test_stats.py" >/dev/null
 python3 "$SRC/test_main.py" >/dev/null
+python3 "$SRC/test_retention.py" >/dev/null
 rm -rf "$DST"
 mkdir -p "$DST"
 cp "$SRC/main.py" "$SRC/stats.py" "$DST/"
 cp "$SRC/task.yaml" "$DST/task.yaml"
 python3 -m py_compile "$DST"/*.py
 rm -rf "$DST/__pycache__"
-echo "statistics and driver checks pass"
+echo "statistics, driver and retention checks pass"
 echo "built $DST from $SRC:"
 ls "$DST"

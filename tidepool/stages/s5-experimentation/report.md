@@ -31,6 +31,76 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-28 18:05 UTC: the first checkpoint's 4-bit quality is measured and scored,
+and bare export alone does not hold the quality bar.** Tool calling keeps 94-96% of the
+full-precision score and instruction following keeps 98-100%, both comfortable.
+Structured-output validity keeps 85%, below the 93% floor we set per axis, and the stack-idiom
+probes keep 85% on one of the two 4-bit formats. That is the axis nine papers in the literature
+review predicted would break first, so the planned recovery steps are now indicated. The paired
+item-by-item comparison has since finished and sharpens the reading: across twenty comparisons
+only two hold up once we correct for how many we ran, and both are the tool-calling drop on the
+more aggressive format. The two axes that miss the retention floor cannot be separated from full
+precision item by item, because the full-precision model itself only scores 8.6% on structured
+output, so a 14.5% relative drop is 25 items in 2,000. Both readings are true of the same
+measurement, and the recovery work now has an order: structured output first, stack idiom
+second. The second checkpoint's last two formats are still scoring, neither stuck, and a third
+has been added for measurement consistency. Spend stands at 68.338 of 145 GPU-hours; the
+comparison itself ran on CPU and cost none of it.
+
+---
+
+**Update, 2026-08-28 17:30 UTC: one checkpoint's quantized-quality re-scores are fully in hand,
+and the other's last re-run just started on the slot that freed up.** All three formats for the
+first checkpoint are now clean and recorded. Of the second checkpoint's three formats, one is
+already clean from an earlier pass and the remaining two are both running now, neither stuck.
+Spend stands at 70.016 of 145 GPU-hours, comfortably inside plan. No decision needed here; this
+is a routine progress check.
+
+---
+
+**Update, 2026-08-28 16:26 UTC: the second export attempt looked clean by every check in place
+and wasn't, and fixing the gap is already paying off.** Both quality-scoring jobs finished with a
+success status, correct item counts and real output files, which passed every check the project
+had. Direct inspection of the actual generated text found that two of each job's three quantized
+formats had produced nothing at all: three model servers sharing one GPU's compute starved each
+other until requests timed out, and the code silently recorded those timeouts as empty answers
+rather than failures. Only the busiest format on each job came through with real content, and one
+of those two is a genuine keeper. The fix gives each format its own GPU and adds a check that
+fails a job outright if too many answers come back empty, so this exact failure cannot hide again.
+Two of the four affected formats are already re-running alone and progressing normally, one about
+a fifth through and the other nearly half; the remaining two are queued and will start as soon as
+a GPU frees, since only two run at once. Spend stands at 68.338 of 145 GPU-hours.
+
+**Update, 2026-08-28 15:25 UTC: the quality pass died on both cards eight minutes in, for a
+reason that had nothing to do with the 4-bit builds, and the fix was already sitting in this
+project.** All six scoring runs failed at the same instant and with the same message: the program
+that serves these models could not start, because the machine it landed on was missing a system
+library it depends on. Every run had already found and staged the right weights before dying, so
+the export, the file naming and the packing are all clear; what differs is the machine. The
+earlier card type happened to carry that library and this one does not. The export step hit the
+identical wall a day ago and repairs it itself, and that repair had never been carried across to
+the scoring step, which is the only other place that starts the same program. Reading that code
+also turned up a second crash waiting immediately behind the first, which would have killed the
+retry one line later and cost another pair of cards. Both are fixed, both now have tests that
+fail against the old code, and those tests run automatically before any future build ships. The
+two runs are back on cards with **every experimental setting unchanged**, so the numbers they
+produce stay comparable to the full-precision rows already recorded. The dead attempt cost 0.269
+GPU-hours, charged in full; spend stands at 66.876 of 145. Expect roughly two to three hours.
+
+**Update, 2026-08-28 14:52 UTC: the export works, and the 4-bit builds are half the size the
+project promised and as fast as the vendor's own.** The fourth attempt ran clean end to end and
+built six files: both surviving checkpoints, each at full precision and in two different 4-bit
+formats. The shippable ones are **0.696 GB and 0.731 GB against a 1.5 GB ceiling**, and the
+cheaper of the two decodes at **301.9 tokens/second, within 0.1% of the vendor's own published
+4-bit build of the same base model** — the check that our compression is doing the same thing
+theirs does, differing only in the fine-tune baked in. The richer format costs 5.6% of that speed
+for 35 MB more. All three fixes from the earlier crashes held. **What is still unmeasured is
+quality**, which is the actual pass condition: whether these 4-bit builds keep 97% of their own
+full-precision accuracy with no axis below 93%. That scoring pass is on two cards now, six
+serving points, and it separates what the 4-bit runtime costs from what the compression costs
+rather than blaming both on the compression. The build cost 0.168 GPU-hours; spend stands at
+66.607 of 145.
+
 **Update, 2026-08-28 14:27 UTC: the export step is on its fourth attempt, and each of the three
 failures found a different, real defect that the project would otherwise have shipped with.** The
 third attempt repaired the two toolkit gaps below, converted, and for the first time **measured**
@@ -2990,3 +3060,197 @@ alone at 20 GB as `02d522d1`.
   archive should copy the resolved non-system `.so` files into `<root>/lib`. **Attempt 3 is
   `39ccd302`**, same task, same card, same parameters. Three attempts against the substage, one
   of them making no progress. Spend 66.278 of 145.
+
+## The export works, and both 4-bit builds clear the size and speed bar (s5.6)
+
+**`ed70819c` is COMPLETE at 0.168 GPU-h** — `failures: []`, `assertion_failures: 0`, seven
+artifacts, every step rc=0. Attempt 4 carried exactly one change over attempt 3 (`errors="replace"`
+on `sh()`'s output capture), and the three earlier fixes all held: the `conversion/` package
+carried in as a separate same-tag object, the CUDA loader path repaired from this image's
+site-packages wheels with a load-check before the first merge, and the 1.5 GB ceiling judged on
+quantized formats only. Both checkpoints are LoRA adapters, merged to 2.345 GB before conversion.
+
+| Checkpoint | Format | GB | tok/s | vs vendor Q4_0 | ≤ 1.5 GB |
+|---|---|---:|---:|---:|:--|
+| R3 | F16 | 2.343 | 105.19 | — | n/a (intermediate) |
+| R3 | Q4_0 | **0.696** | **301.85** | +0.05 % | yes |
+| R3 | Q4_K_M | 0.731 | 284.83 | −5.59 % | yes |
+| C7 | F16 | 2.343 | 105.11 | — | n/a |
+| C7 | Q4_0 | **0.696** | **301.98** | +0.10 % | yes |
+| C7 | Q4_K_M | 0.731 | 284.50 | −5.70 % | yes |
+| _reference_ | LiquidAI QAD-Q4_0 | 0.696 | 301.69 | — | — |
+
+**The size clause of H4 is satisfied with a factor of two to spare**, and the throughput agreement
+with the vendor's own published 4-bit build of the same base is the load-bearing check here: same
+size, same speed, same layout, differing only in the fine-tune. A quantization path that had gone
+wrong would not land inside 0.1 % of it. Q4_K_M's mixed-precision layout costs 5.6 % of decode for
+35 MB, which is the trade the quality pass now has to price.
+
+Sizes and throughput identical across R3 and C7 to three decimals are expected — architecture,
+vocabulary and quantization type fix both — and are therefore **not** evidence that the two merges
+produced different weights. The evidence for that has to come from the quality rows, which is why
+the falsification check below was written before them.
+
+**Queued: the quality half, `af80ef62` (R3) and `f7ebf0a3` (C7).** Six rows, two checkpoints ×
+{F16, Q4_0, Q4_K_M}, full item counts on all four components with the 138-item clean-control arm
+carried, prompts rendered by the full-precision tokenizer so Q4 and FP rows see identical bytes.
+Three serving points per checkpoint and not two, for the reason s5.2 already paid for once:
+FP-in-`transformers` → F16-in-`llama.cpp` prices the runtime, F16 → Q4 prices the quantization,
+and H4 is a claim about the second. Retention is measured against each checkpoint's own
+full-precision self, never across checkpoints and never against the base.
+
+Packed three arms to a card (16.00 GB of the 22.08 GB limit) and split by checkpoint: wall clock
+on a pack is the slowest arm rather than the sum, turning roughly 14 card-hours into roughly 6,
+and a job that dies still lands one checkpoint's complete row set. Two jobs fill the 2-GPU cap
+exactly. Each arm names its own file through `gguf_object` inside `pack_overrides`, which works
+without a task schema edit because `pack.py` stages any key ending `_object`, including inside a
+per-arm override; the queue script asserts arm/override agreement, pack arithmetic, uniqueness of
+served files and name-to-file agreement before spending a card, because a mislabelled arm is worse
+than a failed one when the label *is* the attribution of the retention number.
+
+**Pre-registered before the numbers exist:** if R3-F16 and C7-F16 score identically across all
+four axes, the two merges produced the same weights and the export is wrong rather than the
+retention, and that reading takes precedence over any retention conclusion from the same table.
+
+**A correction to something this report said earlier.** The s5.6 notes claimed this lab server
+exposes no end timestamp on any job and that every duration in the experiment is therefore a
+start-to-next-launch upper bound. That was too broad and it was wrong. `job_data.end_time` is
+populated on `ed70819c`, `d4a7d46b` and `08dab391`, and null only on the two failed export
+attempts `39ccd302` and `22a2d914` — an end timestamp is normally present and missing on some
+failures. The two failed attempts' spends stay upper bounds and their ledger entries say so;
+every other duration in this experiment is a measurement. Spend 66.607 of 145.
+
+### The three-arm pack corrupted two of three rows in both quality jobs, silently (s5.6)
+
+The queued quality jobs above, `af80ef62` (R3) and `f7ebf0a3` (C7), first failed outright on a
+missing CUDA library at server startup (`libnccl.so.2`) — the eval pack's L4 image lacks the
+runtime the L40S image that scored the earlier 4-bit rows carried. Fixed and relaunched
+(`46bd54cb` R3 / `fb6f4bb9` C7), both packing three arms per card exactly as planned above. Both
+reported `completion_status: success`, correct item counts, and non-empty `lab job artifacts` —
+every check this substage had specified passed. Direct inspection of the downloaded completion
+files found two of each job's three arms were 60–100% empty generations across most components;
+only the arm that ran mostly alone in each job's window came back genuinely clean. Root cause:
+three concurrent `llama-server` processes sharing one L4's *compute* (not VRAM — `pack_gb`'s
+ceilings arbitrate memory only) collapsed per-token throughput roughly sixty-fold, individual
+requests timed out, and the generation code turned each timeout into a silent empty completion
+instead of a retry or a raised error. Full account in `runs/s5.6-export-recovery.md`.
+
+**This is a real tension with the standing note that a GPU concurrency cap is not a reason to
+serialize work, and it is worth saying so plainly rather than letting the switch pass quietly.**
+The fix taken was to queue one arm per job so every `llama-server` gets a card to itself, which
+is exactly the "one job per card" pattern that note asks against. The reason: the note's own
+concern is that one run failing or being cancelled should not disturb its neighbours, and what
+happened here is worse than that — the contended arms did not fail, they finished looking clean
+while quietly returning empty output, which is the failure mode packing was supposed to be safe
+against. The alternative that would have kept the packing pattern — making the generation code
+retry or back off under HTTP timeout instead of returning silent empty strings — is now built as
+a defence-in-depth gate (`check_completions()`, failing the job loudly above a 2% empty-completion
+threshold) but was not extended to auto-retry, because this substage has six short arms left
+(a few GPU-hours total) and shipping a known-safe serialized path for a small, finite batch was
+judged lower-risk than shipping a new retry path untested against this exact contention pattern.
+The packing pattern itself remains the right default for the rest of the project — this is a
+narrow exception for eval-serving jobs specifically, scoped to the arms still outstanding here.
+
+**Relaunch, one arm at a time as the account's 2-GPU cap allows:** `ba294aa7` (R3-F16) and
+`6d91edf4` (R3-Q4_0) landed clean and are promoted to `tidepool/s5.6/arms/`. `b928b8fc`
+(R3-Q4_K_M) and `56f67874` (C7-F16) are in flight. `C7-Q4_0` still needs queuing once a slot
+frees; `C7-Q4_K_M`'s score from the packed job was independently confirmed clean by the same
+manual inspection and needs no relaunch. Both corrupted packed jobs are charged to budget in
+full despite the wasted arms (0.556 + 0.906 GPU-h) since the compute was genuinely spent. Spend
+69.498 of 145 GPU-hours as of the last landed job.
+
+## All six 4-bit points are clean, and plain export lands under the retention bar (s5.6)
+
+The relaunch is finished. All six exported serving points have been scored solo, one arm to a
+card, and every one of them passes both integrity gates: the full 17-file artifact set, and
+zero empty completions across all five components at full item counts (3,490 native tool calls,
+3,490 text tool calls, 541 instruction-following prompts, 2,000 structured-output prompts, 602
+guardrail probes per arm). `assertion_failures: 0` on all six. The contention failure that
+silently hollowed out two of three arms in each packed job does not recur once each
+`llama-server` owns a card, which is what the one-arm-per-job fix predicted and is now
+measured rather than assumed. Provenance, gate results and the measured rates are in
+`runs/s5.6-quality-six-arms.md`.
+
+**The pre-registered export-validity check passes.** The queue script recorded, before the
+numbers existed, that if the two checkpoints' full-precision exports scored identically the
+merges had collapsed and the export was wrong. They do not: `C7-F16` reaches 0.1380 structured
+output validity against `R3-F16`'s 0.0860, a 5.2 point gap on a low base, and the two differ on
+tool calling and guardrail idiom as well. Identical GGUF file sizes and decode speeds across
+the checkpoints are fixed by architecture and quantization type, and were never evidence
+either way.
+
+### The verdict on H4's first rung
+
+The bar was set at `s3` and is applied unchanged: every axis at 93% retention or better, the
+mean at 97% or better, at 1.5 GB or less on disk. Each checkpoint's 4-bit forms are read
+against its own full-precision export, never across checkpoints and never against the base.
+
+| arm | tool calling | instructions | structured output | guardrail idiom | mean | weakest | verdict |
+|---|--:|--:|--:|--:|--:|--:|---|
+| R3-Q4_0   | 93.9% | 98.0% | 85.5% | 97.1% | 93.6% | 85.5% | fails |
+| R3-Q4_K_M | 96.1% | 100.2% | 85.5% | 85.3% | 91.8% | 85.3% | fails |
+| C7-Q4_0   | 95.2% | 98.7% | 83.3% | 96.4% | 93.4% | 83.3% | fails |
+| C7-Q4_K_M | 95.5% | 99.0% | 98.2% | 85.7% | 94.6% | 85.7% | fails |
+
+Four arms, four failures, and the size and speed half of the bar cleared comfortably by all of
+them (0.696 to 0.731 GB against a 1.5 GB ceiling, 285 to 302 tok/s decode). **Plain export is
+not enough on its own**, which is the answer to the narrow question G1 was queued to settle.
+
+Two things about the shape of the failure matter more than the count.
+
+**The failures are concentrated in the two low-base axes, and the ratio there is doing most of
+the work.** Tool calling and instruction following, the axes whose full-precision rates are
+0.70 to 0.75, retain 93.9% to 100.2% everywhere: eight of eight cells clear the floor. Every
+failing cell is on structured output (full-precision rate 0.086 on R3, 0.138 on C7) or on
+guardrail stack idiom (0.236 and 0.194). On a denominator that small the absolute drops behind
+the failures are 0.25 to 3.5 points, and a 1.25 point drop on a 0.086 base reads as a 14.5%
+retention loss. The comparison job flags every one of those rows as an ill-conditioned ratio
+and reports the absolute delta beside it. The bar is still applied as written, because a bar
+rewritten after seeing the numbers is not a bar.
+
+**Which axis breaks is not stable across format or checkpoint.** `C7-Q4_K_M` holds structured
+output at 98.2%, the best of the four, and fails on guardrail idiom instead; `R3-Q4_K_M` fails
+on both; the two `Q4_0` arms fail on structured output while holding idiom above 96%. A single
+consistent quantization penalty would not move around like that. The pattern is what a small
+absolute perturbation looks like when it lands on axes whose full-precision rates are already
+low, and it argues against reading any one cell as a property of the quantization format.
+
+Recovery ladder and its ordering: `runs/s5.6-recovery-plan.md`.
+
+## The 4-bit builds were never uniformly 4-bit, and a size check found it for free (s5.6 G4a)
+
+G1 settled that plain export misses the retention bar, so the first recovery rung spends some
+of the unused disk headroom where the failures are: keep the body of the network at Q4_K_M and
+hold the tied token-embedding/output tensor above it, at `q6_K` (`Q4_K_L`) or `q8_0`
+(`Q4_K_XL`). Export job `d2ce6665`, one L4, 12m 32s, `failures: []`, four GGUFs out. No
+retraining and no new weights, so each checkpoint's own already-scored F16 export stays the
+retention reference and the comparison is the one registered in s3.
+
+The queue message carried a check written before the numbers: a variant within 5 MB of its
+plain Q4_K_M counterpart means the tensor-type flags did not take effect, and the arm is a
+re-run of Q4_K_M whatever it scores. Both `Q4_K_L` builds came back at 0.731 GB against plain
+Q4_K_M's 0.731 GB.
+
+| arm | recipe | GB | tok/s | delta vs plain Q4_K_M |
+|---|---|---|---|---|
+| R3-Q4_K_L | Q4_K_M body, emb+out `q6_K` | 0.731 | 286.6 | +0.000 GB — no effect |
+| R3-Q4_K_XL | Q4_K_M body, emb+out `q8_0` | 0.763 | 279.0 | +0.032 GB |
+| C7-Q4_K_L | Q4_K_M body, emb+out `q6_K` | 0.731 | 287.1 | +0.000 GB — no effect |
+| C7-Q4_K_XL | Q4_K_M body, emb+out `q8_0` | 0.763 | 279.2 | +0.032 GB |
+
+The arithmetic confirms the reading instead of leaving it a guess. The tied embedding/output
+tensor holds 65,536 x 2,048 = 134.2M parameters: 110.1 MB at `q6_K`'s 6.5625 bits per weight,
+142.6 MB at `q8_0`'s 8.5, a gap of 32.5 MB against the 32 MB observed between the two variants.
+`llama.cpp`'s stock Q4_K_M recipe was already placing that tensor at `q6_K` for this
+architecture, so `Q4_K_L` asked for what it already had.
+
+Two things follow. The `Q4_K_L` arms are dropped without being scored, on the pre-registered
+rule, which saves two eval arms for the price of reading a file size. And the shipped Q4_K_M
+builds that missed the retention bar were never uniformly 4-bit — their embedding and output
+tensor already carried 6.5 bits — so the room left in this direction is one step wide, and
+`Q4_K_XL` is that step. Both `Q4_K_XL` arms are scored one per card and both cards at once,
+which applies the operator's standing note that a 2-GPU cap is not a cap on parallel work in
+the one place it is safe here: parallelism across cards cannot reproduce the single-card
+compute contention that corrupted the packed attempts.
+
+Export detail and the dropped variant: runs/s5.6-g4a-quant-type.md.

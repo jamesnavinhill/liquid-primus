@@ -143,7 +143,9 @@ PACK_INDEX = int(os.environ.get("TIDEPOOL_PACK_INDEX") or 0)
 # component that has nothing to do with downloads, or worse, does not surface at all.
 DATA = os.path.join(OUT, "data")
 NOTES = []
-ASSERTS = []
+
+import asserts  # noqa: E402
+from asserts import ASSERTS, check, check_completions  # noqa: E402
 
 
 def log(msg):
@@ -156,11 +158,7 @@ def log(msg):
         pass
 
 
-def check(name, ok, detail=""):
-    ASSERTS.append({"name": name, "ok": bool(ok), "detail": str(detail)[:300]})
-    if not ok:
-        log("ASSERTION FAILED %s: %s" % (name, detail))
-    return bool(ok)
+asserts.set_logger(log)
 
 
 def sha(path):
@@ -298,6 +296,7 @@ def run_bfcl(cfg, runner, prompter, categories, styles, limit):
                                batch_size=int(cfg.get("batch_size", 16)),
                                tag="bfcl/%s" % style,
                                ids=[it["id"] for it in kept])
+        check_completions("bfcl_%s" % style, outs)
         raw, scored = [], []
         for it, p, o in zip(kept, prompts, outs):
             calls = prompting.parse_calls(o)
@@ -329,6 +328,7 @@ def run_ifstruct(cfg, runner, prompter, limit):
     outs = runner.generate(prompts, max_new_tokens=int(cfg.get("max_new_ifstruct", 1024)),
                            batch_size=int(cfg.get("batch_size", 16)), tag="ifstruct",
                            ids=[it["id"] for it in items])
+    check_completions("ifstruct", outs)
     raw, scored = [], []
     for it, p, o in zip(items, prompts, outs):
         ok, detail = ifstruct_score.score_item(it, o)
@@ -353,6 +353,7 @@ def run_ifeval(cfg, runner, prompter, limit):
     outs = runner.generate(prompts, max_new_tokens=int(cfg.get("max_new_ifeval", 1024)),
                            batch_size=int(cfg.get("batch_size", 16)), tag="ifeval",
                            ids=[it["id"] for it in items])
+    check_completions("ifeval", outs)
     raw, scored = [], []
     for it, p, o in zip(items, prompts, outs):
         ok, detail = ifeval_score.score_item(it, o)
@@ -412,6 +413,7 @@ def run_probes(cfg, runner, prompter, limit):
     outs = runner.generate(prompts, max_new_tokens=int(cfg.get("max_new_probes", 320)),
                            batch_size=int(cfg.get("batch_size", 16)), tag="probes",
                            ids=[it["id"] for it in items])
+    check_completions("probes", outs)
     raw, scored = [], []
     for it, p, o in zip(items, prompts, outs):
         ok, detail = probes_score.score_item(it, o)

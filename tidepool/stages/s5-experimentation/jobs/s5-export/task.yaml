@@ -46,6 +46,10 @@ parameters:
   # serving path already carries the package.
   conversion_object: tidepool/llama-b10622-conversion.tar.gz
   formats: "F16,Q4_0,Q4_K_M"
+  # s5.6 G4a. JSON map of label -> quantizer recipe, for builds whose body stays 4-bit while
+  # the token-embedding and output tensors are held at higher precision. Empty by default, so
+  # every number already taken through this task is unaffected.
+  quant_variants: ""
   size_ceiling_gb: 1.5
   # The efficiency floor's reference: the vendor's own quantization-aware Q4_0 build, which is
   # also baseline row B2. Benched here rather than carried over from s5.2, because 5% is

@@ -67,6 +67,33 @@ FAILURES = []
 # sound; see `read_items`.
 ID_SHA = {}
 
+# Axis name -> dotted path into the merged per-arm summary, for the H4 retention table.
+#
+# These four are the headline rates the eval harness reports per component family, and they
+# are the four axes `s3`'s H4 was written on ("per-axis retention of the 4-bit GGUF against
+# its own full-precision parent", stop/go at >= 93% every axis and >= 97% on the average).
+# The enumeration is fixed here rather than derived, so that which axes count is a property
+# of the code and not of whichever table someone happened to look at.
+#
+# Retention is a RATIO of two rates, so it is only as well-conditioned as the denominator.
+# An axis whose reference rate is near the floor turns a small absolute change into a large
+# ratio: at a reference rate of 0.086 a 1.25-point drop reads as 14.5% of the axis. That is
+# not a reason to drop the axis or to move the bar -- the criterion below is applied exactly
+# as pre-registered -- but the reference rate and the absolute delta travel next to every
+# ratio so the reading cannot be made without them, and `ratio_is_well_conditioned` marks
+# the rows where the ratio is carrying more weight than the rate underneath it can bear.
+DEFAULT_RETENTION_AXES = {
+    "bfcl_composite": "bfcl_ast_composite",
+    "ifeval_prompt_strict": "ifeval_prompt_strict",
+    "ifstruct_validity": "ifstruct_validity",
+    "probe_stack_idiom": "probe_stack_idiom",
+}
+
+# Below this reference rate a 7% relative tolerance is under two absolute points, which is
+# inside the sampling noise of every component this project scores. Rows under it are still
+# judged; they are flagged so the judgement is read with the paired interval beside it.
+RETENTION_WELL_CONDITIONED_FLOOR = 0.30
+
 # Component name -> where its per-item verdicts live, which rows count, what to cross-check
 # the recomputed rate against, and (optionally) the field to macro-average over.
 DEFAULT_COMPONENTS = {
@@ -325,6 +352,60 @@ def parse_components(raw):
     return out
 
 
+def retention_table(loaded, ref_arm, axes, min_axis, min_mean):
+    """Per-axis retention of each arm against the reference arm, and the H4 verdict.
+
+    Retention is the arm's rate over the reference's on the same axis. The reference here is
+    always the arm's OWN full-precision self, never another checkpoint and never the base
+    model: H4 asks what the quantization costs, and a ratio taken across checkpoints would
+    price the fine-tune instead.
+    """
+    rows, arms_verdict = [], {}
+    for arm in loaded:
+        if arm == ref_arm:
+            continue
+        _data, meta = loaded[arm]
+        _rdata, rmeta = loaded[ref_arm]
+        for axis, path in axes.items():
+            ref_v, arm_v = dotted(rmeta, path), dotted(meta, path)
+            if not isinstance(ref_v, (int, float)) or not isinstance(arm_v, (int, float)):
+                NOTES.append("retention %s/%s skipped: %s is missing on %s"
+                             % (arm, axis, path,
+                                arm if not isinstance(arm_v, (int, float)) else ref_arm))
+                continue
+            ref_v, arm_v = float(ref_v), float(arm_v)
+            if ref_v <= 0:
+                NOTES.append("retention %s/%s skipped: the reference rate is %g, so a ratio "
+                             "is undefined" % (arm, axis, ref_v))
+                continue
+            rows.append({
+                "arm": arm, "axis": axis, "path": path,
+                "reference_rate": round(ref_v, 6),
+                "arm_rate": round(arm_v, 6),
+                "absolute_delta": round(arm_v - ref_v, 6),
+                "retention": round(arm_v / ref_v, 6),
+                "meets_axis_floor": bool(arm_v / ref_v >= min_axis),
+                "ratio_is_well_conditioned":
+                    bool(ref_v >= RETENTION_WELL_CONDITIONED_FLOOR),
+            })
+    for arm in sorted({r["arm"] for r in rows}):
+        mine = [r for r in rows if r["arm"] == arm]
+        ratios = [r["retention"] for r in mine]
+        mean = sum(ratios) / len(ratios)
+        worst = min(mine, key=lambda r: r["retention"])
+        arms_verdict[arm] = {
+            "n_axes": len(mine),
+            "mean_retention": round(mean, 6),
+            "min_retention": round(worst["retention"], 6),
+            "min_axis": worst["axis"],
+            "meets_mean": bool(mean >= min_mean),
+            "meets_every_axis": all(r["meets_axis_floor"] for r in mine),
+            "passes": bool(mean >= min_mean and all(r["meets_axis_floor"] for r in mine)),
+            "failing_axes": sorted(r["axis"] for r in mine if not r["meets_axis_floor"]),
+        }
+    return rows, arms_verdict
+
+
 def main():
     reset()
     arms = [a.strip() for a in str(C("arms", "")).split(",") if a.strip()]
@@ -333,6 +414,19 @@ def main():
     resamples = int(C("resamples", 10000))
     seed = int(C("seed", 20260826))
     components = parse_components(C("components", ""))
+    # Retention is OFF unless a run asks for it, and that default is load-bearing rather
+    # than cautious. The ratio is only meaningful when the reference is the arm's own
+    # full-precision self; against any other reference -- the s5.3 comparison's C1, say --
+    # the same arithmetic silently prices the fine-tune and labels the result quantization
+    # damage. A parameter that has to be set is a parameter someone had to think about.
+    want_retention = str(C("retention", "")).strip().lower() in ("1", "true", "yes", "on")
+    raw_axes = C("retention_axes", "")
+    if not raw_axes:
+        retention_axes = dict(DEFAULT_RETENTION_AXES)
+    else:
+        retention_axes = json.loads(raw_axes) if isinstance(raw_axes, str) else dict(raw_axes)
+    retention_min_axis = float(C("retention_min_axis", 0.93))
+    retention_min_mean = float(C("retention_min_mean", 0.97))
     if len(arms) < 2:
         raise SystemExit("a paired comparison needs at least two arms, got %r" % arms)
     if ref_arm not in arms:
@@ -436,6 +530,17 @@ def main():
                   abs(mine - float(reported)) < 1e-3,
                   "recomputed %.6f, %s reports %.6f" % (mine, path, float(reported)))
 
+    # ---- H4 retention: each arm's headline rates against the reference arm's own
+    if want_retention:
+        retention_rows, retention_verdict = retention_table(
+            loaded, ref_arm, retention_axes, retention_min_axis, retention_min_mean)
+    else:
+        retention_rows, retention_verdict = [], {}
+    for arm, v in sorted(retention_verdict.items()):
+        log("retention %s vs %s: mean %.4f, min %.4f on %s -> %s"
+            % (arm, ref_arm, v["mean_retention"], v["min_retention"], v["min_axis"],
+               "passes" if v["passes"] else "fails"))
+
     summary = {
         "reference": ref_arm,
         "arms": arms,
@@ -444,6 +549,15 @@ def main():
         "resamples": resamples,
         "seed": seed,
         "cells": cells,
+        "retention": {
+            "requested": want_retention,
+            "axes": retention_axes,
+            "min_axis": retention_min_axis,
+            "min_mean": retention_min_mean,
+            "well_conditioned_floor": RETENTION_WELL_CONDITIONED_FLOOR,
+            "rows": retention_rows,
+            "by_arm": retention_verdict,
+        },
         "n_comparisons": len(cells),
         "n_separating_by_interval": sum(1 for c in cells if c["separates_by_interval"]),
         "n_significant_family_corrected": sum(
@@ -475,7 +589,11 @@ def main():
 
 def render(s):
     """The same numbers the JSON carries, as a table a human reads."""
-    out = ["# s5.3 arms against %s, paired by item" % s["reference"], "",
+    # The title names the arm family by the storage prefix the arms were read from, so a
+    # comparison run over a later substage's arms does not render itself as an s5.3 table.
+    family = str(s.get("completions_prefix", "")).rstrip("/").split("/")
+    family = family[-2] if len(family) >= 2 else "arms"
+    out = ["# %s arms against %s, paired by item" % (family, s["reference"]), "",
            s["method"], "",
            "Bootstrap resamples %d, seed %d, %d comparison(s) in the corrected family."
            % (s["resamples"], s["seed"], s["n_comparisons"]), "",
@@ -496,6 +614,36 @@ def render(s):
                       c["arm_rate"], c["delta"], c["ci95_low"], c["ci95_high"],
                       ("%+.4f" % macro) if macro is not None else "",
                       c["p_mcnemar_exact"], c.get("p_holm", float("nan")), reads))
+    ret = s.get("retention") or {}
+    if ret.get("rows"):
+        out += ["", "## Retention against %s" % s["reference"], "",
+                "Each arm's headline rate over the reference's on the same axis. The bar is "
+                ">= %.0f%% on every axis and >= %.0f%% on the mean."
+                % (100 * ret["min_axis"], 100 * ret["min_mean"]), "",
+                "| arm | axis | ref rate | arm rate | absolute | retention | >= floor | "
+                "ratio well conditioned |",
+                "|---|---|--:|--:|--:|--:|:-:|:-:|"]
+        for r in ret["rows"]:
+            out.append("| %s | %s | %.4f | %.4f | %+.4f | %.1f%% | %s | %s |"
+                       % (r["arm"], r["axis"], r["reference_rate"], r["arm_rate"],
+                          r["absolute_delta"], 100 * r["retention"],
+                          "yes" if r["meets_axis_floor"] else "NO",
+                          "yes" if r["ratio_is_well_conditioned"] else
+                          "no (ref rate < %.2f)" % ret["well_conditioned_floor"]))
+        out += ["",
+                "| arm | axes | mean | min | on axis | verdict |", "|---|--:|--:|--:|---|---|"]
+        for arm, v in sorted((ret.get("by_arm") or {}).items()):
+            out.append("| %s | %d | %.1f%% | %.1f%% | %s | %s |"
+                       % (arm, v["n_axes"], 100 * v["mean_retention"],
+                          100 * v["min_retention"], v["min_axis"],
+                          "passes" if v["passes"] else
+                          "FAILS on " + ", ".join(v["failing_axes"])))
+        out += ["",
+                "A ratio is only as well conditioned as its denominator: where the reference "
+                "rate is under %.2f, a few absolute points move the ratio by more than ten "
+                "of them, so read those rows with the absolute column and the paired "
+                "interval above and not on their own. The bar is applied as pre-registered "
+                "either way." % ret["well_conditioned_floor"]]
     out += ["",
             "`delta` is the arm's rate minus the reference's over the items both scored. "
             "`macro` averages the per-group deltas with equal weight per group and has no "

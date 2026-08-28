@@ -1,526 +1,182 @@
 {
- "18573ffc-abea-4c70-b59b-756e96c1e005": [
+ "46bd54cb-0642-4677-8e37-b609356770ee": [
   {
-   "at": "2026-08-25T12:08:00Z",
-   "status": "RUNNING",
-   "note": "step 7/30, loss 1.104 vs 1.3223 pre-step val; template mode native (2/64 probe rows had tool turns, accepted); mask 83/896 tokens (9.3%); LoRA 11.1M of 1181M params (0.940%); 1160 tok/s"
-  },
-  {
-   "at": "2026-08-25T12:12:00Z",
-   "status": "FAILED",
-   "note": "terminal. 30/30 steps, val 1.3223->0.4940, 1435.3 tok/s, priority_share 0.5, 0 assertion failures, 5 artifacts incl adapter.zip. Crashed only on lab.finish(status=...) TypeError. Relaunched as c8699eaf."
-  }
- ],
- "defa6156-9197-46a1-bae6-6535a5a854b6": [
-  {
-   "at": "2026-08-25T12:08:00Z",
-   "status": "RUNNING",
-   "note": "pool 447,053 rows, 64 sampled by hash rank, all 64 usable within 1024 prompt tokens; model loaded on cuda; generation starting"
-  },
-  {
-   "at": "2026-08-25T12:09:00Z",
-   "status": "FAILED",
-   "note": "terminal. 64 completions, 0 empty, 204.1 tok/s, 0 assertion failures, replay.jsonl saved. Same lab.finish TypeError. Relaunched as 66aca6c7."
-  }
- ],
- "c8699eaf-ff8c-4045-b81a-f344facd23d5": [
-  {
-   "at": "2026-08-25T12:14:00Z",
-   "status": "LAUNCHING",
-   "note": "attempt 2, SDK finish/error call fixed; cluster_started 99%"
-  },
-  {
-   "at": null,
-   "status": "UNKNOWN",
-   "note": "COMPLETE 100% - success, score dict present (val_loss 0.4771, 1398.3 tok/s, 0 assertion failures), 5 artifacts verified, 435s wall clock, charged 0.121 GPU-h"
-  }
- ],
- "66aca6c7-6047-468b-8cbf-14265f8b7021": [
-  {
-   "at": "2026-08-25T12:14:00Z",
-   "status": "LAUNCHING",
-   "note": "attempt 2, SDK finish/error call fixed; cluster_started 99%"
-  },
-  {
-   "at": null,
-   "status": "UNKNOWN",
-   "note": "COMPLETE 100% - success, score dict present, 3 artifacts verified. Counts identical to attempt 1 (64/64, 0 empty, 15,677 tokens), so frozen greedy decoding is deterministic. 839s wall clock, charged 0.233 GPU-h."
-  }
- ],
- "be8dcfde-54b9-472b-9624-a7ab8e4c3159": [
-  {
-   "at": null,
-   "status": "UNKNOWN",
-   "note": "LAUNCHING - L40S calibration of the supervised smoke, 60 steps over 1024 rows, task s5-sft-l40s (d6a7d16f). Exists to replace the plan's assumed 6000 tok/s with a measured figure on the card the C sweep will use."
-  },
-  {
-   "at": null,
-   "status": "UNKNOWN",
-   "note": "FAILED at launch in 4s, 0 GPU-h: the provider chosen by default does not sell L40S. No compute consumed. Re-queued as 68635a5d on the first provider in the card's own source row."
-  }
- ],
- "68635a5d-a21a-4dae-863a-cf97a93bb2c5": [
-  {
-   "at": null,
-   "status": "UNKNOWN",
-   "note": "LAUNCHING - L40S calibration, second attempt, pinned to the first source in the card's row. 60 steps over 1024 rows, task s5-sft-l40s (d6a7d16f)."
-  },
-  {
-   "at": "2026-08-25T12:52:00Z",
-   "status": "COMPLETE",
-   "note": "terminal, success. L40S throughput 3994.2 tok/s vs 6000 assumed; epoch tokens 83.1M (9% under the L4 derivation); score dict present, artifacts verified; charged 0.121 GPU-h. Budget re-priced and the sweep resized to 64.0M tokens per arm."
-  }
- ],
- "5fe7a828-320c-476d-8901-3cb29571cb0e": [
-  {
-   "at": "2026-08-25T13:01:00Z",
-   "status": "LAUNCHING",
-   "note": "s5.2 eval-harness smoke, stock LFM2.5-1.2B-Instruct, L4:1 on gcp, 40 items/component + 30 control. Watch eval_summary.json assertions: template mode must be native, both tool-contract surface forms render+parse, every grader returns, artifacts present."
-  },
-  {
-   "at": "2026-08-25T13:18:00Z",
-   "status": "RUNNING",
-   "note": "cluster_started 99%, no task logs yet"
-  },
-  {
-   "at": "2026-08-25T13:12:00Z",
-   "status": "FAILED",
-   "note": "terminal. Template mode native, tools= supported, both surface forms generated and parsed. tools_text composite 0.5319 at 40 items/cat (sample too small to be a baseline). Raised writing the native_tools per-item file: one of 378 completions wrote a Python set literal. Both completion artifacts saved. Parser fix verified locally on all 378; charged 0.17 GPU-h. Relaunched narrowed as c37dd243."
-  }
- ],
- "c37dd243-ec46-47be-a760-9f70ac065954": [
-  {
-   "at": "2026-08-25T13:14:00Z",
-   "status": "LAUNCHING",
-   "note": "attempt 2, components=ifstruct,ifeval,probes at limit 40. Watch: every grader returns, control arm sha 561a23f3c6532c4f, eval_summary.json saved with assertions."
-  },
-  {
-   "at": "2026-08-25T13:26:00Z",
-   "status": "COMPLETE",
-   "note": "terminal, success. 3 components, 0 assertion failures, 27,054 tokens at 247.2 tok/s. ifeval prompt-strict 0.800 (n=40) vs published 86.23, harness calibrated. ifstruct 0.125 (n=40) investigated: our validator call matches the benchmark's own run_one verbatim and the failing completions are genuinely schema-invalid, so the full pass settles it. probes flag 0.074 / false-flag 0.000 / stack idiom 0.364 on the untrained checkpoint. Two artifact bugs fixed: basename collision, and .json summaries not registering. Charged 0.14 GPU-h."
-  }
- ],
- "c644aac2-4505-4d85-b3c8-e2c450501e6d": [
-  {
-   "at": null,
-   "status": "UNKNOWN",
-   "note": "recovered from a malformed entry; original text was appended as a bare string and partly lost: e task, uploaded 14:00Z."
-  }
- ],
- "ad6cded5-da97-431f-9eb0-cdff23af589f": [
-  {
-   "at": null,
-   "status": "UNKNOWN",
-   "note": "Queued 14:03Z on gcp L4. Builds llama.cpp b10622 with CUDA for sm89, serves the real LFM2.5 Q4_0 GGUF, asserts two identical greedy requests match, measures single-stream and 8-slot throughput, and prices a full Q4 pass from that. What to check on wake: whether nvcc was present or had to come from a wheel, whether the server offloaded all layers to the GPU (a silent CPU fallback would look fine and be worthless), and the priced hours for a full 4-bit pass. Its tarball goes to shared storage as llama_object; B2, B3, B5 and the F16 runtime reference all wait on it."
-  },
-  {
-   "at": "2026-08-25T14:14:00Z",
-   "status": "FAILED",
-   "note": "terminal, attempt 1, 0 of 3 no-progress relaunches used before this. FAILURE SIGNATURE: RuntimeError at main.py:83, 'no CUDA compiler on PATH and the nvcc wheel did not provide one', raised in the environment-probe section before any source was fetched. The probe found cmake/ninja/gcc/g++/git/nvidia-smi and an L4 sm_89, no nvcc; the wheel install returned rc=0 in 25 s and the subsequent search over site.getsitepackages() plus getusersitepackages() found no nvidia/cuda_nvcc/bin/nvcc. Diagnosed as a discovery fault, not an install fault: the pip on PATH need not belong to the interpreter running main.py. Charged 0.18 GPU-h. Relaunched as 602b78a9."
-  }
- ],
- "602b78a9-bcfb-4288-be54-38e365721372": [
-  {
-   "at": "2026-08-25T14:19:00Z",
-   "status": "LAUNCHING",
-   "note": "attempt 2 of the 4-bit serving build, 1 no-progress relaunch behind it. Changed: nvcc located on disk (PATH, /usr/local/cuda*, the nvidia namespace package, every sys.path and site-packages entry) and installed via sys.executable -m pip so install and search agree; the four toolchain wheels symlinked into one synthetic CUDA prefix with unversioned .so aliases and a libcuda.so link to the driver, because the compiler wheel alone has no cuda_runtime.h; a hard assert that cuda_runtime.h exists before configuring; a hard assert that the running server's startup log shows a CUDA device; type= dropped from all three save_artifact calls; disk 100->200 GB; minutes 75->120; provider pinned gcp. WHAT TO CHECK ON WAKE: whether the toolkit assembled (look for 'assembled a CUDA toolkit at'), whether nvcc --version reported a release, the offload lines echoed after 'server healthy', the 8-slot generated tok/s and the priced full Q4 pass hours, whether the job managed its own storage upload or left it to be done from outside, and that job artifacts lists the tarball."
-  },
-  {
-   "at": "2026-08-25T14:30:00Z",
-   "status": "COMPLETE (empty)",
-   "note": "terminal but produced nothing: zero-byte output file, no task logs, no machine logs, no artifacts, provider_empty_jobs_polls=15, 5m13s wall. FAILURE SIGNATURE: COMPLETE with zero-byte log and 15 empty provider job polls; the VM was inserted and the task never ran on it. Ruled out disk (four other jobs here ran fine at 200 GB on gcp) and a broken script (py_compile passes; a syntax error would have printed a traceback). Charged 0.09 GPU-h. Relaunched byte-identical as 25e75d99."
-  }
- ],
- "25e75d99-14a1-4a6e-9629-443962a1519b": [
-  {
-   "at": "2026-08-25T14:32:00Z",
-   "status": "LAUNCHING",
-   "note": "attempt 3 of the 4-bit serving build, byte-identical to attempt 2. ON WAKE, CHECK THIS FIRST: did it print anything at all? If it repeats attempt 2's signature (COMPLETE, zero-byte log, no artifacts, nonzero provider_empty_jobs_polls) do NOT relaunch a fourth time; write a kind: blocker marker with fault: platform, because a task that has never printed a line cannot be debugged from here. If it did run, check where nvcc came from, whether the assembled toolkit yielded cuda_runtime.h, the offload lines echoed after 'server healthy', the 8-slot generated tok/s, the priced hours for a full Q4 pass, and whether job artifacts lists the tarball. If the tarball is listed but the in-job storage upload failed, place it in shared storage as tidepool/llama-b10622-sm89.tar.gz before queueing any Q4 row."
-  },
-  {
-   "at": "2026-08-25T14:44:00Z",
-   "status": "COMPLETE (empty)",
-   "note": "terminal, produced nothing, and the signature REPEATED. 14s wall (attempt 2 was 5m13s), zero-byte log, no task logs, machine-logs answered 'Instance not found or not running', no artifacts, progress 0, same gcp zone us-central1-a. FAILURE SIGNATURE: identical to attempt 2 - COMPLETE with zero-byte log, no artifacts, instance insert accepted and no job ever seen on the machine. No progress; consecutive no-progress attempts in s5.2 now 1. Disk re-verified as cleared: 66aca6c7 ran L4:1 at 200 GB on gcp. Charged 0.01 GPU-h. NOT escalated to a platform marker, contrary to the note left on attempt 3: the steering note's L4 source row is AWS, GCP, RunPod worked left to right, two of three were untried, and the gcp pin was this project's own attempt-2 edit. Relaunched as b7de2af2 with compute_provider gcp -> aws and nothing else changed."
-  }
- ],
- "b7de2af2-e141-4bf0-a717-442e5d791734": [
-  {
-   "at": "2026-08-25T14:44:00Z",
-   "status": "LAUNCHING",
-   "note": "attempt 4 of the 4-bit serving build, on aws, us-east-1a (1 of 22). Exactly one value differs from attempts 2 and 3 (compute_provider), verified by diffing the uploaded task.yaml against the running one; card held at L4:1 sm_89 so no comparison is broken. ON WAKE, CHECK THIS FIRST: did it print anything at all? Any task log, pass or fail, means the lost runs were gcp-specific and the build is debuggable again - then read where nvcc came from, whether the assembled toolkit yielded cuda_runtime.h, the offload lines echoed after 'server healthy', the 8-slot generated tok/s, the priced hours for a full Q4 pass, and whether job artifacts lists the tarball. A zero-byte log with empty polls means the fault follows the task across providers: go to RunPod, the LAST entry in L4's row, and only after that write kind: blocker with fault: platform. If the tarball is listed but the in-job storage upload failed, place it in shared storage as tidepool/llama-b10622-sm89.tar.gz before queueing any Q4 row."
-  },
-  {
-   "at": "2026-08-25T14:52:00Z",
-   "status": "RUNNING",
-   "note": "IT RUNS. The provider move settled it in one attempt: the aws image ships a COMPLETE CUDA toolkit at /usr/local/cuda-13.2 (nvcc release 13.2, V13.2.51), so the environment probe found a real compiler on disk and the four-wheel synthetic-prefix workaround built for attempt 2 was never needed. Source b10622 fetched, cmake configured rc=0 in 17s with GGML_CUDA=ON and CMAKE_CUDA_ARCHITECTURES=89, now in the compile phase (the long part). empty_polls None. CONFIRMED: the two lost runs were gcp-specific, not a task fault and not a platform-wide fault, so no platform marker was warranted. Next to read: the offload lines after 'server healthy' (the CUDA-device assert must pass, a CPU fallback would misprice every 4-bit number ~30x), the 8-slot generated tok/s, the priced hours for a full Q4 pass, and whether job artifacts LISTS the tarball. If listed but the in-job storage upload failed, place it as tidepool/llama-b10622-sm89.tar.gz before queueing any Q4 row."
-  },
-  {
-   "at": "2026-08-25T15:00:00Z",
-   "status": "RUNNING",
-   "progress": 15,
-   "observed": "Still compiling. Environment probe found nvcc off PATH but a complete toolkit at /usr/local/cuda-13.2 (V13.2.51), source b10622 fetched, cmake configured rc=0 in 17s with GGML_CUDA=ON and CMAKE_CUDA_ARCHITECTURES=89 on an L4 reporting 8.9 / 23034 MiB. The four-wheel compiler repair written for the previous source never fired here."
-  },
-  {
-   "at": "2026-08-25T15:20:00Z",
-   "status": "FAILED",
-   "note": "terminal at 45%. Furthest any build attempt has got: configure clean, compile 1,038 s, four binaries at 70-82 MB, verification GGUF downloaded, server healthy. Raised on its own CUDA gate. The captured startup log had no ggml_cuda_init line and no llama_model_loader/print_info/load_tensors lines either, so the read raced the server's logging rather than catching a CPU fallback. The compile was discarded because the tarball was only packed after verification. Superseded by 905755d3."
-  }
- ],
- "4350ce4e-6e19-4bc9-a4e9-64c05b7d009b": [
-  {
-   "at": "2026-08-25T14:44:00Z",
-   "status": "RUNNING",
-   "note": "progress 52 (was 31). Tool calling done both surface forms (native composite 0.6700, item-weighted 0.6825). ifstruct done: first-attempt validity 0.1355 at n=2000, which REFUTES the smoke's small-sample explanation (0.125 at n=40 barely moved). Now on ifeval, 176/541 at ~282 tok/s. Throughput climbed 220 -> 285 tok/s across the pass. Artifacts: completions_* listed, scored_* NOT listed (this job launched before the typed-save fix, so per-item detail needs re-scoring from completions, not regenerating). Remaining after ifeval: probes plus the 30-item control arm."
-  },
-  {
-   "at": "2026-08-25T15:00:00Z",
-   "status": "COMPLETE",
-   "progress": 100,
-   "observed": "B1 landed clean. 4 components, 0 assertion failures, 1,318,883 tokens at 279.1 tok/s, 85 min. bfcl native 0.6700 / tools_text 0.5355, ifstruct 0.1355 (n=2000), ifeval prompt-level 0.8170 strict 0.8299 loose (n=541), probes flag 0.0074 / false-flag 0.0000 / stack idiom 0.2361. job artifacts lists 6 of the 11 saved files: exactly the untyped ones. All scored_* and both eval_summary forms are unreachable, as predicted. Six completions files downloaded and placed in shared storage at tidepool/s5.2/B1-fp-instruct/ for the replay. Charged 1.42 GPU-h; the row had no ledger entry at all before this wake."
-  }
- ],
- "c319ebb1-a37c-4fdd-9d52-fd3f14a933f5": [
-  {
-   "at": "2026-08-25T15:00:00Z",
-   "status": "RUNNING",
-   "progress": 10,
-   "observed": "B4, Granite 4.0-1b full pass, queued 14:56Z on gcp unpinned (matching B1 and the Granite smoke). Past staging and into the bfcl component with all 11 categories loaded at full counts: 3,490 items. Expect ~5 h; Granite runs at 42-67 tok/s against B1's 279, so a long runtime is the expectation and not a hang."
-  },
-  {
-   "at": "2026-08-25T16:05:00Z",
-   "status": "RUNNING",
-   "note": "progress 10, live_status 'Lab initialized', ~67 min elapsed of a ~5 h expected Granite pass. Progress on this task only moves at component boundaries, so 10 at this point is on track and not a wedge."
-  },
-  {
-   "at": "2026-08-25T17:40:00Z",
-   "status": "RUNNING",
-   "note": "progress 31 at 2h42m. B4 Granite full pass, still expected around 5 h."
-  },
-  {
-   "at": "2026-08-25T16:46:00Z",
-   "status": "RUNNING",
-   "progress": 31,
-   "note": "B4 Granite has finished its tool-calling component and is 500/2000 through ifstruct. bfcl/native_tools composite 0.7641 (item-weighted 0.7332) on all 3,490 items, with completions and scored files both saved. Granite therefore beats our reference B1 (0.6700) by 9.4 points, kinder than the 0.7795 the 378-item screening sample suggested but still the operative external threshold. Throughput is ~55 tok/s, far below the 4-bit path, so the remaining ~2,500 items should land around 17:45Z."
-  },
-  {
-   "at": "2026-08-25T17:10:00Z",
-   "status": "RUNNING",
-   "progress": 31,
-   "note": "B4 Granite, L4:1. Tool calling done at 0.7641; 816/2000 through ifstruct at 75 tok/s. Row priced at roughly seven hours on this card. Decided to let it finish rather than restart on a 48GB card."
-  },
-  {
-   "at": "2026-08-25T17:24:00Z",
-   "status": "RUNNING",
-   "note": "B4 Granite, L4:1, progress 31 at 2h26m. Tool calling long done at 0.7641; ifstruct 976/2000 at 77 tok/s (was 816/2000 at 17:10Z, so it IS advancing, roughly 160 items per 10 min). ifeval (541) and probes (464) still to come after ifstruct. Expect terminal around 21:00-22:00Z. Not wedged: step count moves every check."
-  },
-  {
-   "at": "2026-08-25T17:52:00Z",
-   "status": "RUNNING",
-   "note": "B4 Granite, progress 31 (label lags; task-logs show real advance), ifstruct 1296/2000 at 79 tok/s (was 976/2000 at 17:24Z), so ~320 items per 28 min, on pace. Not wedged."
-  },
-  {
-   "at": "2026-08-25T18:30:00Z",
-   "status": "RUNNING",
-   "note": "B4 Granite, past ifstruct (validity 0.3205, n=2000, refutes the smoke-sample explanation same as B1 did), now on ifeval (16/541 so far). Advancing normally since last check (was 1296/2000 ifstruct at 17:52Z), not wedged. Terminal still expected ~21:00-22:00Z."
-  },
-  {
-   "at": "2026-08-25T19:50:00Z",
-   "status": "COMPLETE",
-   "completion": "success",
-   "note": "Terminal at 19:06:47Z, 4h08m27s, 13 artifacts verified. B4 Granite 4.0-1b: native_tools 0.7641, tools_text 0.1817, ifstruct 0.3205, ifeval strict 0.7394, flag rate 0.0000, false-flag 0.0000 (frozen arm only; queued before the 138-item arm entered the harness). 4.141 GPU-h. Fully processed and mirrored."
-  }
- ],
- "905755d3-f984-4f0a-9d2e-577c7e6a2cf4": [
-  {
-   "at": "2026-08-25T15:22:00Z",
+   "at": "2026-08-28T15:22:00Z",
    "status": "QUEUED",
-   "note": "attempt 5 on aws. Packs, artifacts and stores the binaries right after collect; proves the device with llama-cli --list-devices plus nvidia-smi, ldd and CMakeCache evidence; saves llama_server.log as an artifact before reading it and treats the contents as evidence rather than a gate; asserts min_tok_s=150 over 8 slots. FACTS.verified stays False until every check passes, so a stored tarball is not a usable one."
+   "note": "R3 arms: R3-F16, R3-Q4_0, R3-Q4_K_M. s5.6 G1 quality half, ATTEMPT 2. Attempt 1 (af80ef62 R3 / f7ebf0a3 C7) lost all six arms in eight minutes to `llama-server: error while loading shared libraries: libnccl.so.2`, every one at server startup with the correct weights already staged and logged 'quantized by this project'. s5-llama-build copies llama-server without the CUDA runtime it links against; the L40S image that scored the s5.2 4-bit rows carried libnccl and the L4 image does not. s5-export/main.py already solved this at its attempt 2 and the repair was never carried into the eval pack. FIX: gen_gguf.repair_loader_path() probes the binary, adds site-packages nvidia/*/lib to LD_LIBRARY_PATH, falls back to the nvidia-nccl-cu12 wheel, and RAISES before anything is served; the repair taken is recorded in the row's serving facts as loader_repair. SECOND FAULT FIXED IN THE SAME PASS: load_gguf's facts dict read `size_mb`, which is bound in resolve_gguf and nowhere in load_gguf -- a NameError one line past 'server healthy', so fixing only the loader would have bought a second dead card. Both covered by test_loader_repair.py (7 checks, all failing against the pre-fix module), wired into sync_eval_pack.sh's build-time contract checks; full s5-eval suite green. Task 08b4e028 re-uploaded before queueing. PARAMETERS UNCHANGED from attempt 1 -- same arms, pack_gb 8,4,4, full item counts, 138-item clean control, FP tokenizer, llama_object tidepool/llama-b10622-sm89.tar.gz. WHAT TO CHECK FIRST in task-logs: 'the serving path loads on this host (loader repair: ...)' for each arm, then 'weights: tidepool/s5.6/<CK>/<CK>-<FMT>.gguf ... quantized by this project' (a Hub download instead means the override did not merge and the row is mislabelled, which is worse than a failure), then 'server healthy on 8 slots'. Watch for two arms with byte-identical scores, which is a port collision. GATE before recording anything: lab job artifacts <id> -e tidepool must be non-empty. THEN: python3 stages/s5-experimentation/jobs/s5-compare/promote_scores.py <id> --arms <the three> --prefix tidepool/s5.6/arms, then the paired comparison against each checkpoint's own FP row. PRE-REGISTERED: retention is measured against each checkpoint's own full-precision self, never across checkpoints and never against the base; (FP->F16) prices the runtime and (F16->Q4) prices quantization; bar is >=97% average with no axis below 93%. If R3-F16 and C7-F16 score identically on all four axes the two merges produced the same weights and the EXPORT is wrong rather than the retention. RELAUNCH DISCIPLINE: this is attempt 2 of at most 10 for the substage, and 1 of at most 3 consecutive no-progress attempts; a different failure signature or a later point in the pipeline resets that count. Attempt 1 signature: rc=127 libnccl.so.2 at llama-server startup, before any generation. Elapsed budget when queued: 66.876 of 145 GPU-h. Expect roughly 2-3 h wall clock each."
   },
   {
-   "at": "2026-08-25T16:05:00Z",
-   "status": "COMPLETE",
-   "note": "terminal, success on attempt 5. llama.cpp b10622 built for sm_89 in 1039 s; tarball LISTED by job artifacts and in storage at tidepool/llama-b10622-sm89.tar.gz (175.7 MB). CUDA evidence all four true (list_devices, probe_answered, linked, cmake) on an L4 22.5 GB. Served LFM2.5-1.2B-Instruct-QAD-Q4_0: single stream prefill 17443 / generate 261.2 tok/s; 24 requests over 8 slots 196 gen tok/s, clears the 150 floor; two identical requests returned identical output. Full Q4 pass priced 1.71 h. The build gate is cleared; B2 queued as efa9719d into the freed slot."
-  }
- ],
- "efa9719d-5b74-4742-b99f-d1503a878770": [
-  {
-   "at": "2026-08-25T16:05:00Z",
-   "status": "QUEUED",
-   "note": "B2, the first 4-bit row: vendor QAD-Q4_0 through the verified b10622 serving path, prompts rendered by LiquidAI/LFM2.5-1.2B-Instruct, profile=full, gcp. Priced 1.71 h. First row of the three that gate s5.2."
-  },
-  {
-   "at": "2026-08-25T16:40:00Z",
-   "status": "FAILED_EMPTY",
-   "note": "Terminal and empty. COMPLETE with progress 0, no artifacts, no logs, no completion_details; provider_empty_jobs_polls 15; start 15:49:49, end 15:54:55 (5 min 6 s); zone us-central1-a on gcp. The cluster started and the remote command never ran. Third launch lost this way, all three on gcp (the other two were 4-bit build attempts 2 and 3). Relaunched as c4091ac9 on aws. Its job record also showed limit_per_component 40 beside profile full, which is the second bug this turn fixed."
-  }
- ],
- "a42a6c21-19b0-42d3-a289-80d4418574a6": [
-  {
-   "at": "2026-08-25T16:05:00Z",
-   "status": "QUEUED",
-   "note": "s5-tooldata, CPU only, no GPU slot. Generates the guardrail training set and the enlarged clean_corpus control arm. Nine fatal gates; the two that matter most are detector coverage inside [0.60, 0.90] and at least three defect families with a target the frozen detector misses. Verified end to end on a 600-row fixture: 0 gate failures, coverage 0.65 over all 7 trained modes."
-  },
-  {
-   "at": "2026-08-25T16:40:00Z",
-   "status": "COMPLETE_GATES_FAILED",
-   "note": "Ran end to end in 6 min 8 s and wrote no training rows. SCORE {rows 0, train_tokens 0, detector_coverage 0.0, control_n 0, gate_failures 6}. Two real bugs, both in the safety machinery: decontamination dropped 2166 of 2166 rows on a shared 13-gram that is the probe system preamble, written at s4 to match the corpus's own rendering convention; and the no-fabrication check tested single-digit payload leaves as case-folded substrings of prose, dropping 1371 more. Both fixed and measured against the held-out split (0 of 156 rows flagged on question overlap, 13 by the tighter nets). Requeued as f11afe02. No charge: CPU only."
-  }
- ],
- "c4091ac9-a484-4ec9-8182-baf73744b006": [
-  {
-   "at": "2026-08-25T16:40:00Z",
-   "status": "QUEUED",
-   "note": "B2 relaunch, aws L4:1 pinned, all five item-count overrides passed explicitly. Expect ~1.71 h from the build job's own 196 gen tok/s measurement. If it comes back COMPLETE in under six minutes with progress 0, that is the empty-launch fault again and not a result."
-  },
-  {
-   "at": "2026-08-25T17:40:00Z",
+   "at": "2026-08-28T15:45:00Z",
    "status": "RUNNING",
-   "note": "progress 31 at 1h41m. B2 on aws at full item counts, priced at 1.71 h, so close to done."
+   "note": "progress 83%. Loader fix held: no libnccl failure this attempt. R3-F16 exited rc=0 after 7.4 min (1 of 3 done), R3-Q4_0 exited rc=0 after 8.5 min (2 of 3 done). R3-Q4_K_M still running, last seen 1760/3490 items. No byte-identical-score port-collision signal visible yet (scores not read until artifacts land). Not wedged -- step counts advancing steadily. Progress resets no-progress-attempt counter to 0; this is real progress past attempt 1's failure point."
   },
   {
-   "at": "2026-08-25T16:45:00Z",
+   "at": "2026-08-28T16:00:00Z",
    "status": "COMPLETE",
-   "progress": 100,
-   "note": "Terminal, genuine success: completion=success, 14 artifacts listed including all four scored_*.jsonl and both eval_summary forms. 34m14s task time against a 1.71h estimate, 776.7 tok/s over 1,329,260 generated tokens. Scores bfcl_native 0.6392, bfcl_text 0.4208, ifstruct 0.1370, ifeval_strict 0.8078, flag 0.0222, false-flag 0.0, stack-idiom 0.2847. Written into runs/s5.2-baselines.md and budget.json. The 1.71h estimate came from an 8-slot concurrency measurement and was wrong for a serial pass; the two remaining 4-bit rows are cheaper than the ledger says."
+   "note": "Terminal at 15:54:52Z, completion_status: success, lab job artifacts non-empty -- passed the artifacts gate. But per-arm inspection of the downloaded completions (this project's completion-content gate did not exist yet when this job was launched, so it had to be done by hand) found R3-F16 and R3-Q4_0 at 0/3490, 0/2000 and 0/602 non-empty completions across bfcl_tools_text, ifstruct and probes -- every generation on those two arms came back empty while item counts and completion_status both looked clean. R3-Q4_K_M, which spent most of the run as the only arm still going, has real non-empty completions and plausible scores. ROOT CAUSE: task-logs and llama_server.log show three 8-slot llama-servers packed onto one L4 concurrently; per-token throughput collapsed from ~18 tok/s early to ~0.28 tok/s at the busiest overlap, individual HTTP requests to two of the three arms timed out, and gen_gguf.py's request path folds a timeout into a silent empty-string completion with no retry and no abort (only the first 5 per-arm failures are even logged). pack_gb's VRAM ceilings (8/4/4 of 24 GB) do nothing to arbitrate GPU *compute*, and set_per_process_memory_fraction doesn't reach a llama.cpp child at all -- so three arms fit on paper and starved each other in practice. DISPOSITION: not promoting R3-F16 or R3-Q4_0 from this job. R3-Q4_K_M is a candidate for promotion once its clean-arm status is corroborated (it ran alone for the bulk of the window, but wasn't literally alone from t=0). FIX (two-part, applied this session): (1) queue_s56_gguf.sh rewritten to queue one job per arm -- one llama-server gets the whole L4 every time -- eliminating the concurrency that caused this, same weights/items/serving shape otherwise. (2) asserts.py adds check_completions(), wired into all four generate() call sites in main.py, which fails the job (assertion_failures>0 -> exit 3) if >2% of any component's completions come back empty -- covered by test_completion_gate.py (7/7 passing), so this exact failure mode can no longer masquerade as a clean run. Charged in full to budget.json (0.556 GPU-h) -- compute was genuinely spent even though 2 of 3 arms aren't usable. Relaunch: R3-F16 requeued solo as ba294aa7 (attempt 3). R3-Q4_0 and R3-Q4_K_M(retry) still need queuing but hit the account's 2-GPU cap (fb6f4bb9/C7 holds the other slot) -- deferred to a future check-in via queue_s56_gguf.sh r3 Q4_0,Q4_K_M once a card frees. This does not count as a same-signature repeat against the 3-consecutive-no-progress cap: attempt 2 reached a genuinely later pipeline stage (full completion vs. attempt 1's instant startup crash) even though its output failed a different, new gate."
   }
  ],
- "f11afe02-ad68-4b93-9e0f-a8c7d4bf8bdc": [
+ "fb6f4bb9-8612-40b1-bffc-8e3f56fcee37": [
   {
-   "at": "2026-08-25T16:40:00Z",
+   "at": "2026-08-28T15:22:00Z",
    "status": "QUEUED",
-   "note": "s5-tooldata attempt 2, CPU only, no GPU slot. Read gate_failures first, then detector_coverage (must land in [0.60, 0.90]), control_n (must reach 200) and target_leak_rate (must stay under 0.10). Expect roughly 4,000 defective rows paired 1:1, not the 24,000 the parameter allows: only 4,031 of 494,341 training rows carry a usable tool return."
+   "note": "C7 arms: C7-F16, C7-Q4_0, C7-Q4_K_M. s5.6 G1 quality half, ATTEMPT 2. Attempt 1 (af80ef62 R3 / f7ebf0a3 C7) lost all six arms in eight minutes to `llama-server: error while loading shared libraries: libnccl.so.2`, every one at server startup with the correct weights already staged and logged 'quantized by this project'. s5-llama-build copies llama-server without the CUDA runtime it links against; the L40S image that scored the s5.2 4-bit rows carried libnccl and the L4 image does not. s5-export/main.py already solved this at its attempt 2 and the repair was never carried into the eval pack. FIX: gen_gguf.repair_loader_path() probes the binary, adds site-packages nvidia/*/lib to LD_LIBRARY_PATH, falls back to the nvidia-nccl-cu12 wheel, and RAISES before anything is served; the repair taken is recorded in the row's serving facts as loader_repair. SECOND FAULT FIXED IN THE SAME PASS: load_gguf's facts dict read `size_mb`, which is bound in resolve_gguf and nowhere in load_gguf -- a NameError one line past 'server healthy', so fixing only the loader would have bought a second dead card. Both covered by test_loader_repair.py (7 checks, all failing against the pre-fix module), wired into sync_eval_pack.sh's build-time contract checks; full s5-eval suite green. Task 08b4e028 re-uploaded before queueing. PARAMETERS UNCHANGED from attempt 1 -- same arms, pack_gb 8,4,4, full item counts, 138-item clean control, FP tokenizer, llama_object tidepool/llama-b10622-sm89.tar.gz. WHAT TO CHECK FIRST in task-logs: 'the serving path loads on this host (loader repair: ...)' for each arm, then 'weights: tidepool/s5.6/<CK>/<CK>-<FMT>.gguf ... quantized by this project' (a Hub download instead means the override did not merge and the row is mislabelled, which is worse than a failure), then 'server healthy on 8 slots'. Watch for two arms with byte-identical scores, which is a port collision. GATE before recording anything: lab job artifacts <id> -e tidepool must be non-empty. THEN: python3 stages/s5-experimentation/jobs/s5-compare/promote_scores.py <id> --arms <the three> --prefix tidepool/s5.6/arms, then the paired comparison against each checkpoint's own FP row. PRE-REGISTERED: retention is measured against each checkpoint's own full-precision self, never across checkpoints and never against the base; (FP->F16) prices the runtime and (F16->Q4) prices quantization; bar is >=97% average with no axis below 93%. If R3-F16 and C7-F16 score identically on all four axes the two merges produced the same weights and the EXPORT is wrong rather than the retention. RELAUNCH DISCIPLINE: this is attempt 2 of at most 10 for the substage, and 1 of at most 3 consecutive no-progress attempts; a different failure signature or a later point in the pipeline resets that count. Attempt 1 signature: rc=127 libnccl.so.2 at llama-server startup, before any generation. Elapsed budget when queued: 66.876 of 145 GPU-h. Expect roughly 2-3 h wall clock each."
   },
   {
-   "at": "2026-08-25T17:10:00Z",
-   "status": "COMPLETE_GATES_FAILED",
-   "note": "Big step. SCORE {rows 5202, train_tokens 2868637, detector_coverage 0.704, control_n 68, gate_failures 2}. Decontamination now correct: 0 question-gram collisions, 25 rows dropped for carrying a probe's forbidden value. Detector coverage 0.704 is inside the band, which is the gate the guardrail measurement actually depends on. Two failures left, both fixed: the no-fabrication check discarded 34.9% of sources because corpus tool returns echo the called function's name in the payload while the target names the tool, and the clean control floor of 200 is unreachable from the test split alone (68 items). Requeued as 7248507b."
-  }
- ],
- "7248507b-cd34-4668-a6f1-166ae9aca24f": [
-  {
-   "at": "2026-08-25T17:10:00Z",
-   "status": "QUEUED",
-   "note": "s5-tooldata attempt 3, CPU only, no GPU slot. Read gate_failures first, then rows (expect roughly 4,000 pairs, up from 2,601), control_n (must clear 100; both held-out splits now feed it), target_leak_rate (must stay under 0.10; measured at 0 over the held-out split) and detector_coverage (must stay in [0.60, 0.90]; attempt 2 gave 0.704)."
+   "at": "2026-08-28T15:45:00Z",
+   "status": "RUNNING",
+   "note": "progress 22%. Loader fix held: no libnccl failure this attempt. All three arms (C7-F16, C7-Q4_0, C7-Q4_K_M) still running together, last seen at roughly 880/3490 items each. Not wedged -- step counts advancing steadily, tracking behind R3's job by design (started slightly later, same three-arm shape)."
   },
   {
-   "at": "2026-08-25T17:40:00Z",
+   "at": "2026-08-28T16:00:00Z",
+   "status": "RUNNING",
+   "note": "Still in flight. Task-logs now show C7-F16 exited rc=0 after 22.4 min (1 of 3 done) and C7-Q4_0 exited rc=0 after 23.7 min (2 of 3 done), with C7-Q4_K_M running alone. That is the same shape 46bd54cb (R3) had right before its two-earlier-finishing arms turned out to be corrupted by three-way compute contention -- see 46bd54cb's 16:00:00Z entry for the full root-cause account. NOT concluding C7 is corrupted yet: lab job artifacts fb6f4bb9 -e tidepool still returns nothing (artifacts only upload at completion), so there's no way to inspect C7's actual completions before it finishes. Left running rather than stopped -- it was queued before the fix existed, stopping it now recovers nothing, and the sunk compute is the same either way. FLAGGED for the next check-in: once terminal, run the same manual per-arm empty-completion inspection used on 46bd54cb (this job predates the check_completions gate, so nothing will fail loudly on its own) before promoting any C7 arm's score; if corrupted, relaunch the affected arm(s) solo via queue_s56_gguf.sh c7 <formats>, same as R3."
+  },
+  {
+   "at": "2026-08-28T16:15:00Z",
    "status": "COMPLETE",
-   "note": "Passed all nine gates in 4 m 53 s on CPU. SCORE {rows: 7988, train_tokens: 4351790, detector_coverage: 0.6838, control_n: 138, gate_failures: 0}. target_leaked_value and no_mode_applied are both absent from the counters, so the leak rate is 0.0000 against a 0.10 ceiling and every one of the 4,031 harvested sources took a defect. Decontamination dropped 37 rows, all for carrying a value a probe forbids, and 0 on a question gram. Control arm 138, split 70 val / 68 test, carrying the probe item schema. Both files in shared storage under tidepool/s5.3/tooldata/. Mode mix is uneven: silently_truncated 1042 against ~580 per common mode, because it absorbs the 494 wrong_entity skips through the fixed rotation order."
+   "note": "Terminal, completion_status: success, lab job artifacts non-empty for all three arms (48 files) -- the artifacts gate alone would have passed this straight through, same as it did on 46bd54cb. Predates check_completions (queued before that gate existed), so did the manual inspection by hand: downloaded all twelve completions_*.jsonl files and counted non-empty completions directly. CONFIRMED CORRUPTED, same pattern as R3: C7-F16 100% empty on ifeval (541/541), ifstruct (2000/2000) and probes (602/602), 72.8% empty on bfcl_tools_text (2539/3490); C7-Q4_0 100% empty on ifeval/ifstruct/probes, 60.0% empty on bfcl_tools_text (2095/3490); C7-Q4_K_M 0% empty across all four components -- genuinely clean. This is the second job to show the exact three-arm-packed compute-contention failure mode documented on 46bd54cb, which confirms it as a property of the packing arrangement (any three arms sharing one L4's compute) rather than something specific to R3's weights or export. DISPOSITION: not promoting C7-F16 or C7-Q4_0 from this job. C7-Q4_K_M is a genuine promotion candidate (0% empty, real content). Charged 0.906 GPU-h to budget.json in full. RELAUNCH NEEDED for C7-F16 and C7-Q4_0 via the fixed solo-per-arm queue_s56_gguf.sh, same as R3-F16/R3-Q4_0 -- blocked by the same account 2-GPU cap until a slot frees."
   }
  ],
- "95eb4820-9657-4160-9c26-dda2fc343e53": [
+ "ba294aa7-8ed3-406e-abc9-bc3a999b004d": [
   {
-   "at": "2026-08-25T16:46:00Z",
+   "at": "2026-08-28T16:05:00Z",
    "status": "LAUNCHING",
-   "progress": 0,
-   "note": "B3, unsloth UD-Q4_K_XL, queued 16:41Z into the slot B2 freed. aws pinned, all five item-count overrides passed. Expect well under the 1.71h ledger estimate now that B2 has measured the serial rate of this serving path at 776.7 tok/s."
+   "note": "R3-F16 solo, s5.6 G1 quality half, ATTEMPT 3 for R3-F16 specifically (attempt 2's 46bd54cb corrupted this arm via three-way compute contention -- see that job's checkin history for the full account). Queued via the rewritten queue_s56_gguf.sh, which now submits one arm per lab task queue call so each llama-server gets the whole L4 alone; same weights (tidepool/s5.6/R3/R3-F16.gguf), same item counts, same 8-slot x 8192-context serving shape, same clean-control arm as every prior attempt -- only the packing arrangement changed. Also carries the new asserts.check_completions defense-in-depth gate (main.py now fails loudly, exit 3, if >2% of any component's completions come back empty), covered by test_completion_gate.py. Immediately after this queued, attempting to queue R3-Q4_0 on the same script invocation hit `GPU limit reached. You are holding 2 of 2 GPU(s)` -- the account/team has a hard 2-GPU concurrency cap and fb6f4bb9 (C7 pack) holds the other slot. R3-Q4_0 and R3-Q4_K_M were NOT queued this attempt; queue_s56_gguf.sh was extended to take an optional formats argument (queue_s56_gguf.sh r3 Q4_0,Q4_K_M) so they can be submitted in one call once a slot frees, without re-queuing this job. This is attempt 3 of at most 10 for the substage; attempt 2 reached full completion (a later pipeline point than attempt 1's instant startup crash) so the no-progress-attempt counter reset to 0 before this one. Elapsed budget at queue time: 67.432 of 145 GPU-h."
   },
   {
-   "at": "2026-08-25T17:10:00Z",
+   "at": "2026-08-28T16:26:00Z",
    "status": "RUNNING",
-   "progress": 99,
-   "note": "B3 unsloth UD-Q4_K_XL. 1040/2000 through ifstruct at 1,743 tok/s. Expected to free its slot inside the hour; B1r goes in next."
+   "note": "progress 19%. task-logs show R3-F16's bfcl_tools_text pass completed a full 3490-item cycle (up to 94%) then started a second 3490-item cycle now at 21% -- consistent with the two BFCL calling conventions (native, tools_text) each scored in full, not a stall or restart. Solo on the card (peak concurrent demand 8.0 GB of 22.1 GB limit, 1 of 1 arms), so none of the three-way contention signature from 46bd54cb applies. Not wedged."
   },
   {
-   "at": "2026-08-25T17:24:00Z",
+   "at": "2026-08-28T16:59:00Z",
+   "status": "RUNNING",
+   "note": "Progress figure resets per component (not monotonic overall, same pattern as earlier arms): task-logs show bfcl_tools_text finished at 3440/3490, ifstruct finished a full 2000/2000 cycle, and ifeval is now at 400/541. Steadily advancing through components in order; not wedged. Only probes left after ifeval."
+  },
+  {
+   "at": "2026-08-28T17:00:00Z",
    "status": "COMPLETE",
-   "note": "Terminal, genuine success: completion=success, 14 artifacts listed including all four scored_*.jsonl and both eval_summary forms. 38m20s (16:41:42-17:20:02) at 709.2 tok/s over 1.38M tokens, 0 assertion failures, charged 0.639 GPU-h against a 1.71 h estimate. RESULTS: bfcl native_tools 0.5837 (item-weighted 0.6284), bfcl tools_text 0.4339 (0.4668), ifstruct 0.1195 n=2000, ifeval strict 0.8022 loose 0.8207 n=541, probes flag 0.0074 false-flag 0.0 stack-idiom 0.25. Mirrored to runs/s5.2-baselines.md and budget.json. KEY READING: the vendor's QAD build (B2, 0.6392) beats this post-training quant by 5.6 points on native tool calling; B2 and B3 agree to within 2.4 points on the s4 text convention (78.6% and 81.0% of B1), which B1r must now attribute to quantization or to the llama.cpp runtime."
+   "note": "Terminal at 16:57:41Z, completion_status success, assertion_failures 0 -- check_completions gate passed cleanly, no manual inspection needed (queued after the gate existed). lab job artifacts non-empty (16 files). Promoted via promote_scores.py to tidepool/s5.6/arms/R3-F16, billed 0.752 GPU-h. That completes all three R3 solo arms once b928b8fc lands (R3-Q4_0 already promoted from 6d91edf4). Freed a GPU slot, immediately used to queue C7-F16 solo (56f67874)."
   }
  ],
- "c3886996-9b9e-4d97-a64c-413d2288f625": [
+ "6d91edf4-6972-44d8-b89d-8f04cd994bb9": [
   {
-   "at": "2026-08-25T17:24:00Z",
-   "status": "QUEUED",
-   "note": "B1r-bf16-llamacpp, queued 17:22Z into the slot B3 freed. aws L4:1, all five item-count overrides, and the FIRST row to carry -p clean_control_object=tidepool/s5.3/tooldata/clean_control.jsonl (138 items). THIS IS THE CONTROL for the largest effect s5.2 has measured: B2 and B3 both retain only 78.6-81.0% of B1 on the s4 text convention, and B1r runs the same bf16 weights through the same llama.cpp binary on the same host family, so it separates runtime from quantization in one job. ON WAKE: read bfcl/tools_text composite first. If B1r lands near 0.53 the loss is quantization and the s5.6 export gate is in trouble; if it lands near 0.42-0.43 the loss is the runtime and the 4-bit rows are fine. Also expect the two new clean-arm gates to fire for the first time (clean_control_count >= 100, clean_control_arm_tagged); a failure there is harness, not model. bf16 GGUF is ~3x the weights of Q4, so expect roughly 1.5-2 h rather than B3's 38 min."
-  },
-  {
-   "at": "2026-08-25T17:52:00Z",
-   "status": "RUNNING",
-   "note": "B1r bf16-llamacpp, progress 10, moving fast (~310 tok/s, well above B3's 709 tok/s estimate expectation of 1.5-2h total -- this row is running much quicker than priced). tools_text composite landed 0.4669 (item-weighted 0.4885), close to the runtime-loss hypothesis (0.42-0.43) rather than the quantization-loss hypothesis (~0.53) -- tentative pending native_tools, now generating (160/3490)."
-  },
-  {
-   "at": "2026-08-25T18:30:00Z",
-   "status": "COMPLETE",
-   "progress": 100,
-   "note": "B1r landed clean. native_tools composite 0.6252 (item-weighted 0.6587), tools_text composite 0.4669 (0.4885), ifstruct 0.1345 (n=2000), ifeval strict 0.8115 loose 0.8207 (n=541), probe flag 0.0074 / false-flag 0.0 on BOTH the frozen 30-item and new 138-item clean-corpus arms. 14 artifacts listed. 59m44s, 0.996 GPU-h. On text convention it beats both 4-bit rows (runtime is most of their loss); on native tool calling it trails B2 (quantization-aware training more than recovers the runtime cost on that axis). Mirrored to runs/s5.2-baselines.md, report.md and budget.json. Slot freed; B5 queued as 64fa9373."
-  }
- ],
- "64fa9373-d89c-44b7-bca4-bde717f97a22": [
-  {
-   "at": "2026-08-25T18:31:00Z",
-   "status": "QUEUED",
-   "note": "B5, Novachrono Q4_K_M function-calling fine-tune, own tokenizer/template, queued into the slot B1r freed. aws L4:1, all five limit overrides at 0, carries clean_control_object (138 items) on its first pass. Reminder from s5.2-baselines.md: B5 mixes three differences from B1 at once (different fine-tune, third tool surface form, 4-bit quant) so it cannot be read as a clean quantization comparison -- it is what ticks s5.2 as a published-competitor 4-bit row, not a matched control."
-  },
-  {
-   "at": "2026-08-25T19:50:00Z",
-   "status": "COMPLETE",
-   "completion": "success",
-   "note": "Terminal at 19:33:21Z, 38m32s, 14 artifacts verified. B5 Nova FC Q4_K_M: native_tools 0.6821, tools_text 0.2681, ifstruct 0.0710, ifeval strict 0.5379, flag rate 0.0185, false-flag 0.0000 on both the frozen 30-item and 138-item corpus arms. 0.642 GPU-h. Fully processed and mirrored. s5.2 closed."
-  }
- ],
- "62d88386-1e2f-460c-bd74-2d07db3da68e": [
-  {
-   "at": "2026-08-25T19:50:00Z",
-   "status": "QUEUED",
-   "completion": null,
-   "note": "s5.3 replay buffer at size, task f0f8801f, L40S:1 aws, 8,000 prompts, task defaults already correct. Hard prerequisite for arms C5a and C5b. Priced well under an hour. Queued into a slot freed by B4/B5."
-  },
-  {
-   "at": "2026-08-25T20:25:00Z",
-   "status": "FAILED",
-   "completion": "failed",
-   "note": "1 assertion failure, correctly. Generation clean (7,945 completions, 0 empty, 1.85M completion tokens, placed in storage) but n_tok=2 per row: len() of a BatchEncoding is its key count. C5b ratio check read 201.4 passes against a 2.0 ceiling and failed the run, so no arm trained on it. Fixed and re-uploaded (_ids unwrap, exact train>=completion invariant, 8-case fixture test). 0.372 GPU-h recorded. Requeue when a slot frees."
-  }
- ],
- "2680e4a8-fef1-43ce-8f21-cc0441c11ca2": [
-  {
-   "at": "2026-08-25T19:50:00Z",
-   "status": "QUEUED",
-   "completion": null,
-   "note": "s5.3 gating smoke on arm C4, task 37186b22, L40S:1 aws, -p arm=C4 -p smoke=true -p max_steps=30. Required adding smoke/smoke_rows/max_steps to the task's registered parameter block at main.py's own defaults, since the queue validator rejects unknown keys. Gate on all eight sweep arms."
-  },
-  {
-   "at": "2026-08-25T20:25:00Z",
-   "status": "COMPLETE",
-   "completion": "success",
-   "note": "PASSED the gate. 30 steps, 238,195 tokens, val loss 1.2552->0.3599, 2,833 tok/s, 6m25s, 0.107 GPU-h. All eight sweep arms cleared. Processed and mirrored."
-  }
- ],
- "e4bd367a-8148-4704-88a4-33e15636fa80": [
-  {
-   "at": "2026-08-25T20:25:00Z",
-   "status": "RUNNING",
-   "completion": null,
-   "note": "s5.3 sweep arm C1 (reference recipe), task 37186b22, L40S:1 aws, 64.0M tokens, about 4.45 GPU-h. Queued 19:56Z after the C4 smoke cleared the gate."
-  },
-  {
-   "at": "2026-08-25T22:51:00Z",
-   "status": "RUNNING",
-   "progress": 31,
-   "note": "C1 solo, step 2940/8416 (35%), loss trending down (0.30 at step 2940), 5229 tok/s steady since 1890/8416 last check. Advancing normally, not wedged."
-  },
-  {
-   "at": "2026-08-25T23:51:51Z",
-   "status": "RUNNING",
-   "progress": 31,
-   "note": "WEDGED. Lab still reports RUNNING/31% (unchanged from 22:51Z) but task-logs show no step line since step 2940/8416 loss 0.3024 5229 tok/s at ~21:59Z, i.e. 112+ min silent against a steady ~5-min/210-step cadence over the 14 preceding log lines. Machine-logs from ~22:00:30Z to now (23:51:13Z) contain nothing but repeated wandb telemetry-upload timeout errors (separate sidecar, unrelated to training-loop health -- the VM itself is alive). No OOM/CUDA error/traceback, no scheduled long eval or checkpoint pass logged, no preemption/termination/disconnect signal found anywhere in machine-logs. Cause not identified. Raised as [!] blocker per policy (do not kill an undiagnosed stall, let the operator decide); job left running/untouched."
-  },
-  {
-   "at": "2026-08-26T00:23:04Z",
-   "status": "RUNNING",
-   "progress": 31,
-   "note": "Still wedged. progress 31 unchanged since 22:51Z; ~2h24m since the last step line (2940/8416 at ~21:59Z). Blocker already raised, job left running untouched."
-  },
-  {
-   "at": "2026-08-26T00:46:20Z",
-   "status": "STOPPED",
-   "progress": 31,
-   "note": "Stopped at the operator's direction after 2h47m of silence. Charged 4.059 GPU-h in full. Nothing recoverable: no artifacts, and the trainer only wrote weights after its final step. C1 must be re-run from scratch, as a single-arm pack so it inherits the supervisor's stall watchdog, once the checkpointing fix is registered."
-  }
- ],
- "a68b3e57-03a4-4808-8b29-ef04c252f8a5": [
-  {
-   "at": "2026-08-25T20:25:00Z",
-   "status": "RUNNING",
-   "completion": null,
-   "note": "s5.3 sweep arm C7 (mix=raw), task 37186b22, L40S:1 aws, 64.0M tokens, about 4.45 GPU-h. Queued 19:56Z after the C4 smoke cleared the gate."
-  }
- ],
- "7e8ca5f9-82a2-410e-8fda-ea53f5662bd2": [
-  {
-   "at": "2026-08-25T22:51:00Z",
-   "status": "RUNNING",
-   "progress": 11,
-   "note": "Pack A (C3+C7+C2p on one card), all three arms advancing: C3 1050/8416, C7 968/9697, C2p 856/8585. No OOM, no stall. Advancing normally, not wedged."
-  },
-  {
-   "at": "2026-08-25T23:51:51Z",
-   "status": "RUNNING",
-   "progress": 22,
-   "note": "Pack A healthy and advancing normally since 22:51Z: C3 1050->2100/8416, C7 968->1936/9697, C2p 856->1712/8585. No OOM, no stall. Rules out a platform-wide issue (only the solo C1 job beside it is affected)."
-  },
-  {
-   "at": "2026-08-26T00:23:04Z",
-   "status": "RUNNING",
-   "progress": 25,
-   "note": "Pack A healthy, 22 -> 25% since 23:51Z. Confirms the C1 stall is isolated to that job."
-  },
-  {
-   "at": "2026-08-26T01:02:00Z",
-   "status": "RUNNING",
-   "progress": 31,
-   "note": "Pack A healthy, on the pre-checkpoint code by design."
-  },
-  {
-   "at": "2026-08-26T03:43:00Z",
-   "status": "RUNNING",
-   "note": "Pack A at 60% (was 60% at 01:02Z per the previous reading -- progress field is coarse; not yet a stall signal, and 2 consecutive unchanged readings against a threshold of 20). On the pre-checkpoint code by design."
-  },
-  {
-   "at": "2026-08-26T03:53:00Z",
-   "status": "RUNNING",
-   "progress": 66,
-   "note": "Pack A 60 -> 66% since 03:43Z (C3 6300/8416, C7 5808/9697, C2p 5350/8585), moving steadily. Stall counter resets to 0. On the pre-checkpoint code by design."
-  },
-  {
-   "at": "2026-08-26T04:56:00Z",
-   "status": "RUNNING",
-   "progress": 74,
-   "note": "Pack A 66 -> 74% since 03:53Z, steady. On the pre-checkpoint code by design, no checkpoint expected or needed here."
-  },
-  {
-   "at": "2026-08-26T06:03:00Z",
-   "status": "RUNNING",
-   "progress": 83,
-   "note": "Pack A 74 -> 83% since 04:56Z. C3 (full-parameter arm) reached 8416/8416 and exited rc=0 -- 1 of 3 arms in this pack done, C7 (7744/9697) and C2p (7276/8585) still training. Not terminal yet (job stays RUNNING until all three finish); advancing normally, no OOM, no stall. On the pre-checkpoint code by design."
-  },
-  {
-   "at": "2026-08-26T07:05:00Z",
-   "status": "RUNNING",
-   "note": "93% overall. C3 and C2p both exited rc=0. Only C7 remains, at 9196/9697 steps (~95%), still climbing steadily -- roughly 500 steps left."
-  }
- ],
- "5d9be511-9fc9-4cce-8e69-c4b82766038a": [
-  {
-   "at": "2026-08-26T01:02:00Z",
+   "at": "2026-08-28T16:15:00Z",
    "status": "LAUNCHING",
-   "progress": 0,
-   "note": "Arm C1 re-run, queued 00:58Z as a single-arm pack on the checkpointing code. Expect an early 'checkpoints: about N GB each ... every K of 8416 steps' log line; its absence means the registered code is not the code on disk."
+   "note": "R3-Q4_0 solo, attempt 3 for this arm (corrupted in 46bd54cb the same way R3-F16 was). Queued the moment fb6f4bb9's completion freed a GPU slot -- ba294aa7 (R3-F16) and this job now hold both of the account's 2 GPUs. Same fixed one-arm-per-job scheme as ba294aa7: whole L4, same weights/items/serving shape/clean-control arm, check_completions gate active. Still to queue once a slot frees again: R3-Q4_K_M solo, C7-F16 solo, C7-Q4_0 solo (three more jobs; C7-Q4_K_M needs no relaunch, its score from fb6f4bb9 is clean)."
   },
   {
-   "at": "2026-08-26T03:44:00Z",
-   "status": "FAILED",
-   "note": "Terminal at launch, 0 GPU-h, no instance ever handed over. FAILURE SIGNATURE: AWS RunInstances PendingVerification in eu-central-1a -- 'your request for accessing resources in this region is being validated'. Account-region validation on our aws account, NOT capacity, NOT team quota, NOT the task. Distinct from attempt 1's signature (e4bd367a: silent stall at step 2940/8416 after 2h47m), so this is a NEW failure, not a repeat. Provider note (2026-08-23): AWS GPU quota exists only in us-east-1/us-east-2, every other region is zero, and the L40S row is AWS (g6e), Nebius, RunPod in try order. CHANGE MADE: same recipe, next source in the row -- re-queued on nebius as 1728ed4a. Relaunches for s5.3 arm C1: 3 total, and this one follows a NAMED cause with a fix outside the experiment design, so it is progress, not a loop."
+   "at": "2026-08-28T16:26:00Z",
+   "status": "RUNNING",
+   "note": "progress 41%, 1520/3490 on its first BFCL convention pass. Solo on the card (peak concurrent demand 4.0 GB of 22.1 GB limit, 1 of 1 arms). Not wedged; both GPU slots (lab team quota me: 2 of 2 L4 in use, 0 available) are held by this pair and no further arm can queue until one lands."
+  },
+  {
+   "at": "2026-08-28T16:57:00Z",
+   "status": "COMPLETE",
+   "note": "Terminal at 16:46:59Z, completion_status: success, assertion_failures: 0 -- check_completions gate passed cleanly (this job was queued after the gate existed, so unlike 46bd54cb/fb6f4bb9 no manual per-arm inspection was needed). lab job artifacts non-empty (7 files). Promoted via promote_scores.py to tidepool/s5.6/arms/R3-Q4_0. Billed 0.408 GPU-h. Freed a GPU slot, immediately used to queue R3-Q4_K_M solo (b928b8fc)."
   }
  ],
- "1728ed4a-ff04-4cdf-b1dc-c05f5df05de2": [
+ "b928b8fc-79cf-4561-9518-49546ccc3a23": [
   {
-   "at": "2026-08-26T03:47:00Z",
+   "at": "2026-08-28T16:57:00Z",
    "status": "LAUNCHING",
-   "note": "Arm C1 re-run attempt 3, queued 03:46Z on NEBIUS, task cfc6dec7 as a single-arm pack (-p arms=C1 -p pack_gb=16 -p stall_minutes=45 -p run_tag=s5.3-C1), identical recipe to the aws attempt. Reached launching_cluster/70% within a minute, past the point attempt 2 died. WATCH FOR: an early 'checkpoints: about N GB each ... every K of 8416 steps' line -- its absence means the registered code is not the code on disk. Stall watchdog at 45 min."
+   "note": "R3-Q4_K_M solo, attempt 3 for consistency (its score from packed job 46bd54cb was already clean -- ran alone for most of that window -- but re-running solo puts it on the same isolation footing as the other two R3 arms before promotion). Queued the moment 6d91edf4 completion freed a GPU slot; ba294aa7 (R3-F16, 91%) holds the other. Still to queue once a slot frees again: C7-F16 solo, C7-Q4_0 solo (C7-Q4_K_M needs no relaunch, clean in fb6f4bb9)."
   },
   {
-   "at": "2026-08-26T03:53:00Z",
+   "at": "2026-08-28T17:00:00Z",
    "status": "RUNNING",
-   "progress": 1,
-   "note": "Got a Nebius instance and started training (attempt 3 succeeded past attempt 2s launch-time death). Logs show data staged, base model cached, C1 started (pid 3487); no step line yet 8 min in, expected while the process spins up. No checkpoint line visible yet -- watch next check-in to confirm it appears once stepping starts."
+   "note": "progress 47%. Solo on the card (1 of 1 arms), same fixed one-arm-per-job scheme as the other R3 solo relaunches. Not wedged."
   },
   {
-   "at": "2026-08-26T04:56:00Z",
+   "at": "2026-08-28T17:15:00Z",
    "status": "RUNNING",
-   "progress": 35,
-   "note": "C1 attempt 3 reached step 2940/8416 (35%) -- the exact step where earlier attempts died -- and is still advancing (next line already at 2940, no stall). IMPORTANT: storage ls under tidepool/s5.3/ still shows zero checkpoint objects despite CKPT_EVERY~420 meaning ~7 checkpoints should have landed by now. Checkpointing looks registered (code, params) but is not reaching shared storage -- likely the CLI-fallback upload inside the packed child (lab.storage_upload is deliberately unavailable in child mode by design; falls back to `lab storage upload` subprocess, which needs the lab CLI on the remote worker's PATH) is failing silently every time, non-fatally, so training keeps going with no safety net. Not stopping the job over this -- it is healthy and past its old failure point -- but if this job fails again, check that the CLI-fallback path actually works in the child environment BEFORE relaunching a 4th time, rather than assuming checkpointing will save it."
+   "note": "check-in wake. task-logs show R3-Q4_K_M has finished both BFCL conventions in full (two complete 3490-item cycles) and is now into ifstruct at 240/2000 (12%). Top-level job status progress field reads 11%, which is a different (whole-run) metric than the per-component task-log figures this project tracks -- not a regression. Solo on the card, no port-collision or contention signal. Not wedged; clearly past where it stood at 17:00Z."
   },
   {
-   "at": "2026-08-26T06:03:00Z",
-   "status": "RUNNING",
-   "progress": 67,
-   "note": "C1 attempt 3, 35 -> ~67% since 04:56Z (task-logs step lines climbed from 2940 to 5670/8416), comfortably past the 2940 point that killed attempts 1 and 2, advancing steadily, not wedged. Re-checked lab storage ls tidepool/s5.3/ckpt/: still zero objects, though by step 5670 at the auto ~420-step cadence roughly 13 checkpoints should have landed -- confirms this is not a transient absence. Also confirmed directly: task-logs never carries a packed child's own log() lines (grepped the full log for '[C1]', found none; only supervisor lines and periodic progress-percent summaries appear), so the missing 'checkpoints: about...' startup line proves nothing either way -- the storage listing is the only real signal, and it still says checkpointing is not reaching shared storage. Leaving the job running rather than relaunching: it is healthy with roughly 2,700 steps left, and killing a job this close over an unconfirmed upload path would be worse than the risk it is meant to cover."
-  },
-  {
-   "at": "2026-08-26T07:05:00Z",
+   "at": "2026-08-28T17:30:00Z",
    "status": "COMPLETE",
-   "note": "8416/8416 steps, val_loss 0.1517, 0 assertion failures, all 6 artifacts uploaded. Mirrored into budget.json and runs/s5.3-sweep.md; dropped from the pending-jobs marker."
+   "note": "R3-Q4_K_M solo, clean, 0.518 GPU-h, promoted to tidepool/s5.6/arms/R3-Q4_K_M. All three R3 arms done."
+  }
+ ],
+ "56f67874-5241-49a0-9a41-c2e1c2394c91": [
+  {
+   "at": "2026-08-28T17:02:00Z",
+   "status": "LAUNCHING",
+   "note": "C7-F16 solo, attempt 3 for this arm (corrupted in the packed job fb6f4bb9 via three-way compute contention, same pattern as R3-F16). Queued the moment ba294aa7 completion freed a GPU slot; b928b8fc (R3-Q4_K_M, 47%) holds the other. Still to queue once a slot frees again: C7-Q4_0 solo (C7-Q4_K_M needs no relaunch, clean in fb6f4bb9)."
+  },
+  {
+   "at": "2026-08-28T17:15:00Z",
+   "status": "RUNNING",
+   "note": "check-in wake. task-logs show C7-F16 at 640/3490 (18%) on its first BFCL convention pass, staging completed cleanly (loader repair path not re-logged here since C7-F16.gguf was fetched fresh; base model and shared inputs cached as usual). Solo on the card, both GPU slots (lab team quota me: 2 of 2 L4 in use, 0 available) held by this pair. Not wedged -- real generation progress since launch."
+  },
+  {
+   "at": "2026-08-28T17:30:00Z",
+   "status": "RUNNING",
+   "note": "C7-F16 solo, 41% progress, not stuck."
+  },
+  {
+   "at": "2026-08-28T17:45:00Z",
+   "status": "RUNNING",
+   "note": "resumed-continue wake. Progress field reads 26% but that is per-component and resets: task-logs show C7-F16 has finished two 3490-item components and is 28% into a 2000-item one (ifstruct). Advancing normally, not wedged."
+  },
+  {
+   "at": "2026-08-28T18:05:00Z",
+   "status": "RUNNING",
+   "note": "Progress 64% on its current component, still advancing, still holding one of the two GPU slots."
+  },
+  {
+   "at": "2026-08-28T18:20:00Z",
+   "status": "RUNNING",
+   "note": "check-in wake. task-logs: finished the 3490-item and 2000-item components clean, now 15% into a 541-item component (progress field reads 14% because it's per-component, matches). Real generation progress since last check-in, not wedged. Still solo on its GPU slot."
+  }
+ ],
+ "10382f18-fbea-4161-a5c1-e3c38e8c46f7": [
+  {
+   "at": "2026-08-28T17:31:00Z",
+   "status": "LAUNCHING",
+   "note": "C7-Q4_0 solo, attempt 3, just queued into the slot freed by b928b8fc."
+  },
+  {
+   "at": "2026-08-28T17:45:00Z",
+   "status": "RUNNING",
+   "note": "C7-Q4_0 solo staged its GGUF and base model cleanly, started its arm, finished one 3490-item component and is 9% into the next. Advancing normally."
+  },
+  {
+   "at": "2026-08-28T18:05:00Z",
+   "status": "RUNNING",
+   "note": "Progress 49% on its current component, still advancing, still holding the other GPU slot."
+  },
+  {
+   "at": "2026-08-28T18:20:00Z",
+   "status": "RUNNING",
+   "note": "check-in wake. task-logs: finished the 3490-item and 2000-item components clean, now 40% into a 602-item component (progress field reads 37% per-component). Real progress since last check-in, not wedged. Still solo on the other GPU slot."
+  }
+ ],
+ "776ff1a1-7d53-48d8-aad7-8fcf78d69e19": [
+  {
+   "at": "2026-08-28T17:55:00Z",
+   "status": "QUEUED",
+   "note": "R3 retention comparison (R3-Q4_0, R3-Q4_K_M against R3-F16), CPU only, no GPU-hours."
+  },
+  {
+   "at": "2026-08-28T18:05:00Z",
+   "status": "COMPLETE",
+   "note": "Terminal, completion_status success, 0 assertion failures, both artifacts (comparison.md, comparison.json) present and mirrored into runs/s5.6-retention-R3/. CPU only, 0 GPU-h, charged to budget.json as a zero-spend entry. Confirms the hand-read retention table exactly (Q4_0 mean 93.6%, Q4_K_M mean 91.8%) and adds what the hand table could not: of the 20 paired cells only two survive Holm correction, both Q4_0 BFCL cells. The two axes that fail the retention floor (ifstruct_validity on both arms, probe_stack_idiom on Q4_K_M) are indistinguishable from the reference under the paired test after correction."
+  }
+ ],
+ "d3ee0d7a-4c97-44f2-8a2f-5ad6b83cc483": [
+  {
+   "at": "2026-08-28T18:48:00Z",
+   "status": "RUNNING",
+   "note": "First check-in for this job (G4a R3-Q4_K_XL, solo on its card). Launch phase clear (cluster_started 99%), inputs staged, llama-server up, generating: task-logs show 960/3490 on the first component, up from 560/3490 minutes earlier. Real generation progress, not wedged. Attempt 1 for this arm; no prior failure signature."
+  }
+ ],
+ "bd52b7bc-f3d6-43f2-80a3-9ec0096c7209": [
+  {
+   "at": "2026-08-28T18:48:00Z",
+   "status": "RUNNING",
+   "note": "First check-in for this job (G4a C7-Q4_K_XL, solo on the other card). Same shape as its R3 sibling and slightly ahead: 1440/3490 on the first component, having passed 560 and 960. Real generation progress, not wedged. Attempt 1 for this arm; no prior failure signature."
   }
  ]
 }

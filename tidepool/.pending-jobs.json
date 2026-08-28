@@ -1,12 +1,3 @@
-{
- "substage": "s5.3",
- "experiment": "tidepool",
- "jobs": [
-  "7e8ca5f9-82a2-410e-8fda-ea53f5662bd2"
- ],
- "created": "2026-08-25T19:40:00Z",
- "updated": "2026-08-26T07:05:00Z",
- "note": "ONE JOB OUTSTANDING. 1728ed4a (C1, re-run attempt 3 on nebius) went COMPLETE this check-in: 8416/8416 steps, val_loss 0.1517, 0 assertion failures, all 6 artifacts uploaded -- mirrored into budget.json (3.001 GPU-h) and runs/s5.3-sweep.md, dropped from this marker. That frees nothing (nebius slot is separate from the two-card cap the pack occupies) but closes out the reference arm. 7e8ca5f9 = PACK A (C3, C7, C2p on one card), RUNNING, 93% at 07:05Z (was 83% at 06:03Z). C3 and C2p have both exited rc=0; only C7 remains, at 9196/9697 steps (~95%), still climbing steadily with roughly 500 steps left -- the pack job itself stays RUNNING until C7 also finishes. No OOM, no stall. On the OLD checkpoint-less code by design -- leave it alone, no checkpoint expected. Spend 19.346 of 145 approved GPU-hours after this check-in's C1 entry.",
- "next_action": "1) At the next check-in, check whether Pack A (7e8ca5f9) has gone terminal -- it is very close (C7 needs ~500 more steps). When it does: mirror the whole pack's spend (including the already-complete C3 and C2p arms) into budget.json and runs/s5.3-sweep.md, drop it from this marker (which then empties the file -- delete it, do not write an empty jobs list), and run queue_pack_b.sh to start Pack B on the freed slot. 2) The C1 checkpoint-upload-to-storage defect (lab storage ls tidepool/s5.3/ckpt showed zero objects all through C1's run) is now moot for C1 itself since it finished without needing resume, but the underlying bug (CLI-fallback storage upload from a packed child silently failing) is unfixed and will bite the next packed job that needs to resume from a stall -- worth a source fix before Pack B runs long enough to need it.",
- "notes": " | The s5-eval task is NOT synced to the packing-aware code in the source tree. Register it only after a two-arm packed eval smoke has passed on a real job; until then any eval queued against task 7633fb1c runs the old solo harness, which is the intended behaviour. | s5-eval-pack is registered as task 08b4e028-b3b7-45a5-9bed-9f487c9c95ed; jobs/s5-eval/queue_eval_pack_smoke.sh runs its two-arm smoke on an L4. Run it on the second free slot, after Pack B has the first."
-}
+{"experiment": "tidepool", "substage": "s5.6",
+ "what": "G4a scoring: R3-Q4_K_XL and C7-Q4_K_XL, one arm per card, both cards at once. Q4_K_L was dropped before scoring because its file size matched plain Q4_K_M exactly, failing the pre-registered check that the tensor-type flags took effect.",
+ "jobs": ["d3ee0d7a-4c97-44f2-8a2f-5ad6b83cc483", "bd52b7bc-f3d6-43f2-80a3-9ec0096c7209"]}

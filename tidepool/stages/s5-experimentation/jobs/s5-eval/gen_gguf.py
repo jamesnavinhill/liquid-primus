@@ -27,7 +27,10 @@ before any of this is used.
 import glob
 import json
 import os
+import re
 import subprocess
+import sys
+import sysconfig
 import tarfile
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -86,6 +89,107 @@ def _extract_backend(tarball_path, dest="llama"):
             os.chmod(path, 0o755)
             return path
     raise RuntimeError("the serving-path archive %s contains no llama-server" % tarball_path)
+
+
+# THE SERVING-PATH ARCHIVE CARRIES EXECUTABLES WITHOUT THEIR CUDA SHARED OBJECTS. `s5-llama-build`
+# copies `llama-server` out of the build tree and not the runtime stack it links against,
+# `libnccl.so.2` among them, on the assumption that whatever host runs it already has them on the
+# loader path. The L40S image that scored the s5.2 4-bit rows did; the L4 image did not, and the
+# first s5.6 quality pass (`af80ef62`, `f7ebf0a3`) lost all six arms in eight minutes to
+# `error while loading shared libraries: libnccl.so.2`, every one of them at server startup with
+# the right weights already resolved and staged.
+#
+# `s5-export/main.py` hit the same wall at its attempt 2 and solved it there; this is that repair,
+# carried across to the one other place in the project that launches a binary out of that archive.
+# The libraries are nearly always already on the box inside the Python environment, because the
+# pip CUDA wheels install them under `site-packages/nvidia/*/lib` and torch pulls those wheels in,
+# so the first move puts those directories on the loader path rather than installing anything.
+# A wheel is the second move and raising is the third -- and the raise happens BEFORE any
+# generation, so an arm that cannot serve costs a startup rather than a scored-looking empty row.
+def _nvidia_lib_dirs(root=None):
+    bases = set()
+    for key in ("purelib", "platlib"):
+        d = sysconfig.get_paths().get(key)
+        if d:
+            bases.add(d)
+    try:
+        import site
+        for d in site.getsitepackages():
+            bases.add(d)
+    except Exception:
+        pass
+    out = []
+    for b in sorted(bases):
+        out.extend(sorted(glob.glob(os.path.join(b, "nvidia", "*", "lib"))))
+    # A serving path built after this defect may travel with its own shared objects; prefer those.
+    extra = ["/usr/local/cuda/lib64", "/usr/local/cuda/targets/x86_64-linux/lib"]
+    if root:
+        extra = [os.path.join(root, "lib"), os.path.join(root, "lib64")] + extra
+    out.extend([d for d in extra if os.path.isdir(d)])
+    seen, uniq = set(), []
+    for d in out:
+        if d not in seen:
+            seen.add(d)
+            uniq.append(d)
+    return uniq
+
+
+def _add_to_loader_path(dirs):
+    if not dirs:
+        return
+    cur = [d for d in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep) if d]
+    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(dirs + [d for d in cur if d not in dirs])
+
+
+def _loads(binary, run=None):
+    """Can the dynamic loader satisfy this binary? rc 127 and the loader's own message are the
+    signal; any other non-zero exit is the tool talking about its arguments, not about linking."""
+    if run is None:
+        def run(cmd):
+            p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               timeout=180, check=False)
+            return p.returncode, p.stdout.decode("utf-8", "replace")
+    try:
+        rc, out = run([binary, "--version"])
+    except Exception as exc:  # a binary the OS refuses to exec at all reads the same way here
+        rc, out = 127, str(exc)
+    if rc == 127 or "error while loading shared libraries" in out:
+        missing = re.findall(r"([\w.+-]+\.so[\w.]*): cannot open shared object", out)
+        return False, (missing[0] if missing else "an unresolved shared library")
+    return True, None
+
+
+def repair_loader_path(server_bin, log=print, root=None, run=None, pip=None):
+    """Make `server_bin` loadable on this host, or raise before anything is served.
+
+    Returns the one-line description of what it took, which goes into the run's `serving` facts
+    so a row records the host repair it needed rather than leaving it to a log nobody reads.
+    """
+    ok, missing = _loads(server_bin, run=run)
+    if ok:
+        return "none needed"
+    dirs = _nvidia_lib_dirs(root=root)
+    log("the serving path cannot load %s; adding %d CUDA library directories from this "
+        "environment to the loader path" % (missing, len(dirs)))
+    _add_to_loader_path(dirs)
+    ok, missing = _loads(server_bin, run=run)
+    if ok:
+        return "site-packages CUDA wheels"
+    log("still short of %s; installing the NCCL wheel" % missing)
+    if pip is None:
+        def pip():
+            p = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "nvidia-nccl-cu12"],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               timeout=900, check=False)
+            return p.returncode
+    rc = pip()
+    _add_to_loader_path(_nvidia_lib_dirs(root=root))
+    ok, missing = _loads(server_bin, run=run)
+    if ok:
+        return "nvidia-nccl-cu12 wheel (pip rc=%s)" % rc
+    raise RuntimeError("the serving path cannot be loaded on this host: %s is missing and "
+                       "neither this environment's CUDA wheels nor a fresh nvidia-nccl-cu12 "
+                       "supplied it. Nothing has been served." % missing)
 
 
 def resolve_gguf(cfg, storage, out_dir, log=print, hub=None, list_files=None):
@@ -164,6 +268,9 @@ def load_gguf(cfg, log=print, out_dir="out", storage=None, port=None):
     tarball = storage(backend_object)
     server_bin = _extract_backend(tarball, dest=os.path.join(out_dir, "llama"))
     log("serving path at %s" % server_bin)
+    loader_repair = repair_loader_path(
+        server_bin, log=log, root=os.path.dirname(os.path.dirname(server_bin)))
+    log("the serving path loads on this host (loader repair: %s)" % loader_repair)
 
     gguf, repo, name, gguf_source = resolve_gguf(
         cfg, storage, out_dir, log=log, hub=hub_download, list_files=list_repo_files)
@@ -202,7 +309,8 @@ def load_gguf(cfg, log=print, out_dir="out", storage=None, port=None):
 
     facts = {"backend": "llama.cpp", "llama_object": backend_object,
              "gguf_source": gguf_source, "gguf_repo": repo,
-             "gguf_file": name, "gguf_mb": size_mb, "tokenizer_repo": tok_repo,
+             "gguf_file": name, "gguf_mb": round(os.path.getsize(gguf) / 1e6, 1),
+             "loader_repair": loader_repair, "tokenizer_repo": tok_repo,
              "slots": slots, "ctx_per_slot": per_slot, "port": port}
     return srv, tok, facts
 

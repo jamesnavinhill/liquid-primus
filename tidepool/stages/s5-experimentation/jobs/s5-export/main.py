@@ -319,14 +319,53 @@ def bench(gguf, label):
 base_model = str(C("base_model", "LiquidAI/LFM2.5-1.2B-Instruct"))
 prefix = str(C("arms_prefix", "tidepool/s5.3/arms")).rstrip("/")
 dest_prefix = str(C("dest_prefix", "tidepool/s5.6")).rstrip("/")
-formats = [f.strip() for f in str(C("formats", "F16,Q4_0,Q4_K_M")).split(",") if f.strip()]
+# `C` folds an empty string back to the default, so a run that wants only the variants asks
+# for `formats=none` rather than `formats=""`.
+_fraw = str(C("formats", "F16,Q4_0,Q4_K_M"))
+formats = ([] if _fraw.strip().lower() == "none"
+           else [f.strip() for f in _fraw.split(",") if f.strip()])
 arms = [a.strip() for a in str(C("arms", "")).split(",") if a.strip()]
 if not arms:
     raise RuntimeError("`arms` is empty; there is nothing to export")
 ceiling_gb = float(C("size_ceiling_gb", 1.5))
+
+# QUANT VARIANTS (s5.6 G4a). A plain `formats` entry is a bare `llama-quantize <in> <out> FMT`.
+# A variant is the same call with the token-embedding and output tensors pinned to a higher
+# precision than the body, which is what every high-quality 4-bit build in the ecosystem does
+# and what baseline B3 (unsloth `UD-Q4_K_XL`) already is. The body stays 4-bit, so the
+# deliverable is still a 4-bit GGUF; what changes is where the bit budget goes. Recorded here
+# rather than hand-rolled at the CLI so the exact recipe travels with the artifact.
+#
+#   quant_variants = {"Q4_K_L": {"ftype": "Q4_K_M", "output_tensor_type": "q6_K",
+#                                "token_embedding_type": "q6_K"}}
+#
+# The label is what the file and the arm are named; `ftype` is what the quantizer is actually
+# asked for. Both must be present, and the label may not collide with a plain format.
+_vraw = C("quant_variants", "")
+if isinstance(_vraw, str):
+    _vraw = json.loads(_vraw) if _vraw.strip() else {}
+variants = dict(_vraw or {})
+for _label, _spec in variants.items():
+    if "__" in _label or "-" in _label:
+        raise RuntimeError("variant label %r must survive `<arm>-<label>` naming and the "
+                           "artifact prefix strip" % _label)
+    if _label in formats:
+        raise RuntimeError("variant %r collides with a plain format of the same name" % _label)
+    if not _spec.get("ftype"):
+        raise RuntimeError("variant %r does not say which quantizer type it is built on"
+                           % _label)
+if variants and "F16" not in [f.upper() for f in formats]:
+    # F16 is the quantizer's input and is produced regardless; saying so keeps the log honest.
+    log("F16 is not in `formats`, so it is converted as the quantizer's input and not uploaded")
+if not formats and not variants:
+    raise RuntimeError("neither `formats` nor `quant_variants` asks for anything")
+
 FACTS["formats"] = formats
+FACTS["quant_variants"] = variants
 FACTS["size_ceiling_gb"] = ceiling_gb
-log("== exporting %s at %s ==" % (", ".join(arms), ", ".join(formats)))
+log("== exporting %s at %s ==" % (", ".join(arms),
+                                  ", ".join(formats + ["%s(%s)" % (k, v["ftype"])
+                                                       for k, v in sorted(variants.items())])))
 
 import torch  # noqa: E402
 from peft import PeftModel  # noqa: E402
@@ -369,19 +408,28 @@ for i, arm in enumerate(arms):
     row["merged_dir_gb"] = round(sum(os.path.getsize(p) for p in
                                      glob.glob(os.path.join(merged, "*"))) / 1e9, 3)
 
-    for fmt in formats:
-        if fmt.upper() == "F16":
+    plan = [(f, None) for f in formats] + [(k, v) for k, v in sorted(variants.items())]
+    for fmt, spec in plan:
+        if spec is None and fmt.upper() == "F16":
             path = f16
         else:
             path = os.path.join(OUT, arm, "%s-%s.gguf" % (arm, fmt))
-            sh([QUANT, f16, path, fmt], timeout=3600)
+            cmd = [QUANT]
+            if spec:
+                # Options precede the positional arguments in llama-quantize's parser.
+                if spec.get("output_tensor_type"):
+                    cmd += ["--output-tensor-type", spec["output_tensor_type"]]
+                if spec.get("token_embedding_type"):
+                    cmd += ["--token-embedding-type", spec["token_embedding_type"]]
+            cmd += [f16, path, (spec or {}).get("ftype", fmt)]
+            sh(cmd, timeout=3600)
         gb = round(os.path.getsize(path) / 1e9, 3)
         # F16 is an intermediate on the way to the 4-bit builds, not something anyone ships: a
         # 1.2B model at 16 bits is ~2.3 GB by arithmetic and can never sit under a 1.5 GB
         # ceiling. The pre-registered criterion is about the delivered build, so the ceiling is
         # judged on the quantized formats and F16's size is recorded without a verdict.
-        deliverable = fmt.upper() != "F16"
-        cell = {"gb": gb, "deliverable": deliverable,
+        deliverable = spec is not None or fmt.upper() != "F16"
+        cell = {"gb": gb, "deliverable": deliverable, "recipe": spec,
                 "under_ceiling": (gb <= ceiling_gb) if deliverable else None,
                 "object": "%s/%s/%s" % (dest_prefix, arm, os.path.basename(path))}
         cell["tok_s"] = bench(path, "%s %s" % (arm, fmt))
