@@ -26,6 +26,7 @@ python3 -m py_compile "$DST"/*.py
 python3 "$SWEEP/test_pack_isolation.py" >/dev/null
 python3 "$SWEEP/test_pack_schedule.py" >/dev/null
 python3 "$SRC/test_resolve_adapter.py" >/dev/null
+python3 "$SRC/test_resolve_gguf.py" >/dev/null
 rm -rf "$DST/__pycache__"
 echo "contract and scheduling checks pass"
 echo "built $DST from $SRC + $SWEEP/pack.py:"

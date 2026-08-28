@@ -31,6 +31,8 @@ GPU slots are full and the sweep is moving again._
 
 ## Headline
 
+**Update, 2026-08-28 18:30 UTC: s5.6 is open and its first row is on a card.** The stage now moves to export and recovery, which is where the 4-bit promise gets tested: a build at 1.5 GB or less that holds 97% of its own full-precision quality with no axis below 93%. The export job is running on both surviving checkpoints. The order of the remaining work was deliberately reversed, so the cheap measurement comes before the expensive recovery: there is no point paying for a repair until the damage is measured. Sized at 20 to 25 GPU-hours of the 79.1 left, which leaves the final evaluation stage whole.
+
 **Update, 2026-08-28 18:05 UTC: the replay ladder is finished, scored and compared, and it
 comes back null. Raising the replay dose fourfold does not move instruction following.
 Reweighting the buffer to half constraint-bearing does not move it either. Replay against no
@@ -2859,3 +2861,25 @@ alone at 20 GB as `02d522d1`.
   validity regression it carries is recorded rather than smoothed over. B4 OOM'd under a 5.5 GB
   ceiling sized for a dense model and is re-queued alone at 20 GB as `02d522d1`. Ledger updated
   with both scoring jobs; spend 65.916 of 145.
+- 2026-08-28 18:10Z · mirror · Pushed commit `adbe68f` to `github.com/jamesnavinhill/liquid-primus`:
+  the ladder's full result set, the comparison table mirrored into `runs/s5.5/`, the ledger with
+  both scoring jobs, and `tasks.md` closing s5.5. Nothing has reached the Hugging Face half of
+  the standing note yet; R3's adapter is in shared storage and goes up when s5.6 settles which
+  checkpoint is delivered.
+- 2026-08-28 18:30Z · s5.6 · **The export row is queued as `e7dd289e`, and the tooling for it
+  already existed.** `s5-llama-build` packages `convert_hf_to_gguf.py`, `gguf-py` and
+  `llama-quantize` alongside the runtime at the same pinned tag, and `adapters.py` already
+  merges a LoRA arm by looking at the checkpoint rather than by a queue parameter, so G1 needed
+  a new job and no new dependency. It merges R3 and C7, converts each to F16 GGUF, quantizes to
+  Q4_0 and Q4_K_M, and takes bytes on disk plus `llama-bench` decode throughput for all six
+  files, with baseline row B2 benched in the same process as the efficiency floor's reference.
+  **G1 and G4 run before G2 and G3**, reversing the plan's table order, because recovery is
+  only worth buying where there is a measured loss and which axis to point it at is a fact G1
+  produces. One harness change went with it: `gen_gguf.py` could only serve a GGUF published on
+  the Hub, so its resolution was extracted into `resolve_gguf()` and taught to read
+  `gguf_object` from shared storage, with the two sources mutually exclusive and raising rather
+  than taking a precedence rule. Seven new checks, wired into `sync_eval_pack.sh`, whole
+  eval-pack suite green. The `d4a7d46b` mirror defect is closed inside the new job as well: its
+  `put()` tries the SDK's call shapes in order and records which one worked. s5.6 is sized at
+  20 to 25 GPU-hours of the 79.1 remaining; the larger version is priced in
+  `runs/s5.6-export-recovery.md` and is not queued.

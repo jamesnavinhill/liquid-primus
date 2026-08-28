@@ -24,6 +24,7 @@ cannot change a later completion. The build job asserts the server reproduces it
 before any of this is used.
 """
 
+import glob
 import json
 import os
 import subprocess
@@ -87,6 +88,52 @@ def _extract_backend(tarball_path, dest="llama"):
     raise RuntimeError("the serving-path archive %s contains no llama-server" % tarball_path)
 
 
+def resolve_gguf(cfg, storage, out_dir, log=print, hub=None, list_files=None):
+    """Which .gguf this row serves, and where it came from. Returns (path, repo, name, source).
+
+    Two sources, and exactly one of them per row. `gguf_repo`/`gguf_file` is a published
+    quantization on the Hub, which is what the three 4-bit baseline rows are. `gguf_object` is
+    a GGUF this project quantized itself and put in shared storage, which is what every s5.6
+    export row is. They are mutually exclusive on purpose: a row that set both would serve one
+    file and label itself with the other, and the label is what a retention number is
+    attributed to.
+
+    Its own function because it needs a test and `load_gguf` cannot be imported without the
+    serving stack. `hub` and `list_files` are injected for the same reason.
+    """
+    obj = str(cfg.get("gguf_object", "") or "")
+    repo = str(cfg.get("gguf_repo", "") or "")
+    name = str(cfg.get("gguf_file", "") or "")
+    if obj and repo:
+        raise RuntimeError("`gguf_object` and `gguf_repo` are both set (%r, %r); a row serves "
+                           "one file and may only be labelled with the one it served"
+                           % (obj, repo))
+    if obj:
+        gguf = storage(obj)
+        # Storage hands back either the file or a directory holding it, the same two shapes
+        # `adapters.py` already has to distinguish for adapter archives.
+        if os.path.isdir(gguf):
+            hits = sorted(glob.glob(os.path.join(gguf, "**", "*.gguf"), recursive=True))
+            if len(hits) != 1:
+                raise RuntimeError("`gguf_object` %s resolved to a directory holding %d .gguf "
+                                   "files; name the file, not the directory" % (obj, len(hits)))
+            gguf = hits[0]
+        size_mb = round(os.path.getsize(gguf) / 1e6, 1)
+        log("weights: %s (%.1f MB), quantized by this project" % (obj, size_mb))
+        return gguf, obj, os.path.basename(gguf), "storage"
+    if not repo:
+        raise RuntimeError("the 4-bit path needs `gguf_repo` or `gguf_object`")
+    if not name:
+        files = [f for f in (list_files(repo) if list_files else []) if f.lower().endswith(".gguf")]
+        raise RuntimeError("`gguf_file` is empty and a repo publishes many quantizations, which "
+                           "is not a choice a run should make for itself. Files: %s"
+                           % ", ".join(sorted(files)))
+    gguf = hub(repo_id=repo, filename=name, local_dir=os.path.join(out_dir, "gguf"))
+    size_mb = round(os.path.getsize(gguf) / 1e6, 1)
+    log("weights: %s :: %s (%.1f MB)" % (repo, name, size_mb))
+    return gguf, repo, name, "hub"
+
+
 def load_gguf(cfg, log=print, out_dir="out", storage=None, port=None):
     """Fetch the backend and the weights, serve them, and return (server, tokenizer, facts).
 
@@ -101,7 +148,7 @@ def load_gguf(cfg, log=print, out_dir="out", storage=None, port=None):
     which inside a pack returns a path the supervisor already fetched rather than reaching
     for the network from a child that is supposed to be isolated.
     """
-    from huggingface_hub import hf_hub_download, list_repo_files
+    from huggingface_hub import hf_hub_download as hub_download, list_repo_files
     from transformers import AutoTokenizer
 
     if storage is None:
@@ -118,20 +165,8 @@ def load_gguf(cfg, log=print, out_dir="out", storage=None, port=None):
     server_bin = _extract_backend(tarball, dest=os.path.join(out_dir, "llama"))
     log("serving path at %s" % server_bin)
 
-    repo = str(cfg.get("gguf_repo", ""))
-    name = str(cfg.get("gguf_file", "") or "")
-    if not repo:
-        raise RuntimeError("the 4-bit path needs `gguf_repo`")
-    if not name:
-        files = [f for f in list_repo_files(repo) if f.lower().endswith(".gguf")]
-        raise RuntimeError("`gguf_file` is empty and a repo publishes many quantizations, which "
-                           "is not a choice a run should make for itself. Files: %s"
-                           % ", ".join(sorted(files)))
-    gguf = hf_hub_download(repo_id=repo, filename=name,
-                           local_dir=os.path.join(out_dir, "gguf"))
-    size_mb = round(os.path.getsize(gguf) / 1e6, 1)
-    log("weights: %s :: %s (%.1f MB)" % (repo, name, size_mb))
-
+    gguf, repo, name, gguf_source = resolve_gguf(
+        cfg, storage, out_dir, log=log, hub=hub_download, list_files=list_repo_files)
     tok_repo = str(cfg.get("tokenizer_repo", "") or cfg.get("base_model", ""))
     tok = AutoTokenizer.from_pretrained(tok_repo, trust_remote_code=True)
     log("prompts rendered by %s, the same tokenizer the full-precision rows use" % tok_repo)
@@ -165,7 +200,8 @@ def load_gguf(cfg, log=print, out_dir="out", storage=None, port=None):
         raise RuntimeError("the server did not become healthy within 420 s\n%s" % srv.tail())
     log("server healthy on %d slots, %d context tokens each" % (slots, per_slot))
 
-    facts = {"backend": "llama.cpp", "llama_object": backend_object, "gguf_repo": repo,
+    facts = {"backend": "llama.cpp", "llama_object": backend_object,
+             "gguf_source": gguf_source, "gguf_repo": repo,
              "gguf_file": name, "gguf_mb": size_mb, "tokenizer_repo": tok_repo,
              "slots": slots, "ctx_per_slot": per_slot, "port": port}
     return srv, tok, facts

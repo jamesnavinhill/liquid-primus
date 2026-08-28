@@ -1,0 +1,52 @@
+# s5.6 G1 -- merge the selected checkpoints, convert them, quantize them, and price them.
+#
+# The project promised a 4-bit build at 1.5 GB or less that holds the full-precision bar and
+# decodes within 5% of the base's 4-bit throughput. Two of those three facts are properties of
+# a file rather than of a benchmark, and this job produces them: bytes on disk and tokens per
+# second from llama.cpp's own `llama-bench`, taken on the card, in one process, at the same
+# pinned tag every published 4-bit baseline row was measured on. Retention is scored afterwards
+# by `s5-eval-pack`, which now serves a stored GGUF through `gguf_object`.
+#
+# THE CARD IS L4 AND THAT IS NOT A COST CHOICE. The serving path in shared storage is compiled
+# for sm_89 only, which is what both project cards are; the binaries will not run anywhere else,
+# and re-building for another architecture would change the backend under every 4-bit number
+# already taken.
+#
+# F16 IS EXPORTED ALONGSIDE THE 4-BIT FORMATS ON PURPOSE. A Q4-against-FP delta taken across
+# `transformers` and `llama.cpp` carries the runtime with it. F16-in-llama.cpp is the middle
+# point that separates the two, and it costs one conversion that has to happen anyway, since
+# `llama-quantize` reads an F16 GGUF as its input.
+name: s5-export
+run: python main.py
+setup: |
+  pip install -q -U "transformers>=4.46" peft accelerate safetensors huggingface_hub sentencepiece protobuf
+resources:
+  cpus: 8
+  memory: 48
+  # A merged bf16 checkpoint, its F16 GGUF, one file per 4-bit format and the reference GGUF,
+  # for every arm, plus the CUDA wheels underneath them.
+  disk_space: 200
+  accelerators: "L4:1"
+  compute_provider: aws
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+parameters:
+  # The two checkpoints s5.5 hands over: R3 is the selection, C7 the retained fallback.
+  arms: "R3,C7"
+  arms_prefix: tidepool/s5.3/arms
+  dest_prefix: tidepool/s5.6
+  base_model: LiquidAI/LFM2.5-1.2B-Instruct
+  # Pinned to the tag the runtime was built at. The converter and the quantizer travel inside
+  # this archive, so all three are the same version by construction.
+  llama_object: tidepool/llama-b10622-sm89.tar.gz
+  formats: "F16,Q4_0,Q4_K_M"
+  size_ceiling_gb: 1.5
+  # The efficiency floor's reference: the vendor's own quantization-aware Q4_0 build, which is
+  # also baseline row B2. Benched here rather than carried over from s5.2, because 5% is
+  # tighter than the spread between a serving loop and a bench harness.
+  ref_gguf_repo: LiquidAI/LFM2.5-1.2B-Instruct-GGUF
+  ref_gguf_file: LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf
+  bench_prompt_tokens: 512
+  bench_new_tokens: 128
+  bench_reps: 3
+minutes_requested: 120
