@@ -40,11 +40,26 @@ class _Lab(object):
         d = os.path.join(os.environ["FAKE_LAB_STORE"], obj.replace("/", "__"))
         open(d, "w").write("corpus for " + obj)
         return d
-    def storage_upload(self, path, obj=None, dest=None):
+    def storage_upload(self, path, *a, **kw):
         # The real call takes a destination *prefix* and the file keeps its own name. The
         # stand-in mirrors that exactly, so a caller that passes a whole object path as the
         # destination shows up here as the wrong object rather than as a pass.
-        pre = dest if dest is not None else obj
+        #
+        # Which FORMS it accepts is switched by the environment, because the signature is not
+        # the same on every worker image. The image the seed replication pack ran on takes the
+        # path alone, so every `dest=` call there raised `unexpected keyword argument 'dest'`
+        # and each mid-run checkpoint was given up on after five attempts.
+        form = os.environ.get("FAKE_LAB_UPLOAD_FORM", "kw")
+        if "dest" in kw or "obj" in kw:
+            if form != "kw":
+                raise TypeError("storage_upload() got an unexpected keyword argument 'dest'")
+            pre = kw.get("dest", kw.get("obj"))
+        elif a:
+            if form == "kw":
+                raise TypeError("storage_upload() takes 2 positional arguments but 3 given")
+            pre = a[0]
+        else:
+            pre = None
         key = (pre.rstrip("/") + "/" + os.path.basename(path)) if pre else os.path.basename(path)
         shutil.copy(path, os.path.join(os.environ["FAKE_LAB_STORE"], key.replace("/", "__")))
         self._put("upload", obj=key)
@@ -92,7 +107,7 @@ json.dump({"tokens_per_second": 100.0, "peak_gpu_reserved_gb": 1.0, "card_total_
 '''
 
 
-def run(cfg, specs, arms_scripts=("main.py",)):
+def run(cfg, specs, arms_scripts=("main.py",), upload_form="kw"):
     d = tempfile.mkdtemp(prefix="packtest-")
     try:
         os.makedirs(os.path.join(d, "lab"))
@@ -106,6 +121,7 @@ def run(cfg, specs, arms_scripts=("main.py",)):
         env = dict(os.environ)
         env.update({"FAKE_LAB_RECORD": rec, "FAKE_LAB_CFG": json.dumps(cfg),
                     "FAKE_LAB_STORE": store, "ARM_SPEC": json.dumps(specs),
+                    "FAKE_LAB_UPLOAD_FORM": upload_form,
                     "PYTHONPATH": d})
         p = subprocess.run([sys.executable, "-u", "pack.py"], cwd=d, env=env,
                            capture_output=True, text=True, timeout=180)
@@ -269,6 +285,24 @@ mir = (r["summary"] or {}).get("mirrored") or {}
 check("mirror", len(mir.get("A") or []) == 2 and all(m["ok"] for m in mir.get("A") or []),
       "the summary does not record A's two mirrored files: %s" % mir.get("A"))
 
+#     The SDK's upload signature is not stable across worker images, and the supervisor has
+#     to place the file whatever form the image on the day happens to take. On the image the
+#     seed replication pack ran on, `storage_upload` takes the path alone: every keyword call
+#     raised, each checkpoint exhausted its five attempts, and the run finished with nothing
+#     mirrored. Same requests, an image that refuses the keyword, same three objects.
+r = run(dict(BASE, arms="A,B", pack_gb="10,10"),
+        {"A": {"mirror": [{"file": "adapter.zip", "dest": "arms/A"},
+                          {"file": "ckpt-a.pt", "dest": "ckpt/A"}], "mirror_pause": 0.05},
+         "B": {"mirror": [{"file": "adapter.zip", "dest": "arms/B"}]}},
+        upload_form="positional")
+ups = [e["obj"] for e in r["events"] if e["kind"] == "upload"]
+check("mirror", sorted(ups) == ["arms/A/adapter.zip", "arms/B/adapter.zip",
+                               "ckpt/A/ckpt-a.pt"],
+      "an image that refuses the dest keyword lost the mirrored files: %s" % ups)
+check("mirror", not (r["summary"] or {}).get("mirror_failures"),
+      "mirroring reported failures on a positional-only image: %s"
+      % (r["summary"] or {}).get("mirror_failures"))
+
 #     A request naming a file that is not there is reported, not silently dropped, and does
 #     not take the pack down with it.
 r = run(dict(BASE, arms="A", pack_gb="10"),
@@ -336,5 +370,6 @@ if fails:
     sys.exit(1)
 print("pack scheduling holds: handover, failed producer, empty producer, peak sizing, "
       "overcommit, per-arm scripts, per-arm config (typed and as text), input staging, "
-      "mirroring on request, two producers providing two distinct objects, "
+      "mirroring on request and on an image that refuses the dest keyword, "
+      "two producers providing two distinct objects, "
       "7 validation cases")

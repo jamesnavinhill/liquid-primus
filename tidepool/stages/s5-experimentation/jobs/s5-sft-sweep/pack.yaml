@@ -72,6 +72,11 @@ parameters:
   val_object: tidepool/s4.4/val.jsonl.gz
   guardrail_object: tidepool/s5.3/tooldata/tooldata_train.jsonl.gz
   replay_object: ""
+  # DataLoader worker processes per arm. 2 is what the sweep and the s5.5 ladder ran with.
+  # 0 runs the tokenizer on the training process, which is slower and changes no arithmetic:
+  # workers only tokenize and collate, the loader runs with shuffle off, and the sampler is
+  # deterministic. Set it to 0 for a run that must reproduce another run exactly.
+  loader_workers: 2
   # Two replay buffers, and therefore two config keys. `pack_provides` names the object a
   # producing arm stands in for by CONFIG KEY, and reads the path out of the pack's own config,
   # so two generator arms on one card cannot both provide `replay_object`: the second would

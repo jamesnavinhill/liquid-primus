@@ -176,6 +176,26 @@ ARMS = {
             "replay_object": "tidepool/s5.5/replay_proportional/replay.jsonl.gz"},
     "R3":  {"mix": "raw", "replay_frac": 0.20,
             "replay_object": "tidepool/s5.5/replay_constraint/replay.jsonl.gz"},
+
+    # ---- s6.5. Seed replication of the named final configuration.
+    #
+    # R3 is R3b is R3c: byte-identical recipes, differing only in `seed`, which sets the LoRA
+    # initialization and the dropout masks and NOTHING else -- `sample.choose` is deterministic
+    # and the loader runs with shuffle off, by design, because identical row order across arms
+    # is what makes the sweep's arms paired. So these are three draws of the initialization
+    # rather than of the data order. Everything the project reports about the
+    # final checkpoint rests on ONE training draw, and two questions need an error bar before
+    # s7 can state them. Whether R3's headline tool-calling gain over the matched base survives
+    # seed noise, and whether C7's structured-output advantage over R3 -- the sole reason C7 is
+    # carried as a second finalist at all -- is a recipe difference or a draw difference. The
+    # sweep's own eight recipes span 2.2 points of BFCL composite, which bounds seed noise from
+    # above but confounds it with the recipe change; three draws of one recipe do not.
+    #
+    # The seeds are arbitrary and fixed here rather than drawn, so a re-run reproduces them.
+    "R3b": {"mix": "raw", "replay_frac": 0.20,
+            "replay_object": "tidepool/s5.5/replay_constraint/replay.jsonl.gz", "seed": 41},
+    "R3c": {"mix": "raw", "replay_frac": 0.20,
+            "replay_object": "tidepool/s5.5/replay_constraint/replay.jsonl.gz", "seed": 97},
 }
 ARM = str(os.environ.get("TIDEPOOL_PACK_ARM") or C("arm", "C1"))
 if ARM not in ARMS:
@@ -218,7 +238,18 @@ LORA_DROPOUT = float(A("lora_dropout", 0.05))
 MAX_STEPS = int(C("max_steps", 0))              # 0 = one full pass over the sampled mix
 VAL_ROWS = int(C("val_rows", 256))
 WARMUP = float(A("warmup_ratio", 0.03))
-SEED = int(C("seed", 17))
+SEED = int(A("seed", 17))              # `A`, so the s6.5 seed-replication arms can set their own
+# How many DataLoader worker processes each arm gets. 2 by default, which is what the whole
+# sweep and the s5.5 ladder ran with. It is a knob rather than a constant because the s6.5
+# replication met a repeatable failure inside the worker machinery on a packed card: both arms
+# died about a minute in, inside `multiprocessing`'s forkserver handshake, with the worker
+# process resetting the connection during the authkey exchange. The re-imported main module
+# initialising a SECOND wandb run in the same arm's console is the tell that the workers were
+# re-executing module scope. The cause was not isolated further, and it did not need to be:
+# workers only tokenize and collate, `shuffle=False`, and the sampler is deterministic, so the
+# worker count cannot move a single gradient. Setting it to 0 removes the mechanism from a run
+# whose entire purpose is to reproduce another run exactly, and the arithmetic is untouched.
+LOADER_WORKERS = int(A("loader_workers", 2))
 TOOL_EPOCHS = float(A("tool_epochs", 1.0))
 STRUCT_MAX_EPOCHS = float(A("struct_max_epochs", 3.0))
 PRIORITY_SHARE = float(A("min_priority_share", 0.5))
@@ -301,8 +332,21 @@ def _storage_put(local, dest):
     try:
         up = getattr(lab, "storage_upload", None)
         if callable(up):
-            up(local, dest=dest)
-            return True
+            # The destination keyword is not stable across worker images: the image job
+            # `386f2ad7` ran on has an upload taking the path alone, and every `dest=` call
+            # there raised `unexpected keyword argument`. Try the keyword, then the same thing
+            # positionally, and never fall back to a one-argument upload while a prefix is
+            # owed -- four arms' `adapter.zip` at the root of shared storage is one object.
+            last = None
+            for call in (lambda: up(local, dest=dest), lambda: up(local, dest)):
+                try:
+                    call()
+                    return True
+                except TypeError as exc:                           # noqa: PERF203
+                    if "argument" not in str(exc):
+                        raise
+                    last = exc
+            raise last
     except Exception as exc:
         log("SDK storage_upload failed for %s (%s)" % (os.path.basename(local), exc))
     try:
@@ -581,7 +625,7 @@ def compute_loss(batch):
 
 
 loader = DataLoader(Conv(rows), batch_size=MICRO_BS, shuffle=False, collate_fn=collate,
-                    num_workers=2 if len(rows) > 2000 else 0, drop_last=True)
+                    num_workers=LOADER_WORKERS if len(rows) > 2000 else 0, drop_last=True)
 steps = MAX_STEPS or max(1, len(loader) // ACCUM)
 log("%d micro-batches, accumulation %d, %d optimizer steps" % (len(loader), ACCUM, steps))
 
@@ -786,7 +830,8 @@ for epoch in range(start_epoch, start_epoch + 100):
         # collating tens of thousands of batches to throw every one of them away.
         ep_loader = DataLoader(Conv(rows[skip_micro * MICRO_BS:]), batch_size=MICRO_BS,
                                shuffle=False, collate_fn=collate,
-                               num_workers=2 if len(rows) > 2000 else 0, drop_last=True)
+                               num_workers=LOADER_WORKERS if len(rows) > 2000 else 0,
+                               drop_last=True)
         log("epoch %d resumes %d micro-batches in, %d rows remaining"
             % (epoch, skip_micro, len(rows) - skip_micro * MICRO_BS))
     else:

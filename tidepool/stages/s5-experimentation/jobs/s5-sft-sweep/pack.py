@@ -480,6 +480,38 @@ _mirror_fail = {}      # (arm, line) -> attempts so far
 MIRRORED = {}          # arm -> [{"file", "dest", "ok", "error"}]
 
 
+def storage_put(up, local, dest):
+    """Call this SDK's upload however it takes a destination prefix.
+
+    The signature is not stable across worker images. The image the seed replication pack ran
+    on (job `386f2ad7`) has an upload that takes the path alone, so every `dest=` call raised
+    `unexpected keyword argument 'dest'` and each of that run's mid-run checkpoints exhausted
+    its retries and was given up on -- recoverable, because the pack attaches each child file
+    as a job artifact as well, but only by hand and only after the run.
+
+    So the keyword is tried first, then the same thing positionally, and a one-argument upload
+    is used ONLY when there is no prefix to honour. An upload that silently drops the prefix
+    would put an arm's adapter at the root of shared storage under whatever name it happens to
+    carry, which is worse than the failure it replaces: `adapter.zip` from four arms is one
+    object. Raises the last error when none of the forms work, so the caller still reports it.
+    """
+    err = None
+    if dest:
+        for call in (lambda: up(local, dest=dest), lambda: up(local, dest)):
+            try:
+                call()
+                return
+            except TypeError as exc:                               # noqa: PERF203
+                # Only a signature mismatch is worth trying the next form for. A failure
+                # inside a correctly-called upload is a real failure and must not be retried
+                # against a form that would put the file somewhere else.
+                if "argument" not in str(exc):
+                    raise
+                err = exc
+        raise err
+    up(local)
+
+
 def drain_mirrors(arm):
     """Upload whatever this arm has asked for since the last look. Never raises."""
     adir = os.path.join(OUT, arm)
@@ -521,7 +553,7 @@ def drain_mirrors(arm):
                 err = "this SDK has no storage upload"
             else:
                 try:
-                    up(local, dest=dest)
+                    storage_put(up, local, dest)
                     ok = True
                 except Exception as exc:
                     err = str(exc)[:200]
@@ -582,7 +614,7 @@ def release(arm):
                     up_src = src
                     if os.path.basename(src) != base:
                         up_src = shutil.copy2(src, os.path.join(OUT, arm, base))
-                    up(up_src, dest=pre) if pre else up(up_src)
+                    storage_put(up, up_src, pre)
                     log("placed %s in shared storage" % obj)
                 except Exception as exc:
                     # Not fatal to the pack. The dependants read the local copy either way;

@@ -31,6 +31,11 @@ parameters:
   # C5 only. Left empty on purpose: the self-distillation replay set does not exist yet, and
   # an arm that asks for replay without one fails loudly rather than quietly training C1.
   replay_object: ""
+  # DataLoader worker processes per arm. 2 is what the sweep and the s5.5 ladder ran with.
+  # 0 runs the tokenizer on the training process, which is slower and changes no arithmetic:
+  # workers only tokenize and collate, the loader runs with shuffle off, and the sampler is
+  # deterministic. Set it to 0 for a run that must reproduce another run exactly.
+  loader_workers: 2
   # 64.0M tokens is 0.71 of an epoch over the calibrated mix and 4.45 GPU-hours at the
   # measured L40S rate. Eight arms therefore cost 35.6 GPU-hours. Every arm gets the same
   # number so the sweep measures the recipe and not the compute.
