@@ -1,0 +1,55 @@
+# s6.4 — the failures behind three headline numbers, read item by item, on CPU.
+#
+# `s6.1` and `s6.2` said what moved. Three of those movements still have two possible
+# explanations each, and the pair licenses different sentences in a paper: a grader edit that
+# reclassified a handful of items or a bug that scales with nothing; a model that lost a JSON
+# schema or one that stopped closing a code fence; an arm that calls the wrong function or one
+# that stops calling. Each is decidable from files that already exist.
+#
+# It has no GPU line and no dependencies beyond the standard library, both on purpose. Nothing
+# here generates: the graders wrote a verdict and a reason per item, and the completions they
+# read are in storage. It is a job rather than a local script because a number in a report
+# cites a job id.
+name: s6-errors
+run: python main.py
+setup: |
+  # Nothing. Standard library only, so the tabulation does not move when a stack does.
+  python -V
+resources:
+  # Reading a few dozen jsonl files, the largest about 10 MB, and counting. The memory is for
+  # holding one arm's completions and verdicts at once.
+  cpus: 4
+  memory: 16
+  disk_space: 50
+parameters:
+  # Comma-separated arm names, matching the directories under scored_prefix.
+  arms: ""
+  # The arm the call-warranted losses are counted against. Empty skips `native_losses`
+  # entirely, which is what a run that only wants the structured-output composition should do.
+  reference: ""
+  # Where each arm's `scored_*.jsonl` lives, one subdirectory per arm.
+  scored_prefix: tidepool/s5.3/arms
+  # JSON: {"<arm>": "<storage prefix>"}, merged over scored_prefix for those arms only. The
+  # s6 family spans three prefixes and naming them beats copying every verdict into a fourth.
+  arm_prefixes: ""
+  # Where the raw generations live, one subdirectory per arm. The completions carry no
+  # verdict; they are what separates "produced no valid document" from "produced no document",
+  # and a run without them still reports the error composition and simply leaves the envelope
+  # columns empty.
+  completions_prefix: tidepool/s6.4/completions
+  # JSON: {"<arm>": "<storage object>"} naming an arm's PRE-EDIT scored native-tools file,
+  # where one survives. Only `B3` does: `B1`'s per-item files were lost to the typed-save bug.
+  pre_edit_objects: ""
+  # JSON: {"<arm>": <composite>} for arms with no pre-edit per-item file but a composite
+  # recorded before the edit. Those rows are a PREDICTION, reported separately from the
+  # observed flips: assume the arm flipped on the same items and check the implied composite
+  # against the recorded one. The residual is the whole content of the check, so a run that
+  # supplies a wrong number here gets a large residual rather than a wrong finding.
+  recorded_pre_edit_composite: ""
+  # Comma-separated subset of grader_delta,ifstruct_errors,native_losses. Empty runs all three.
+  components: ""
+  # How many distinct grader messages to keep per format, and how many lost items to quote.
+  # Both are presentation only and neither enters a rate.
+  top_errors: 20
+  examples: 12
+minutes_requested: 30

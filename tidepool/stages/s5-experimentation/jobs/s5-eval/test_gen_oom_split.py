@@ -198,6 +198,116 @@ check("5 throughput reports the smallest batch that ran", tp.get("smallest_batch
 check("5 throughput still reports tokens", tp.get("generated_tokens") == 60,
       tp.get("generated_tokens"))
 
+
+# ------------------------------------------------- 6. the calibration forward pass
+# `first_token_probs` reads one position and never generates, so none of the counters
+# above may move; it must also survive a transformers build that takes no logits_to_keep,
+# and it must sum the softmax mass over every spelling of a choice.
+class PRow:
+    def __init__(self, vals):
+        self.vals = list(vals)
+
+    def __getitem__(self, ids):
+        return PRow([self.vals[i] for i in ids])
+
+    def sum(self):
+        return Scalar(sum(self.vals))
+
+
+class P2:
+    def __init__(self, rows):
+        self.rows = [list(r) for r in rows]
+
+    def float(self):
+        return self
+
+    def __getitem__(self, i):
+        return PRow(self.rows[i])
+
+
+class L3:
+    """Logits over (batch, positions, vocab); only [:, -1, :] is ever taken."""
+
+    def __init__(self, rows, width):
+        self.rows, self.width = rows, width
+
+    def __getitem__(self, key):
+        assert key == (slice(None), -1, slice(None)), key
+        return P2(self.rows)
+
+
+class Out:
+    def __init__(self, logits):
+        self.logits = logits
+
+
+VOCAB = [0.0] * 8
+
+
+class ProbModel:
+    """Last-position logits keyed off the prompt length, so rows stay identifiable."""
+
+    device = "cpu"
+
+    def __init__(self, takes_keep=True, max_batch=99):
+        self.takes_keep, self.max_batch = takes_keep, max_batch
+        self.saw_keep, self.batches = [], []
+
+    def __call__(self, input_ids=None, attention_mask=None, logits_to_keep=None, **kw):
+        self.saw_keep.append(logits_to_keep)
+        if logits_to_keep is not None and not self.takes_keep:
+            raise TypeError("unexpected keyword argument 'logits_to_keep'")
+        n = input_ids.shape[0]
+        self.batches.append(n)
+        if n > self.max_batch:
+            raise OutOfMemoryError("fake ceiling: %d prompts" % n)
+        rows = []
+        for r in input_ids.rows:
+            v = list(VOCAB)
+            # ids 3 and 4 spell "yes", 5 and 6 spell "no". Longer prompts look guiltier.
+            v[3], v[4] = 0.1, 0.1
+            v[5], v[6] = 0.01 * r[0], 0.01 * r[0]
+            rows.append(v)
+        return Out(L3(rows, input_ids.shape[1]))
+
+
+_torch.softmax = lambda t, dim=-1: t          # already normalized enough to sum
+CHOICES = {"yes": [3, 4], "no": [5, 6]}
+
+pm = ProbModel()
+rp = gen.Runner(pm, Tok(), log=lambda *a: None)
+got = rp.first_token_probs(PROMPTS, CHOICES, batch_size=8, tag="cal")
+check("6 calibration: one result per prompt, in the caller's order",
+      len(got) == 20 and all(g is not None for g in got), len(got))
+check("6 calibration: mass is summed over every spelling of a choice",
+      abs(got[0]["yes"] - 0.2) < 1e-9 and abs(got[0]["no"] - 0.02) < 1e-9, got[0])
+check("6 calibration: rows keep their identity through the length sort",
+      abs(got[19]["no"] - 0.40) < 1e-9, got[19])
+check("6 calibration: the head is run on the last position only",
+      set(pm.saw_keep) == {1}, repr(pm.saw_keep))
+check("6 calibration: no tokens are generated and no generation time is charged",
+      rp.gen_tokens == 0 and rp.gen_seconds == 0.0,
+      (rp.gen_tokens, rp.gen_seconds))
+
+old = ProbModel(takes_keep=False)
+ro = gen.Runner(old, Tok(), log=lambda *a: None)
+go = ro.first_token_probs(PROMPTS, CHOICES, batch_size=8, tag="cal")
+check("6 calibration: a build without logits_to_keep falls back once and keeps going",
+      len(go) == 20 and all(g is not None for g in go)
+      and old.saw_keep[:2] == [1, None] and set(old.saw_keep[2:]) == {None},
+      repr(old.saw_keep[:4]))
+check("6 calibration: the fallback returns the same numbers",
+      all(abs(a["no"] - b["no"]) < 1e-12 for a, b in zip(got, go)))
+
+tight = ProbModel(max_batch=2)
+rt = gen.Runner(tight, Tok(), log=lambda *a: None)
+gt = rt.first_token_probs(PROMPTS, CHOICES, batch_size=8, tag="cal")
+check("6 calibration: a scoring batch that does not fit is halved like a generating one",
+      len(gt) == 20 and all(g is not None for g in gt) and rt.oom_splits > 0,
+      rt.oom_splits)
+check("6 calibration: splitting does not change any score",
+      all(abs(a["no"] - b["no"]) < 1e-12 for a, b in zip(got, gt)))
+
 print()
 if FAILS:
     print("FAILED: %s" % ", ".join(FAILS))

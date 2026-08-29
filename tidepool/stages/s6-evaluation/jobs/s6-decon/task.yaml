@@ -1,0 +1,42 @@
+name: s6-decon
+run: python main.py
+setup: |
+  pip install -q --upgrade "datasets>=3.0" numpy requests
+resources:
+  cpus: 8
+  memory: 32
+  disk_space: 200
+envs:
+  HF_TOKEN: "{{secret._HF_TOKEN}}"
+  HF_HUB_ENABLE_HF_TRANSFER: "0"
+parameters:
+  # The files the models were actually trained on, not the corpora they were built from.
+  # `s4.3` measured contamination on the pre-drop corpora and then dropped what it found;
+  # the question here is whether anything survived into the shipped splits.
+  train_object: tidepool/s4.4/train.jsonl.gz
+  val_object: tidepool/s4.4/val.jsonl.gz
+  test_object: tidepool/s4.4/test.jsonl.gz
+  # The exact eval items the reported numbers came from. BFCL is restricted to the ids in a
+  # scored file rather than indexed whole, so the answer is about the items we scored.
+  bfcl_ids_from: tidepool/s5.3/arms/B1/scored_bfcl_native_tools.jsonl
+  probes_object: tidepool/s4.4/probes/probes.jsonl
+  ifstruct_url: https://raw.githubusercontent.com/Liquid4All/ifstruct/main/data/test.jsonl
+  # `allenai/IFBench_multi-turn` is the set `s4.2` recorded as the one gap in its
+  # decontamination coverage and `s4.3` closed. It is re-checked here for that reason even
+  # though no reported number comes from it.
+  eval_sets: ifeval,ifbench_test,ifbench_mt_if,ifbench_mt_ie
+  ngram_n: 13
+  max_chars_for_grams: 20000
+  worst_rows: 25
+  examples: 15
+  # How many overlapping eval items to name per eval set on the INPUT side. The target side is
+  # never capped: it is the side that could teach an answer, its counts are small, and it is
+  # what the peakedness check downstream samples its strata from.
+  item_report_cap: 200
+  # Re-scan each of these eval sets against an index containing ONLY that set. The shared
+  # index keeps one owner per 13-gram, so a span two sets have in common is credited to
+  # whichever was indexed first, and pass 3 showed how far that distorts a reading: essentially
+  # every matching window was credited to `probes` on the strength of one shared instruction
+  # template. These are the sets whose numbers this project reports, so they get exact figures.
+  per_set_scan: bfcl_scored,probes
+minutes_requested: 120

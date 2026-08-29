@@ -125,6 +125,49 @@ parameters:
   limit_ifstruct: -1
   limit_ifeval: -1
   limit_probes: -1
+  # `calibration` is not a benchmark: it reads the model's probability on one frozen
+  # auditor turn per tool-return probe, which is the scalar the free-form flag rate does
+  # not have. It needs the transformers backend and it needs a clean arm to be the
+  # negatives, so set clean_control_object with it. Add it to `components` to run it.
+  limit_calibration: -1
+  # ---- `cdd`: the black-box memorization check (2402.15938v3), not a benchmark. Add it to
+  # `components` to run it. It samples, which every other component in this harness refuses to
+  # do, and it reaches sampling through its own runner entry point so no benchmark path can
+  # arrive there by accident. Transformers only: the two arms are compared against each other,
+  # so a 4-bit arm with its own sampler would not be measuring the same thing.
+  limit_cdd: -1
+  # Paper defaults throughout. alpha and xi are hand-set per domain in the paper and were never
+  # tuned on a rigid-schema task like tool calling, which is exactly why the result reported
+  # from this is the PAIRED difference against the untrained base rather than the raw number.
+  cdd_samples: 51
+  cdd_temperature: 0.8
+  cdd_alpha: 0.05
+  cdd_xi: 0.01
+  cdd_l_cap: 100
+  cdd_seed: 0
+  # The surface form the reported composite is taken on. Peakedness on a differently-rendered
+  # prompt is peakedness on a different distribution.
+  cdd_style: native_tools
+  # A storage object (or an inline JSON list) naming the eval items whose text appears in a
+  # training target, written by the decontamination scan at this same substage. Each is paired
+  # with a same-category, nearest-prompt-length item that has no overlap at all. Empty means no
+  # strata, which costs the interaction test and is recorded as a note on the run.
+  cdd_contaminated_ids: ""
+  cdd_max_pairs: 60
+  # Extra items outside the strata, spread round-robin across categories. The strata are only
+  # as large as the contamination found -- three scored BFCL items on this project -- so the
+  # interaction test is small by necessity. The paired base-versus-tuned difference is the other
+  # reading here, on how far fine-tuning narrowed the output distribution, and it wants items.
+  cdd_background: 0
+  # Concurrent sequences per sampling call. 51 samples of a 3k-token BFCL prompt is a prefill
+  # of batch 51; the card does not hold that, and the call halves itself on out-of-memory
+  # exactly as a generation group does.
+  cdd_sample_chunk: 8
+  # Optional, per arm: the arm's already-recorded scored_probes.jsonl, so the scalar can be
+  # ranked against the free-form flags this project actually published without regenerating
+  # 602 completions to get them back. Left empty, the join uses this run's own probe output
+  # if `probes` ran in the same run, and is simply omitted if neither is there.
+  free_form_scored_object: ""
   profile: ""
   # ---- score-only replay. Non-empty = read every component's completions from this storage
   # directory instead of generating them: no weights, no GPU, no tokens. It exists because

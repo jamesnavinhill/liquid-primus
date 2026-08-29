@@ -27,6 +27,19 @@ python3 "$SWEEP/test_pack_isolation.py" >/dev/null
 python3 "$SWEEP/test_pack_schedule.py" >/dev/null
 python3 "$SRC/test_resolve_adapter.py" >/dev/null
 python3 "$SRC/test_resolve_gguf.py" >/dev/null
+# The serving loop, against a fake model that refuses any batch above a set size: batch
+# halving on out-of-memory, and the calibration forward pass that reads one position and
+# generates nothing. Both are fixture-only.
+(cd "$SRC" && python3 test_gen_oom_split.py) >/dev/null
+# The guardrail calibration scalar: rank statistic, operating-point search, reliability
+# bins and the yes/no token resolution. All fixture-only, no model, so it is a build check.
+(cd "$SRC" && python3 test_probes_calib.py) >/dev/null
+# The memorization check: the bounded edit distance against an unbounded reference, Peak and
+# its length cap, and the stratum matching that pairs a contaminated eval item with a clean
+# sibling. One of these fixtures asserts that a rigid schema alone drives peakedness to 1.0
+# with no contamination anywhere, which is the reason the reported figure is a paired
+# difference and not the raw number.
+(cd "$SRC" && python3 test_cdd.py) >/dev/null
 # The serving path has to LOAD before an arm may serve: the first s5.6 quality pass lost
 # six arms to a missing CUDA shared object at startup, so the repair and the whole-function
 # unbound-name scan of load_gguf are build-time checks like the rest.

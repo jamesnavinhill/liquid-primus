@@ -24,6 +24,7 @@ Components: BFCLv3-AST composite (`bfcl.py`), IFStruct v1.0 by Liquid's own vali
 in-house probe families plus a clean control arm (`probes_score.py`).
 """
 
+import collections
 import hashlib
 import json
 import os
@@ -33,10 +34,12 @@ import urllib.request
 
 import adapters
 import bfcl
+import cdd
 import gen
 import gen_gguf
 import ifeval_score
 import ifstruct_score
+import probes_calib
 import probes_score
 import prompting
 import replay
@@ -269,6 +272,19 @@ def fetch_probes(obj):
     return rows, {obj: sha(local)}
 
 
+def read_flags(fh):
+    """id -> whether the free-form completion tripped the guardrail regex, from a scored file."""
+    flags = {}
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        r = json.loads(line)
+        if isinstance(r.get("detail"), dict) and "flagged" in r["detail"]:
+            flags[r["id"]] = bool(r["detail"]["flagged"])
+    return flags
+
+
 # ------------------------------------------------------------------ components
 
 def run_bfcl(cfg, runner, prompter, categories, styles, limit):
@@ -436,6 +452,257 @@ def run_probes(cfg, runner, prompter, limit):
     return out
 
 
+def run_cdd(cfg, runner, prompter, categories, limit):
+    """The black-box memorization check. See `cdd` for the method and the design argument.
+
+    Runs on the same BFCL items, the same style and the same serving path as the reported
+    composite, because peakedness on a differently-rendered prompt is peakedness on a different
+    distribution. Sampling is the only thing that differs from the scored pass, and it is
+    reached through a separate runner entry point so no benchmark path can arrive here.
+
+    llama.cpp is refused rather than quietly substituted. The two arms are compared against each
+    other, so both must serve identically; a 4-bit arm has its own sampler and its own
+    numerics, and the difference between two arms served differently is not a difference
+    between the arms.
+    """
+    sample_fn = getattr(runner, "sample", None)
+    if sample_fn is None:
+        raise RuntimeError("the peakedness check needs stochastic sampling and only the "
+                           "transformers backend provides it; this run is on %s"
+                           % type(runner).__name__)
+    style = str(cfg.get("cdd_style", "native_tools"))
+    n_samples = int(cfg.get("cdd_samples", 51))
+    alpha = float(cfg.get("cdd_alpha", 0.05))
+    xi = float(cfg.get("cdd_xi", 0.01))
+    temp = float(cfg.get("cdd_temperature", 0.8))
+    l_cap = int(cfg.get("cdd_l_cap", 100))
+    max_pairs = int(cfg.get("cdd_max_pairs", 60))
+    background = int(cfg.get("cdd_background", 0))
+    chunk = int(cfg.get("cdd_sample_chunk", 8))
+    max_new = int(cfg.get("max_new_bfcl", 320))
+
+    root, shas = fetch_bfcl(categories)
+    items = []
+    for cat in categories:
+        items.extend(bfcl.load_category(root, cat, limit=limit))
+    check("cdd_items_present", len(items) > 0, "%d items" % len(items))
+
+    # Occurrence keys, exactly as `s5-compare` and `s6-errors` pair their rows. BFCL v3 ships
+    # two different `live_relevance` questions under the id `live_relevance_3-3-0`, so a dict
+    # keyed on the bare id silently gives one question the other's prompt -- and sampling 51
+    # completions of the wrong prompt is a defect no downstream statistic could detect.
+    seen = collections.Counter()
+    for it in items:
+        seen[it["id"]] += 1
+        it["cdd_key"] = "%s#%d" % (it["id"], seen[it["id"]])
+    rendered = {}
+    for it in items:
+        try:
+            rendered[it["cdd_key"]] = prompter.render(it["messages"], it["tools"], style=style)
+        except Exception as exc:                                   # noqa: BLE001
+            NOTES.append("cdd render failed for %s (%s)" % (it["cdd_key"], exc))
+    items = [it for it in items if it["cdd_key"] in rendered]
+
+    flagged = cdd.load_id_list(cfg.get("cdd_contaminated_ids", ""), storage)
+    if flagged:
+        pairs, missing, unmatched = cdd.match_controls(
+            items, flagged, lambda it: len(rendered[it["cdd_key"]]), max_pairs,
+            key=lambda it: it["cdd_key"])
+        selected = [(f, "overlap") for f, _c in pairs] + [(c, "control") for _f, c in pairs]
+        # The strata answer the contamination question and nothing else, and they are only as
+        # large as the contamination found. The re-check named three scored BFCL items inside a
+        # training target, so on this project the interaction runs on six items and is reported
+        # as underpowered. The paired base-versus-tuned difference is a separate reading, on how
+        # far fine-tuning narrowed the output distribution, and it wants item count rather than
+        # matching -- hence a third stratum, drawn deterministically and spread across
+        # categories so no single task shape dominates it.
+        if background:
+            used = {it["cdd_key"] for it, _s in selected}
+            per_cat = {}
+            for it in sorted(items, key=lambda x: x["cdd_key"]):
+                if it["cdd_key"] not in used:
+                    per_cat.setdefault(it["category"], []).append(it)
+            extra, ring = [], sorted(per_cat)
+            while ring and len(extra) < background:
+                for cat in list(ring):
+                    if not per_cat[cat]:
+                        ring.remove(cat)
+                        continue
+                    extra.append(per_cat[cat].pop(0))
+                    if len(extra) >= background:
+                        break
+            selected += [(it, "background") for it in extra]
+        if missing:
+            NOTES.append("%d flagged id(s) are not in the scored item set and were dropped: %s"
+                         % (len(missing), ", ".join(missing[:5])))
+        if unmatched:
+            NOTES.append("%d flagged id(s) had no unflagged sibling in their category and were "
+                         "dropped: %s" % (len(unmatched), ", ".join(unmatched[:5])))
+    else:
+        # No stratification available. The paired base-versus-tuned design still works and is
+        # still the result; what is lost is the interaction test, which is the half that
+        # distinguishes contamination from ordinary entropy collapse. Say so rather than
+        # reporting a main effect as if it answered the question.
+        pairs, missing, unmatched = [], [], []
+        keep = sorted(items, key=lambda it: it["cdd_key"])[:2 * max_pairs]
+        selected = [(it, "unstratified") for it in keep]
+        NOTES.append("no contaminated id list was given, so the strata are absent and only the "
+                     "paired base-versus-tuned difference is reported")
+
+    log("  cdd %d item(s), %d sample(s) each at t=%.2f, style=%s"
+        % (len(selected), n_samples, temp, style))
+    rows = []
+    for n, (it, stratum) in enumerate(selected):
+        prompt = rendered[it["cdd_key"]]
+        greedy = runner.generate([prompt], max_new_tokens=max_new, batch_size=1,
+                                 tag="cdd/greedy")[0]
+        samples = runner.sample(prompt, n_samples, temperature=temp,
+                                max_new_tokens=max_new, chunk=chunk,
+                                seed=int(cfg.get("cdd_seed", 0)), tag="cdd")
+        pk = cdd.peakedness(greedy, samples, alpha=alpha, l_cap=l_cap)
+        rows.append(dict(pk, id=it["id"], key=it["cdd_key"], category=it["category"],
+                         stratum=stratum,
+                         leaked=bool(pk["peak"] > xi),
+                         prompt_sha=hashlib.sha256(prompt.encode()).hexdigest()[:12],
+                         greedy=greedy[:2000]))
+        if (n + 1) % 20 == 0:
+            log("    cdd %d/%d" % (n + 1, len(selected)))
+    save(rows, "cdd_items.jsonl")
+
+    by_stratum = {}
+    for r in rows:
+        b = by_stratum.setdefault(r["stratum"], {"n": 0, "peak_sum": 0.0, "leaked": 0,
+                                                 "exact_sum": 0, "distinct_sum": 0})
+        b["n"] += 1
+        b["peak_sum"] += r["peak"]
+        b["leaked"] += 1 if r["leaked"] else 0
+        b["exact_sum"] += r["n_exact"]
+        b["distinct_sum"] += r["distinct_samples"]
+    for b in by_stratum.values():
+        b["avg_peak"] = round(b["peak_sum"] / max(1, b["n"]), 6)
+        b["leak_ratio"] = round(b["leaked"] / max(1, b["n"]), 6)
+        b["mean_exact_repeats"] = round(b["exact_sum"] / max(1, b["n"]), 4)
+        b["mean_distinct_samples"] = round(b["distinct_sum"] / max(1, b["n"]), 4)
+        b.pop("peak_sum")
+    return {"style": style, "n_samples": n_samples, "temperature": temp, "alpha": alpha,
+            "xi": xi, "l_cap": l_cap, "max_new_tokens": max_new,
+            "n_items": len(rows), "pairs": len(pairs), "stratified": bool(flagged),
+            "by_stratum": by_stratum, "input_sha": shas,
+            "avg_peak": round(sum(r["peak"] for r in rows) / max(1, len(rows)), 6),
+            "leak_ratio": round(sum(1 for r in rows if r["leaked"]) / max(1, len(rows)), 6)}
+
+
+def run_calibration(cfg, runner, prompter, tok, limit):
+    """A scalar per tool-return probe, from one forward pass, and what it says about the flag.
+
+    The deployed guardrail is a regex hit on free text: one operating point, no score behind
+    it, so `s6.2`'s finding that the flag is at ceiling on malformed returns and near zero on
+    well-formed-but-wrong ones cannot be read as either "the threshold is high" or "the signal
+    is absent". Appending one frozen auditor turn and reading the first token's probability
+    gives the missing scalar. See `probes_calib` for what that does and does not measure.
+
+    Only the transformers backend can do this. llama.cpp exposes token probabilities too, but
+    every full-precision number in this project comes from one serving path by design, and a
+    calibration curve taken on a different one would not be comparable to the flag rate it is
+    explaining. A 4-bit arm therefore raises rather than quietly reporting a second instrument.
+    """
+    probs_fn = getattr(runner, "first_token_probs", None)
+    if probs_fn is None:
+        raise RuntimeError("the calibration component reads token probabilities and only the "
+                           "transformers backend provides them; this run is on %s"
+                           % type(runner).__name__)
+    graded, shas = fetch_probes(cfg.get("probes_object", "tidepool/s4.4/probes/probes.jsonl"))
+    items = [it for it in graded if it.get("probe") == "tool_return"]
+    cc_obj = cfg.get("clean_control_object") or ""
+    if cc_obj:
+        corpus, cc_sha = fetch_probes(cc_obj)
+        items += corpus
+        shas = dict(shas or {})
+        shas["clean_control"] = cc_sha
+    # The frozen 30-item synthetic clean arm, scored but NOT counted as a negative. The
+    # false-alarm budget belongs to one clean population and the corpus arm is the one drawn
+    # from real splits, so pooling the two would report a rate for neither. Carrying the
+    # synthetic scores alongside gives the check that matters: if the generator's clean items
+    # and the corpus's clean items land in different parts of the range, the negatives the
+    # operating points were chosen on are not representative and the table says less than it
+    # appears to.
+    synthetic = probes_score.build_clean()
+    for it in synthetic:
+        it.setdefault("id", "%s_%s_%s_d%s"
+                      % (it["probe"], it["arm"], it["mode"], it.get("depth")))
+    items += synthetic
+    shas["probes_control"] = probes_score.control_sha(synthetic)
+    # The negatives ARE the measurement here, not a control: an AUROC with no clean arm is
+    # undefined and an operating-point table with none is meaningless. Refuse rather than
+    # emit a table of Nones that reads like a result.
+    check("calibration_has_negatives",
+          any(it.get("arm") in probes_calib.NEGATIVE_ARMS for it in items),
+          "no %s items: pass clean_control_object" % "/".join(probes_calib.NEGATIVE_ARMS))
+    if limit:
+        stride = max(1, len(items) // limit)
+        items = items[::stride][:limit]
+    choices, resolved = probes_calib.choice_ids(tok)
+    check("calibration_words_distinct", not resolved["overlapping_token_ids"],
+          "yes and no share first token(s) %s, so the ratio cannot be read"
+          % resolved["overlapping_token_ids"])
+    prompts = [prompter.render(probes_calib.audit_messages(it), None) for it in items]
+    got = probs_fn(prompts, choices, batch_size=int(cfg.get("batch_size", 16)),
+                   tag="calibration")
+    rows = []
+    for it, pr in zip(items, got):
+        rows.append({"id": it["id"], "arm": it["arm"], "mode": it["mode"],
+                     "depth": it.get("depth"),
+                     "p_yes": round(float((pr or {}).get("yes", 0.0)), 8),
+                     "p_no": round(float((pr or {}).get("no", 0.0)), 8),
+                     "score": probes_calib.suspicion(pr or {})})
+    save(rows, "calibration_probes.jsonl", kind="evals")
+    # The same run's free-form verdicts, if `probes` already ran. Reading them off disk keeps
+    # the two components independent -- calibration can run alone -- while still answering
+    # "does the scalar rank this model's own flags" whenever both are present.
+    free_form = {}
+    ff_path = os.path.join(OUT, "scored_probes.jsonl")
+    ff_obj = (cfg.get("free_form_scored_object") or "").strip()
+    if os.path.exists(ff_path):
+        try:
+            free_form = read_flags(open(ff_path, encoding="utf-8"))
+            out_src = "this run"
+        except Exception as exc:                                   # noqa: BLE001
+            NOTES.append("could not read this run's free-form flags (%s)" % exc)
+            out_src = None
+    elif ff_obj:
+        # The arm's RECORDED verdicts, from the sweep the reported flag rates came from.
+        # Regenerating 602 completions to rank a scalar against them would cost the whole
+        # run and answer a slightly different question, because the free-form pass samples
+        # and the recorded rates are the ones s6.1 and s6.2 actually published. Joining on
+        # id against the stored file ranks the scalar against the published flags.
+        local = storage(ff_obj)
+        if os.path.isdir(local):
+            local = os.path.join(local, os.path.basename(ff_obj))
+        with open(local, encoding="utf-8") as fh:
+            free_form = read_flags(fh)
+        shas[ff_obj] = sha(local)
+        out_src = "recorded (%s)" % ff_obj
+        check("calibration_free_form_overlaps",
+              sum(1 for r in rows if r["id"] in free_form) >= len(rows) // 2,
+              "only %d of %d scored ids appear in %s, so the ids do not join"
+              % (sum(1 for r in rows if r["id"] in free_form), len(rows), ff_obj))
+    else:
+        out_src = None
+    out = probes_calib.summarize(rows, free_form or None)
+    out["input_sha"] = shas
+    out["choice_tokens"] = resolved
+    out["scored_with_free_form"] = bool(free_form)
+    out["free_form_source"] = out_src
+    log("  calibration: AUROC %s over %d defective vs %d clean, ECE %s, %s"
+        % (out["auroc"], out["n_positive"], out["n_negative"], out["ece"],
+           ", ".join("%s@%d%%fa=%s" % (r["detection_rate"], int(100 * r["false_alarm_budget"]),
+                                       r["threshold"])
+                     for r in out["operating_points"])))
+    for mode, m in sorted(out["by_mode"].items()):
+        log("    %-20s n=%-3d AUROC %s  mean %s" % (mode, m["n"], m["auroc"], m["mean_score"]))
+    return out
+
+
 # ------------------------------------------------------------------ driver
 
 def main():
@@ -472,7 +739,8 @@ def main():
         v = cfg.get("limit_" + name, -1)
         v = int(v) if v not in ("", None) else -1
         return limit if v < 0 else v
-    limits = {c: cap(c) for c in ("bfcl", "ifstruct", "ifeval", "probes")}
+    limits = {c: cap(c) for c in ("bfcl", "ifstruct", "ifeval", "probes",
+                                  "calibration", "cdd")}
     profile = str(cfg.get("profile", "") or ("screening" if limit else "full"))
     log("run %s [%s]: model=%s adapter=%s components=%s limits=%s"
         % (run_tag, profile, base, adapter_obj or "-", components, limits))
@@ -588,6 +856,16 @@ def main():
                 score["probe_false_flag_corpus"] = p["false_flag_rate_clean_corpus"]
                 score["probe_false_flag_all_clean"] = p["false_flag_rate_all_clean"]
             score["probe_stack_idiom"] = p["stack_idiom_accuracy"]
+        elif comp == "cdd":
+            results["cdd"] = run_cdd(cfg, runner, prompter, cats, limits["cdd"])
+            score["cdd_avg_peak"] = results["cdd"]["avg_peak"]
+            score["cdd_leak_ratio"] = results["cdd"]["leak_ratio"]
+        elif comp == "calibration":
+            results["calibration"] = run_calibration(cfg, runner, prompter, tok,
+                                                     limits["calibration"])
+            c = results["calibration"]
+            score["probe_flag_auroc"] = c["auroc"]
+            score["probe_flag_ece"] = c["ece"]
         else:
             NOTES.append("unknown component ignored: %s" % comp)
         if not PACK_CHILD:

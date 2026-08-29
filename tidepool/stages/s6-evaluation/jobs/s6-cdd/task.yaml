@@ -1,0 +1,26 @@
+name: s6-cdd
+run: python main.py
+setup: |
+  echo "stdlib only"
+resources:
+  # The permutation test is the only real work and it is twenty thousand shuffles over at most
+  # a hundred and twenty numbers. Everything else is reading two small JSONL files.
+  cpus: 4
+  memory: 16
+  disk_space: 20
+parameters:
+  # The published checkpoint that never saw the training mix. Schema rigidity is a property of
+  # the task and shows up on both arms, so it is the difference that carries the signal.
+  base_arm: B1
+  tuned_arm: R3
+  # Where the generation pass put each arm's items: <items_prefix>/<arm>/cdd_items.jsonl.
+  items_prefix: tidepool/s6.4/cdd
+  # `{"<arm>": "<storage path>"}`, for an arm whose file does not sit under the prefix.
+  arm_objects: ""
+  # The paper's leak threshold. Reported for continuity with it; the result does not rest on
+  # it, because a threshold tuned on free-form text has no standing on a rigid schema.
+  xi: 0.01
+  resamples: 20000
+  seed: 0
+  examples: 15
+minutes_requested: 30
