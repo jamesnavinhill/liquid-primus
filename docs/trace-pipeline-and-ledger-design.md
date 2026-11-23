@@ -139,3 +139,53 @@ infrastructure the semantics will run on, nothing more.
   holds a second job by accident after this.
 - No capture rewrite: the existing callback and sync are the foundation.
   The remaining engineering is sync reliability, processing, and the ledger.
+
+## Appendix (2026-11-23): as-built infra map + anomaly dispositions
+
+Built the same night this design was approved. What exists now:
+
+- **Capture** — unchanged: LiteLLM native PostHog callback (subclassed,
+  Decision 013 bounding) + Sentry integration. Content lands in
+  `posthog.ai_events`; retention ~30 days.
+- **Sync** — `agency/scripts/sync_trace_lakehouse.py` on a GitHub Actions
+  daily cron, now `--days 3 --offset 1` (last 3 completed days, re-synced
+  daily; deterministic per-date partitions make re-runs safe). Fail-loud:
+  fetch errors raise, exit is non-zero, no silent local-only degrade.
+  Per-date manifests at `agency-raw/manifests/dt=<date>.json`. HogQL fetch
+  paginates (the endpoint silently caps unpaginated queries at 100 rows).
+  Pinned deps in `agency/requirements-lakehouse.txt`.
+- **Watchdog + receiver** — `agency/src/lakehouse-watchdog/` on the yrka
+  Cloudflare account, independent of the sandbox: twice-daily manifest /
+  count / partition verification with Sentry + PostHog alarms, and the
+  GitHub webhook receiver appending push events to the ledger log at
+  `agency-curated/ledger/events/dt=<date>/<delivery-id>.json`.
+- **Ledger** — log live (push tributary); batch tributary (trace
+  processing fold) not yet built; semantics still deferred, per design.
+- **Sentry** — project `agency` consolidated to the 3 live environments
+  (galaxy / cf / local); 4 dead-lane environments hidden; defaults aligned
+  to `agency-local` at every source.
+
+Anomalies from the audit, with dispositions:
+
+| # | Anomaly | Disposition |
+| --- | --- | --- |
+| A1 | Sync cron synced the partial current day, never yesterday in full | **Fixed** — `--days 3 --offset 1` |
+| A2 | Silent-green failures (fetch errors returned [], exit 0) | **Fixed** — FetchError, per-date isolation, non-zero exit, failure manifests |
+| A3 | Two PostHog→R2 pipelines; the hourly CDP Batch Export (95,877-event firehose) is configured only in PostHog's UI, ownerless in-repo | **Open** — document/own it or retire it; needs an explicit call, not a silent default |
+| A4 | Sentry issues fetch ignored the date (hardcoded 24h window) | **Fixed** — lastSeen date window + pagination |
+| A5 | Sentry spans capped at 100/day | **Fixed** — cursor pagination |
+| A6 | Sync workflow installed unpinned dependencies | **Fixed** — `requirements-lakehouse.txt` |
+| A7 | Decision 013 text stale (claims Langfuse full fidelity; wrong callback registration) | **Open** — amend the decision text |
+| A8 | Neon lakehouse identity mess (two project names; schemas prepared for a pipeline never built; empty) | **Open** — Neon stays manual-use only; the empty skeleton should be dropped or explicitly adopted, not left ambiguous |
+| A9 | Dead `src/tracing` pointer + empty reserved packages | **Open** — cosmetic; delete on next tidy |
+| A10 | Hand-rolled PostHog/Sentry `trace.ts` duplicated across Workers (now 3 copies incl. lakehouse-watchdog), against the "official integrations only" doc line | **Open** — extract a shared package or amend the doc line to match reality |
+| A11 | Standby (sideway) lane observability parity unverifiable from the repo | **Open** — verify on the lane itself |
+| A12 | Stale Langfuse mentions in docs | **Open** — cosmetic sweep |
+| A13 | Observability credentials in ≥5 projections, no manifest / regeneration path for the GH Actions lakehouse secret set | **Open** — write the credential manifest |
+| A14 | Possibly-dead `POSTHOG_PROJECT_TOKEN` | **Open** — verify and remove if dead |
+| A15 | PostHog self-driving scouts half-wired (PR repo source not connected) | **Open** — finish or switch off |
+| A16 | Oct-11 changelog describes a Sentry events extraction the code no longer has | **Open** — correct the record |
+| A17 | HogQL 100-row truncation of every historical ai_events sync (found by the 2026-11-23 backfill drill: 100 fetched vs 1,160 actual for 2026-11-20) | **Fixed** — LIMIT/OFFSET pagination; days inside the 30-day retention are repairable by re-run, older truncated partitions are not recoverable from PostHog |
+
+Open items 2 (sync reliability) from the list above is therefore closed;
+items 1 and 3 stand.
