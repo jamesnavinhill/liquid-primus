@@ -185,7 +185,7 @@ Anomalies from the audit, with dispositions:
 | A14 | Possibly-dead `POSTHOG_PROJECT_TOKEN` | **Open** — verify and remove if dead |
 | A15 | PostHog self-driving scouts half-wired (PR repo source not connected) | **Open** — finish or switch off |
 | A16 | Oct-11 changelog describes a Sentry events extraction the code no longer has | **Open** — correct the record |
-| A17 | HogQL 100-row truncation of every historical ai_events sync (found by the 2026-11-23 backfill drill: 100 fetched vs 1,160 actual for 2026-11-20) | **Fixed** — LIMIT/OFFSET pagination; days inside the 30-day retention are repairable by re-run, older truncated partitions are not recoverable from PostHog |
+| A17 | HogQL 100-row truncation of every historical ai_events sync (found by the 2026-11-23 backfill drill: 100 fetched vs 1,160 actual for 2026-11-20) | **Fixed** — keyset pagination on (timestamp, uuid) (OFFSET is rejected for personal API keys); days inside the 30-day retention are repairable by re-run, older truncated partitions are not recoverable from PostHog |
 
 Open items 2 (sync reliability) from the list above is therefore closed;
 items 1 and 3 stand.
