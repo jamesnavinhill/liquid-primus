@@ -165,7 +165,8 @@ Built the same night this design was approved. What exists now:
   (galaxy / cf / local); 4 dead-lane environments hidden; defaults aligned
   to `agency-local` at every source.
 
-Anomalies from the audit, with dispositions:
+Anomalies from the audit, with dispositions (A7–A14, A16 re-worked
+2026-11-24 by the cleanup job; per-anomaly evidence below the table):
 
 | # | Anomaly | Disposition |
 | --- | --- | --- |
@@ -175,17 +176,146 @@ Anomalies from the audit, with dispositions:
 | A4 | Sentry issues fetch ignored the date (hardcoded 24h window) | **Fixed** — lastSeen date window + pagination |
 | A5 | Sentry spans capped at 100/day | **Fixed** — cursor pagination |
 | A6 | Sync workflow installed unpinned dependencies | **Fixed** — `requirements-lakehouse.txt` |
-| A7 | Decision 013 text stale (claims Langfuse full fidelity; wrong callback registration) | **Open** — amend the decision text |
-| A8 | Neon lakehouse identity mess (two project names; schemas prepared for a pipeline never built; empty) | **Open** — Neon stays manual-use only; the empty skeleton should be dropped or explicitly adopted, not left ambiguous |
-| A9 | Dead `src/tracing` pointer + empty reserved packages | **Open** — cosmetic; delete on next tidy |
-| A10 | Hand-rolled PostHog/Sentry `trace.ts` duplicated across Workers (now 3 copies incl. lakehouse-watchdog), against the "official integrations only" doc line | **Open** — extract a shared package or amend the doc line to match reality |
-| A11 | Standby (sideway) lane observability parity unverifiable from the repo | **Open** — verify on the lane itself |
-| A12 | Stale Langfuse mentions in docs | **Open** — cosmetic sweep |
-| A13 | Observability credentials in ≥5 projections, no manifest / regeneration path for the GH Actions lakehouse secret set | **Open** — write the credential manifest |
-| A14 | Possibly-dead `POSTHOG_PROJECT_TOKEN` | **Open** — verify and remove if dead |
-| A15 | PostHog self-driving scouts half-wired (PR repo source not connected) | **Open** — finish or switch off |
-| A16 | Oct-11 changelog describes a Sentry events extraction the code no longer has | **Open** — correct the record |
+| A7 | Decision 013 text stale (claims Langfuse full fidelity; wrong callback registration) | **Fixed 2026-11-24** — both stale claims amended in place with dated correction notes (Sentry is the remaining full-fidelity surface; registration is `callbacks:`, not success/failure_callback) |
+| A8 | Neon lakehouse identity mess (two project names; schemas prepared for a pipeline never built; empty) | **Documented + labels fixed 2026-11-24** — true state verified live (see below); retired-project labels in `live-topology.md` / `d1-system-map.mmd` / `.env.example` corrected; no credential changes |
+| A9 | Dead `src/tracing` pointer + empty reserved packages | **Fixed 2026-11-24** — `src/tracing/`, `src/admin/`, `src/evals/` stubs deleted (zero references); the two `trace.ts` header comments pointing at `src/tracing` repointed at `docs/proxy/observability.md` |
+| A10 | Hand-rolled PostHog/Sentry `trace.ts` duplicated across Workers (now 3 copies incl. lakehouse-watchdog), against the "official integrations only" doc line | **Plan written 2026-11-24** (dedup plan with file/line evidence below); doc line annotated with the standing exception; no refactor executed unsupervised |
+| A11 | Standby (sideway) lane observability parity unverifiable from the repo | **Verified 2026-11-24** — parity confirmed on the lane itself after the OTel bridge re-land: PostHog `logs` records under `deployment.environment=agency-cf` (108 in trailing 2 days, latest 14:23 UTC same day), Sentry issues tagged `environment:agency-cf`; stale "bridge disabled" doc statuses corrected |
+| A12 | Stale Langfuse mentions in docs | **Fixed 2026-11-24** — live docs swept (`INSIGHTS_SPEC.md` rail, `benchmarks.md` TTFT source, `target-architecture.md` Neon fact); retirement-aware mentions, tombstones, legacy/archived records left as history |
+| A13 | Observability credentials in ≥5 projections, no manifest / regeneration path for the GH Actions lakehouse secret set | **Manifest written 2026-11-24** — 8-projection manifest + GH Actions regeneration commands in agency `docs/operations/credentials.md`; no secret values moved |
+| A14 | Possibly-dead `POSTHOG_PROJECT_TOKEN` | **Proven dead 2026-11-24** — duplicate of `POSTHOG_API_KEY` (identical phc_ value, digests match), zero code readers; flagged with evidence, secret NOT deleted (vault entry `agency` untouched); `.env.example` template line removed |
+| A15 | PostHog self-driving scouts half-wired (PR repo source not connected) | **Open** — finish or switch off (not in the 2026-11-24 cleanup scope) |
+| A16 | Oct-11 changelog describes a Sentry events extraction the code no longer has | **Annotated 2026-11-24** — correction banner per repo convention; the `dataset=events` extraction never existed in any revision of the script (verified against the session's own commit `92b7aa5` and HEAD); the 100-count "backfill numbers" flagged as truncation artifacts (see A17) |
 | A17 | HogQL 100-row truncation of every historical ai_events sync (found by the 2026-11-23 backfill drill: 100 fetched vs 1,160 actual for 2026-11-20) | **Fixed** — keyset pagination on (timestamp, uuid) (OFFSET is rejected for personal API keys); days inside the 30-day retention are repairable by re-run, older truncated partitions are not recoverable from PostHog |
+
+## Cleanup evidence (2026-11-24)
+
+Per-anomaly verification and evidence for the rows above. All "live" checks
+were run 2026-11-24 through the agency MCP toolbox (PostHog HogQL, Neon SQL,
+Sentry, `gh`).
+
+- **A7** — `_ops/decisions/decisions.md` Decision 013 said "Langfuse and
+  Sentry keep full fidelity at 100%" (stale since Decision 018 retired
+  Langfuse 2026-08-30) and "registered as the success/failure callback"
+  (wrong at decision time: `config/litellm/config.yaml:991-1006` registers
+  `agency_posthog_logger` under `callbacks:` precisely because dotted
+  instances in `success_callback` land in a sync-only list the async proxy
+  path never iterates — found and fixed 2026-08-22, recorded in the
+  2026-08-22 follow-up of `session-2026-08-21-neon-timeouts-identity-aws-sweep.md`).
+  Both claims amended in place with dated correction notes.
+- **A8** — True state from records + live probes: the live project is
+  `agency-lakehouse` (`wild-tree-40675272`, branch `production`,
+  db `neondb`, role `neondb_owner`, region `aws-us-east-2`, org
+  `org-lively-recipe-39051864`). The name `rough-voice-79290966`
+  (the original 2026-08 lakehouse project, `aws-us-east-1` per
+  `_ops/roadmaps/_archive/ROADMAP-2026-08-cloud-foundation.md:47`) is
+  retired and absent from the org; `.env`/Worker bindings were repointed
+  2026-10-10 (`session-2026-10-10-waf-skip-neon-repoint-…`). Live checks
+  2026-11-24: `pg_settings` on the deployed MCP SQL binding shows endpoint
+  `ep-damp-mud-axvwm6mg`, branch `br-muddy-base-ax07i3ya`; schemas `raw`,
+  `curated`, `kb`, `public` all exist and hold **zero tables**
+  (`information_schema.tables` count 0) — "schemas prepared for a pipeline
+  never built" confirmed; the `vector` extension 0.8.6 is installed.
+  Text fixes: `live-topology.md` (2 nodes named the retired project + a
+  `Neon — aws-us-east-1` zone label → corrected to agency-lakehouse /
+  aws-us-east-2 with an explicit "index pipeline NOT built" note),
+  `diagrams/d1-system-map.mmd` same node, `.env.example` placeholder
+  endpoints moved from the retired `ep-shiny-wind…us-east-1` form to the
+  live `ep-damp-mud-axvwm6mg…us-east-2` form. No credentials touched.
+- **A9** — `src/tracing/__init__.py` (docstring pointing at a nonexistent
+  `src/proxy/tracing.py`), `src/admin/__init__.py`, `src/evals/__init__.py`:
+  zero references anywhere in the repo (workflows, tests, scripts, Docker,
+  packaging) — deleted. The two Workers' `trace.ts` headers that pointed at
+  "src/tracing notes" (`agent-sandbox-watchdog/src/trace.ts:3`,
+  `scheduler-worker/src/trace.ts:3`) now point at
+  `docs/proxy/observability.md`.
+- **A10** — dedup plan (to be executed supervised; no refactor done):
+  - Evidence: three near-identical 101-line copies —
+    `src/agent-sandbox-watchdog/src/trace.ts`,
+    `src/scheduler-worker/src/trace.ts`,
+    `src/lakehouse-watchdog/src/trace.ts`. Identical structure in all
+    three: `TraceEnv` interface at line 14, `SURFACE` const at line 20,
+    `timeoutFetch` at 22-29, `capture()` (PostHog `/capture/` POST) at
+    line 33, `reportError()` (PostHog capture + raw Sentry store-envelope
+    POST) at line 56. `diff` shows the only deltas are the header comment,
+    `SURFACE` value, `$lib` string, the PostHog event name inside
+    `reportError` (`watchdog.alarm` vs `scheduler.error`), and the Sentry
+    `sdk.name` string. Each Worker imports it relatively (e.g.
+    `lakehouse-watchdog/src/index.ts:43`); each is an independent wrangler
+    project (own `package.json`/`wrangler.jsonc`; no root workspace).
+  - Recommended path: single shared source `src/shared/trace.ts`,
+    identity (surface / `$lib` / sdk name / error-event name) passed by
+    each caller as a small config object, since dashboards reference the
+    per-worker event names. Update the three imports, delete the three
+    copies. Wrangler's esbuild bundler follows relative imports outside
+    the Worker dir, so no registry, no workspace, no new dependency.
+  - Alternative (policy-aligned, externally blocked): official
+    `@sentry/cloudflare` + Cloudflare Workers Logs OTLP destination →
+    PostHog Logs. The destinations API returned 404 on the yrka account
+    as of 2026-11-23 (`docs/proxy/observability.md` note) — revisit once
+    the dashboard step is done.
+  - Verification when executed: per-Worker `npm run typecheck`, deploy via
+    each README's path, then confirm per-surface events still land
+    (PostHog `events` by `$lib`; the agent-sandbox-watchdog README's `/check`
+    alarm drill exercises the Sentry envelope path end-to-end).
+  - Doc line: `docs/proxy/observability.md` "official native integrations
+    only" now carries the standing-exception annotation pointing here.
+- **A11** — Standby-lane parity, verified live 2026-11-24: the OTel bridge
+  re-land (commit `7dc6829`, deployed standby-first per
+  `session-2026-11-24-reupgrade.md`) is observable from PostHog: `logs`
+  table rows with `service_name='agency-gateway'` and resource
+  `deployment.environment='agency-cf'` — 108 records in the trailing 2
+  days, latest 2026-11-24T14:23:32Z (post-deploy); the Galaxy lane
+  (`agency-galaxy`) shows 2,756. Sentry holds standby-lane issues under
+  `environment:agency-cf` (5 issues, last seen 2026-11-20/21). Trailing
+  2-day `$ai_generation` shows the standby surface family
+  (`distinct_id='agency-cf-vscode'`, 14 events) plus deploy-verification
+  smokes (`smoke-ops`, 13:31Z). Caveat kept honest: `agency-cf-*` keys are
+  also accepted on Galaxy since the 2026-10-26 reconciliation, so the
+  load-bearing lane marker is the OTel resource environment — which only
+  the standby sets to `agency-cf`. Stale "bridge disabled" statuses in
+  `docs/proxy/observability.md` (wiring #6, Logs/Distributed Tracing rows)
+  and the "no OpenTelemetry in the stack" line in
+  `docs/architecture/live-topology.md` were corrected to the re-landed,
+  both-lanes-live state.
+- **A12** — Fixed mentions: `docs/design/INSIGHTS_SPEC.md:23` (rail
+  mockup listed Langfuse as an observability source; now PostHog, matching
+  the §2.1 retirement note), `docs/insights/benchmarks.md:36` (TTFT
+  "via Langfuse tracing" → PostHog `$ai_generation` + Sentry spans),
+  `docs/architecture/target-architecture.md:88` ("Langfuse-class app
+  needs" → neutral). Left as history: decision bodies already amended by
+  Decision 018's canon-amendments block, tombstone rows, `_ops/_legacy`,
+  `_ops/roadmaps/_archive`, and changelog session records.
+- **A13** — Manifest written into agency `docs/operations/credentials.md`
+  ("Lakehouse & observability secret set — manifest"): 8 enumerated
+  projections with owners (vault `agency` canonical; local `.env`; GH
+  Actions repo secrets — 9 lakehouse-sync secrets verified live via
+  `gh secret list`, set 2026-10-11, matching the 9 `os.environ` reads in
+  `scripts/sync_trace_lakehouse.py:63-224,496-593`; the
+  `lakehouse-watchdog`, `agent-sandbox-scheduler`, `agent-sandbox-watchdog`
+  Worker secrets; the `agency-mcp-tools` toolbox bindings per
+  `deploy_mcp_worker.py` `SECRET_MAP`; the two gateway runtimes), plus the
+  regeneration path (`vault get agency` → `gh secret set` × 9 → green sync
+  run → watchdog reconciliation). No secret values moved or printed.
+- **A14** — `POSTHOG_PROJECT_TOKEN`: no code reader anywhere
+  (`scripts/`, `src/`, `config/`, `tests/`, `.github/` — zero hits). Its
+  historical consumers were the pre-LiteLLM proxy modules (git `-S`
+  history: `6f3dfb0`, `f5ec20c`, both long gone). Vault entry `agency`
+  still declares it, holding a value byte-identical to `POSTHOG_API_KEY`
+  (same 48-char `phc_` capture token; digests compared without printing).
+  GH Actions secrets and the three Workers' secrets do not include it.
+  Action taken: flagged in the manifest + appendix; the vault declaration
+  deliberately NOT deleted per the standing rule; the duplicate template
+  line removed from `.env.example` with an explanatory note.
+- **A16** — Correction banner added to
+  `_ops/.changelog/session-2026-10-11-full-trace-pipeline-lakehouse-closure.md`
+  (the repo's convention, cf. the 2026-11-24 outage-record corrections):
+  the record's §2.B claims a Sentry error-events (`dataset=events`)
+  extraction that never existed in any revision — the script at the
+  session's own commit `92b7aa5` fetches only spans (`dataset=spans`) and
+  issues (the `/issues/` endpoint), as does HEAD; the §3 "100 ai_events /
+  100 spans" backfill counts are flagged as the 100-row truncation
+  artifacts later found and fixed (A17). File kept as the session record.
 
 Open items 2 (sync reliability) from the list above is therefore closed;
 items 1 and 3 stand.
